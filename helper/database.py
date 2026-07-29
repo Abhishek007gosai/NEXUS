@@ -658,7 +658,7 @@ class MongoDB:
         return channels.get(str(channel_id))
 
 
-    # Link Share expiring token functions
+    # Link Share token functions
     async def create_link_share_token(self, token: str, channel_id: int, is_request: bool, expires_at):
         await self.user_data.update_one(
             {"_id": f"link_share_token:{token}"},
@@ -674,9 +674,6 @@ class MongoDB:
     async def get_link_share_token(self, token: str):
         data = await self.user_data.find_one({"_id": f"link_share_token:{token}"})
         if not data:
-            return None
-        if data.get("expires_at") and data["expires_at"] <= __import__("datetime").datetime.utcnow():
-            await self.user_data.delete_one({"_id": f"link_share_token:{token}"})
             return None
         return data
 
