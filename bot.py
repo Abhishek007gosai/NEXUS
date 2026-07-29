@@ -164,6 +164,17 @@ class Bot(Client):
                 f"Error loading DB channels: {e}"
             )
 
+        # Load persisted message settings. Custom file captions are stored in MongoDB,
+        # so they are not required in config.py.
+        try:
+            persisted_messages = await self.mongodb.get_messages_settings()
+            if persisted_messages:
+                self.messages.update(persisted_messages)
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(
+                f"Error loading persisted message settings: {e}"
+            )
+
         try:
             shortner_settings = await self.mongodb.get_shortner_settings()
 
