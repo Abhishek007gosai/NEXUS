@@ -298,7 +298,13 @@ async def start_command(client: Client, message: Message):
                 pass
 
         # 8. Auto delete timer
-        if messages and client.auto_del > 0:
+        try:
+            auto_del_seconds = int(client.auto_del or 0)
+        except (TypeError, ValueError):
+            auto_del_seconds = 0
+            client.auto_del = 0
+
+        if messages and auto_del_seconds > 0:
             # Create transfer link for getting files again (original base64_string)
             transfer_link = original_payload
             
@@ -306,7 +312,7 @@ async def start_command(client: Client, message: Message):
             asyncio.create_task(batch_auto_del_notification(
                 bot_username=client.username,
                 messages=yugen_msgs,
-                delay_time=client.auto_del,
+                delay_time=auto_del_seconds,
                 transfer_link=transfer_link,
                 chat_id=message.from_user.id,
                 client=client

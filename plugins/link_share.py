@@ -170,6 +170,7 @@ async def link_share_generate(client, query):
         )
         bot_link = f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
         button = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 Cᴏᴘʏ Lɪɴᴋ", callback_data=f"ls_copy:{token}")],
             [InlineKeyboardButton("↗ Sʜᴀʀᴇ Uʀʟ", url=f"https://telegram.me/share/url?url={bot_link}")]
         ])
         result_text = (
@@ -201,6 +202,41 @@ async def link_share_generate(client, query):
     except Exception as e:
         client.LOGGER(__name__, client.name).error(f"Link generation failed: {e}")
         await query.answer("Failed to generate link.", show_alert=True)
+
+
+@Client.on_callback_query(filters.regex(r"^ls_copy:[A-Za-z0-9_-]+$"))
+async def link_share_copy(client, query):
+    # Only bot owner/admins can retrieve/copy Link Share links.
+    if not is_admin(client, query.from_user.id):
+        return await query.answer("Only admins can copy Link Share links!", show_alert=True)
+
+    token = query.data.split(":", 1)[1]
+    record = await client.mongodb.get_link_share_token(token)
+    if not record:
+        return await query.answer("This Link Share link has expired or is invalid.", show_alert=True)
+
+    expires_at = record.get("expires_at")
+    if expires_at and expires_at <= datetime.utcnow():
+        return await query.answer("This Link Share link has expired.", show_alert=True)
+
+    bot_link = f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
+    try:
+        copied = await client.send_message(
+            chat_id=query.from_user.id,
+            text=f"<b>📋 Link Share Link</b>\n\n<code>{bot_link}</code>",
+            protect_content=True
+        )
+        async def delete_copy_message():
+            await asyncio.sleep(LINK_SHARE_MESSAGE_DELETE)
+            try:
+                await copied.delete()
+            except Exception:
+                pass
+        asyncio.create_task(delete_copy_message())
+        await query.answer("Link sent to your private chat. Copy it from there.", show_alert=True)
+    except Exception as e:
+        client.LOGGER(__name__, client.name).warning(f"Failed to send copyable Link Share link: {e}")
+        await query.answer("I couldn't send the link. Start the bot in private chat first.", show_alert=True)
 
 
 @Client.on_callback_query(filters.regex(r"^ls_list$"))
