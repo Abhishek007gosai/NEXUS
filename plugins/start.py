@@ -70,7 +70,8 @@ async def start_command(client: Client, message: Message):
                 link_msg = await message.reply_text(
                     "<b><blockquote>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
                     reply_markup=button,
-                    parse_mode=ParseMode.HTML
+                    parse_mode=ParseMode.HTML,
+                    protect_content=True
                 )
                 note_msg = await message.reply_text(
                     "<blockquote><b>ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ ɪɴ 5 ᴍɪɴᴜᴛᴇs. ᴛʜᴇ ʟɪɴᴋ ʀᴇᴍᴀɪɴs ᴠᴀʟɪᴅ.</b></blockquote>",
