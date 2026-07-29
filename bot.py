@@ -56,7 +56,7 @@ class Bot(Client):
         self.fsub_dict = {}
         self.admins = admins + [OWNER_ID] if OWNER_ID not in admins else admins
         self.messages = messages
-        self.auto_del = auto_del
+        self.auto_del = int(auto_del or 0)
         self.protect = protect
         self.req_fsub = {}
         self.disable_btn = disable_btn
