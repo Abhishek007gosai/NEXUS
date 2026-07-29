@@ -83,11 +83,52 @@ async def settings_page_2(client, query):
     """
     reply_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', 'protect'), InlineKeyboardButton('ᴘʜᴏᴛᴏs', 'photos')],
-        [InlineKeyboardButton('ᴛᴇxᴛs', 'texts'), InlineKeyboardButton('sʜᴏʀᴛɴᴇʀ', 'shortner')],
+        [InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', 'custom_caption'), InlineKeyboardButton('ᴛᴇxᴛs', 'texts')],
+        [InlineKeyboardButton('sʜᴏʀᴛɴᴇʀ', 'shortner')],
         [InlineKeyboardButton('‹ ᴘʀᴇᴠ', 'settings'), InlineKeyboardButton('ʜᴏᴍᴇ', 'home')]
     ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return
+
+#===============================================================#
+
+@Client.on_callback_query(filters.regex("^custom_caption$"))
+async def custom_caption(client, query):
+    if query.from_user.id not in client.admins:
+        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
+
+    current = client.messages.get("CAPTION", "")
+    current_display = current if current else "ɴᴏᴛ sᴇᴛ (ᴏʀɪɢɪɴᴀʟ ᴄᴀᴘᴛɪᴏɴ ᴡɪʟʟ ʙᴇ ᴜsᴇᴅ)"
+    msg = f"""<blockquote>✦ ᴄᴜsᴛᴏᴍ ꜰɪʟᴇ ᴄᴀᴘᴛɪᴏɴ</blockquote>
+›› **ᴄᴜʀʀᴇɴᴛ ᴄᴀᴘᴛɪᴏɴ:**
+<pre>{current_display}</pre>
+
+Send your new caption in the next 60 seconds.
+
+Use <code>{{previouscaption}}</code> where you want the original file caption/name to appear.
+Send <code>/remove</code> to disable the custom caption."""
+    await query.answer()
+    await query.message.edit_text(
+        msg,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ ʙᴀᴄᴋ", "settings_page_2")]])
+    )
+    try:
+        res = await client.listen(user_id=query.from_user.id, filters=filters.text, timeout=60)
+        value = res.text.strip()
+        if value.lower() == "/remove":
+            value = ""
+        await client.mongodb.update_message_setting("CAPTION", value)
+        client.messages["CAPTION"] = value
+        status = "disabled" if not value else "updated"
+        await query.message.edit_text(
+            f"<b>✓ ᴄᴜsᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ {status} sᴜᴄᴄᴇssғᴜʟʟʏ.</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ ʙᴀᴄᴋ", "settings_page_2")]])
+        )
+    except ListenerTimeout:
+        await query.message.edit_text(
+            "<b>⌛ ᴛɪᴍᴇᴏᴜᴛ. ɴᴏ ᴄʜᴀɴɢᴇs ᴡᴇʀᴇ ᴍᴀᴅᴇ.</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ ʙᴀᴄᴋ", "settings_page_2")]])
+        )
 
 #===============================================================#
 

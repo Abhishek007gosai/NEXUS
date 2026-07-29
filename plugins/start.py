@@ -43,37 +43,41 @@ async def start_command(client: Client, message: Message):
         except IndexError:
             return await message.reply("Invalid command format.")
 
-        # Link Share Menu deep links (kept separate from file-store deep links).
-        # Normal: ls_<encoded_channel_id>
-        # Request: ls_req_<encoded_channel_id>
+        # Link Share Menu deep links. Tokens are generated manually from the
+        # Link Share Menu and expire after 2 minutes.
         if base64_string.startswith("ls_"):
             try:
-                link_payload = base64_string[3:]
-                is_request_link = link_payload.startswith("req_")
-                if is_request_link:
-                    link_payload = link_payload[4:]
+                token = base64_string[3:]
+                token_data = await client.mongodb.get_link_share_token(token)
+                if not token_data:
+                    return await message.reply_text(
+                        "<b>Invalid or expired invite link.</b>",
+                        parse_mode=ParseMode.HTML
+                    )
 
-                channel_id = int(await decode(link_payload))
-                link_channel = await client.mongodb.get_link_share_channel(channel_id)
-                if not link_channel:
-                    return await message.reply_text("<b>Invalid or expired invite link.</b>", parse_mode=ParseMode.HTML)
+                channel_id = int(token_data["channel_id"])
+                is_request_link = bool(token_data.get("is_request", False))
 
                 invite = await client.create_chat_invite_link(
                     chat_id=channel_id,
-                    expire_date=datetime.utcnow() + timedelta(seconds=300),
+                    expire_date=datetime.utcnow() + timedelta(seconds=120),
                     creates_join_request=is_request_link
                 )
                 invite_link = invite.invite_link
-                button = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)]])
+                button = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)]
+                ])
 
                 link_msg = await message.reply_text(
                     "<b><blockquote>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
                     reply_markup=button,
-                    parse_mode=ParseMode.HTML
+                    parse_mode=ParseMode.HTML,
+                    protect_content=True
                 )
                 note_msg = await message.reply_text(
-                    "<blockquote><b>ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ɪɴ ғᴇᴡ ᴍɪɴᴜᴛᴇs. ɪғ ᴛʜᴇ ʟɪɴᴋ ɪs ᴇxᴘɪʀᴇᴅ sᴏ ᴛʀʏ ᴀɢᴀɪɴ.</b></blockquote>",
-                    parse_mode=ParseMode.HTML
+                    "<blockquote><b>ᴛʜɪs ʟɪɴᴋ ᴡɪʟʟ ᴇxᴘɪʀᴇ ɪɴ 2 ᴍɪɴᴜᴛᴇs. ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ ɪɴ 5 ᴍɪɴᴜᴛᴇs.</b></blockquote>",
+                    parse_mode=ParseMode.HTML,
+                    protect_content=True
                 )
 
                 async def cleanup_link_share():
@@ -91,8 +95,13 @@ async def start_command(client: Client, message: Message):
                 asyncio.create_task(cleanup_link_share())
                 return
             except Exception as e:
-                client.LOGGER(__name__, client.name).warning(f"Link Share deep link error: {e}")
-                return await message.reply_text("<b>Invalid or expired invite link.</b>", parse_mode=ParseMode.HTML)
+                client.LOGGER(__name__, client.name).warning(
+                    f"Link Share deep link error: {e}"
+                )
+                return await message.reply_text(
+                    "<b>Invalid or expired invite link.</b>",
+                    parse_mode=ParseMode.HTML
+                )
 
         # 3. Check premium status
         is_user_pro = await client.mongodb.is_pro(user_id)
@@ -118,12 +127,13 @@ async def start_command(client: Client, message: Message):
                 caption=short_caption,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("»ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ«", url=short_link)  
+                        InlineKeyboardButton("»ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ«", url=short_link)
                     ],
                     [
                         InlineKeyboardButton("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ/ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", url=tutorial_link)
                     ]
-                ])
+                ]),
+                protect_content=True
             )
             return  # prevent sending actual files
 
