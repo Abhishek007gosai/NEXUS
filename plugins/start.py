@@ -6,7 +6,7 @@ from config import MSG_EFFECT, OWNER_ID
 from plugins.shortner import get_short
 from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from pyrogram.enums import ParseMode
 
 #===============================================================#
@@ -44,7 +44,7 @@ async def start_command(client: Client, message: Message):
             return await message.reply("Invalid command format.")
 
         # Link Share Menu deep links. Tokens are generated manually from the
-        # Link Share Menu and expire after 2 minutes.
+        # Link Share Menu and remain valid until removed from the database.
         if base64_string.startswith("ls_"):
             try:
                 token = base64_string[3:]
@@ -60,7 +60,6 @@ async def start_command(client: Client, message: Message):
 
                 invite = await client.create_chat_invite_link(
                     chat_id=channel_id,
-                    expire_date=datetime.utcnow() + timedelta(seconds=120),
                     creates_join_request=is_request_link
                 )
                 invite_link = invite.invite_link
@@ -71,13 +70,11 @@ async def start_command(client: Client, message: Message):
                 link_msg = await message.reply_text(
                     "<b><blockquote>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
                     reply_markup=button,
-                    parse_mode=ParseMode.HTML,
-                    protect_content=True
+                    parse_mode=ParseMode.HTML
                 )
                 note_msg = await message.reply_text(
-                    "<blockquote><b>ᴛʜɪs ʟɪɴᴋ ᴡɪʟʟ ᴇxᴘɪʀᴇ ɪɴ 2 ᴍɪɴᴜᴛᴇs. ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ ɪɴ 5 ᴍɪɴᴜᴛᴇs.</b></blockquote>",
-                    parse_mode=ParseMode.HTML,
-                    protect_content=True
+                    "<blockquote><b>ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ ɪɴ 5 ᴍɪɴᴜᴛᴇs. ᴛʜᴇ ʟɪɴᴋ ʀᴇᴍᴀɪɴs ᴠᴀʟɪᴅ.</b></blockquote>",
+                    parse_mode=ParseMode.HTML
                 )
 
                 async def cleanup_link_share():
@@ -87,10 +84,6 @@ async def start_command(client: Client, message: Message):
                             await msg.delete()
                         except Exception:
                             pass
-                    try:
-                        await client.revoke_chat_invite_link(channel_id, invite_link)
-                    except Exception:
-                        pass
 
                 asyncio.create_task(cleanup_link_share())
                 return

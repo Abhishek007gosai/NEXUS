@@ -1,28 +1,20 @@
 import asyncio
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ChatMemberStatus
 from pyrogram.errors import RPCError, UserNotParticipant
 from helper.helper_func import encode
+from config import OWNER_ID
 
 LINK_SHARE_PREFIX = "ls_"
-LINK_SHARE_EXPIRY = 120
 LINK_SHARE_MESSAGE_DELETE = 300
 
 
 def is_admin(client, user_id):
-    return user_id in client.admins
-
-
-async def revoke_link_later(client, channel_id, invite_link):
-    await asyncio.sleep(LINK_SHARE_EXPIRY)
-    try:
-        await client.revoke_chat_invite_link(channel_id, invite_link)
-    except Exception as e:
-        client.LOGGER(__name__, client.name).warning(f"Failed to revoke invite for {channel_id}: {e}")
+    return user_id == OWNER_ID or user_id in client.admins
 
 
 
@@ -161,12 +153,11 @@ async def link_share_generate(client, query):
     if not channel:
         return await query.answer("Channel no longer exists.", show_alert=True)
     try:
-        # Create a random, database-backed token. The generated bot link itself
-        # expires after 2 minutes and cannot be reused after expiry.
+        # Create a permanent database-backed Link Share token.
+        # Link Share deep links do not expire unless the channel is removed from the menu.
         token = secrets.token_urlsafe(16)
-        expires_at = datetime.utcnow() + timedelta(seconds=LINK_SHARE_EXPIRY)
         await client.mongodb.create_link_share_token(
-            token, channel_id, kind == "request", expires_at
+            token, channel_id, kind == "request", None
         )
         bot_link = f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
         button = InlineKeyboardMarkup([
@@ -189,7 +180,6 @@ async def link_share_generate(client, query):
             text=result_text,
             reply_markup=button,
             disable_web_page_preview=False,
-            protect_content=True
         )
         async def delete_generated_link_message():
             await asyncio.sleep(LINK_SHARE_MESSAGE_DELETE)
@@ -215,16 +205,11 @@ async def link_share_copy(client, query):
     if not record:
         return await query.answer("This Link Share link has expired or is invalid.", show_alert=True)
 
-    expires_at = record.get("expires_at")
-    if expires_at and expires_at <= datetime.utcnow():
-        return await query.answer("This Link Share link has expired.", show_alert=True)
-
     bot_link = f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
     try:
         copied = await client.send_message(
             chat_id=query.from_user.id,
             text=f"<b>📋 Link Share Link</b>\n\n<code>{bot_link}</code>",
-            protect_content=True
         )
         async def delete_copy_message():
             await asyncio.sleep(LINK_SHARE_MESSAGE_DELETE)
