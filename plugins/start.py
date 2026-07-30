@@ -6,7 +6,7 @@ from config import MSG_EFFECT, OWNER_ID
 from plugins.shortner import get_short
 from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pyrogram.enums import ParseMode
 
 #===============================================================#
@@ -58,8 +58,12 @@ async def start_command(client: Client, message: Message):
                 channel_id = int(token_data["channel_id"])
                 is_request_link = bool(token_data.get("is_request", False))
 
+                # The permanent ?start=ls_xxx token stays valid in MongoDB,
+                # but the actual Telegram channel invite generated for the
+                # user expires after 5 minutes, matching KafkaLinkBot.
                 invite = await client.create_chat_invite_link(
                     chat_id=channel_id,
+                    expire_date=datetime.now() + timedelta(minutes=5),
                     creates_join_request=is_request_link
                 )
                 invite_link = invite.invite_link
@@ -85,6 +89,15 @@ async def start_command(client: Client, message: Message):
                             await msg.delete()
                         except Exception:
                             pass
+                    # Revoke the generated invite at the same 5-minute mark.
+                    # This is only the temporary Telegram invite; the
+                    # permanent ?start=ls_xxx Link Share token is untouched.
+                    try:
+                        await client.revoke_chat_invite_link(channel_id, invite_link)
+                    except Exception as revoke_error:
+                        client.LOGGER(__name__, client.name).warning(
+                            f"Failed to revoke Link Share invite: {revoke_error}"
+                        )
 
                 asyncio.create_task(cleanup_link_share())
                 return
