@@ -680,6 +680,21 @@ class MongoDB:
     async def delete_link_share_token(self, token: str):
         await self.user_data.delete_one({"_id": f"link_share_token:{token}"})
 
+    # Persistent per-channel Link Share tokens (one stable token per
+    # channel per kind, so the Normal/Request Links pages can show a
+    # direct, unchanging deep-link button for each channel).
+    async def get_link_share_channel_token(self, channel_id: int, kind: str):
+        data = await self.user_data.find_one({"_id": "link_share_channel_tokens"})
+        tokens = data.get("tokens", {}) if data else {}
+        return tokens.get(f"{channel_id}:{kind}")
+
+    async def set_link_share_channel_token(self, channel_id: int, kind: str, token: str):
+        await self.user_data.update_one(
+            {"_id": "link_share_channel_tokens"},
+            {"$set": {f"tokens.{channel_id}:{kind}": token}},
+            upsert=True
+        )
+
 
     # ✅ BOT SETTINGS FUNCTIONS
 
