@@ -1,4 +1,3 @@
-import asyncio
 import re
 import secrets
 from datetime import datetime
@@ -10,7 +9,7 @@ from helper.helper_func import encode
 from config import OWNER_ID
 
 LINK_SHARE_PREFIX = "ls_"
-LINK_SHARE_MESSAGE_DELETE = 300
+LINK_SHARE_PAGE_SIZE = 6
 
 
 def is_admin(client, user_id):
@@ -120,77 +119,93 @@ async def link_share_delete_confirm(client, query):
     await _show_link_share_home(client, query)
 
 
-async def show_link_channels(client, query, request_link=False):
+async def _get_channel_link(client, channel_id: int, is_request: bool) -> str:
+    """Get (or create) a permanent Link Share token for a channel and
+    build its deep link. The token never changes once created, so the
+    button for a given channel always points to the same URL."""
+    kind = "request" if is_request else "normal"
+    token = await client.mongodb.get_link_share_channel_token(channel_id, kind)
+    if not token:
+        token = secrets.token_urlsafe(16)
+        await client.mongodb.create_link_share_token(token, channel_id, is_request, None)
+        await client.mongodb.set_link_share_channel_token(channel_id, kind, token)
+    return f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
+
+
+async def send_link_share_page(client, query, request_link: bool, page: int):
+    """Render a paginated grid of direct invite-link buttons for the
+    Normal/Request Links screens, matching the Kafka-style layout."""
     if not is_admin(client, query.from_user.id):
         return await query.answer("Only admins can access this!", show_alert=True)
+
     channels = await client.mongodb.get_link_share_channels()
     if not channels:
-        return await _edit_query_message(query, "<b>No Link Share channels found. Add a channel first.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="link_share")]]))
-    kind = "request" if request_link else "normal"
-    buttons = [[InlineKeyboardButton(data.get("name", cid), callback_data=f"ls_gen:{kind}:{cid}")] for cid, data in channels.items()]
-    buttons.append([InlineKeyboardButton("back", callback_data="link_share")])
-    await _edit_query_message(query, f"<b>{'Request Links' if request_link else 'Normal Links'}</b>\n\nSelect a channel:", reply_markup=InlineKeyboardMarkup(buttons))
+        await _edit_query_message(
+            query,
+            "<b>No Link Share channels found. Add a channel first.</b>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("‹ Bᴀᴄᴋ", callback_data="link_share")]])
+        )
+        return await query.answer()
+
+    items = list(channels.items())
+    total_pages = max(1, (len(items) + LINK_SHARE_PAGE_SIZE - 1) // LINK_SHARE_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * LINK_SHARE_PAGE_SIZE
+    chunk = items[start_idx:start_idx + LINK_SHARE_PAGE_SIZE]
+    page_cb = "ls_reqpage" if request_link else "ls_normpage"
+
+    buttons = []
+    row = []
+    for cid, data in chunk:
+        channel_id = int(cid)
+        link = await _get_channel_link(client, channel_id, request_link)
+        row.append(InlineKeyboardButton(data.get("name", str(channel_id)), url=link))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◄ Pʀᴇᴠɪᴏᴜs", callback_data=f"{page_cb}:{page - 1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("Nᴇxᴛ ►", callback_data=f"{page_cb}:{page + 1}"))
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([InlineKeyboardButton("‹ Bᴀᴄᴋ", callback_data="link_share")])
+
+    title = "📢 Nᴏʀᴍᴀʟ Iɴᴠɪᴛᴇ Lɪɴᴋs" if not request_link else "📩 Rᴇǫᴜᴇsᴛ Iɴᴠɪᴛᴇ Lɪɴᴋs"
+    text = (
+        f"<b>{title}</b>\n\n"
+        f"<i>Click on a channel button to get its link:</i>\n\n"
+        f"<b>Page {page + 1} of {total_pages}</b>"
+    )
+    await _edit_query_message(query, text, reply_markup=InlineKeyboardMarkup(buttons))
     await query.answer()
 
 
 @Client.on_callback_query(filters.regex(r"^ls_normal$"))
 async def link_share_normal(client, query):
-    await show_link_channels(client, query, False)
+    await send_link_share_page(client, query, False, 0)
 
 
 @Client.on_callback_query(filters.regex(r"^ls_request$"))
 async def link_share_request(client, query):
-    await show_link_channels(client, query, True)
+    await send_link_share_page(client, query, True, 0)
 
 
-@Client.on_callback_query(filters.regex(r"^ls_gen:(normal|request):-100\d+$"))
-async def link_share_generate(client, query):
-    if not is_admin(client, query.from_user.id):
-        return await query.answer("Only admins can generate links!", show_alert=True)
-    _, kind, channel_id_text = query.data.split(":", 2)
-    channel_id = int(channel_id_text)
-    channel = await client.mongodb.get_link_share_channel(channel_id)
-    if not channel:
-        return await query.answer("Channel no longer exists.", show_alert=True)
-    try:
-        # Create a permanent database-backed Link Share token.
-        # Link Share deep links do not expire unless the channel is removed from the menu.
-        token = secrets.token_urlsafe(16)
-        await client.mongodb.create_link_share_token(
-            token, channel_id, kind == "request", None
-        )
-        bot_link = f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
-        button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("↗ Sʜᴀʀᴇ Uʀʟ", url=f"https://telegram.me/share/url?url={bot_link}")]
-        ])
-        result_text = (
-            f"<b>Link generated for {channel.get('name', channel_id)}.</b>\n\n"
-            f"<code>{bot_link}</code>"
-        )
-        # Replace the menu with a normal message so Telegram can render the
-        # generated-link preview, matching the reference Link Share flow.
-        chat_id = query.message.chat.id
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-        sent = await client.send_message(
-            chat_id=chat_id,
-            text=result_text,
-            reply_markup=button,
-            disable_web_page_preview=False,
-        )
-        async def delete_generated_link_message():
-            await asyncio.sleep(LINK_SHARE_MESSAGE_DELETE)
-            try:
-                await sent.delete()
-            except Exception:
-                pass
-        asyncio.create_task(delete_generated_link_message())
-        await query.answer("Link generated!")
-    except Exception as e:
-        client.LOGGER(__name__, client.name).error(f"Link generation failed: {e}")
-        await query.answer("Failed to generate link.", show_alert=True)
+@Client.on_callback_query(filters.regex(r"^ls_normpage:\d+$"))
+async def link_share_normal_page(client, query):
+    page = int(query.data.split(":", 1)[1])
+    await send_link_share_page(client, query, False, page)
+
+
+@Client.on_callback_query(filters.regex(r"^ls_reqpage:\d+$"))
+async def link_share_request_page(client, query):
+    page = int(query.data.split(":", 1)[1])
+    await send_link_share_page(client, query, True, page)
 
 
 @Client.on_callback_query(filters.regex(r"^ls_list$"))
