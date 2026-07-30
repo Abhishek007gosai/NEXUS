@@ -39,8 +39,8 @@ async def settings(client, query):
 <pre>{client.reply_text}</pre>
     """
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton('ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ', 'link_share'), InlineKeyboardButton('ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟꜱ', 'fsub')],
-        [InlineKeyboardButton('ᴅʙ ᴄʜᴀɴɴᴇʟꜱ', 'db_channels')],
+        [InlineKeyboardButton('ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ', 'link_share'), InlineKeyboardButton('ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs', 'fsub')],
+        [InlineKeyboardButton('ᴅʙ ᴄʜᴀɴɴᴇʟs', 'db_channels'), InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', 'custom_caption')],
         [InlineKeyboardButton('ᴀᴅᴍɪɴꜱ', 'admins'), InlineKeyboardButton('ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', 'auto_del')],
         [InlineKeyboardButton('ʜᴏᴍᴇ', 'home'), InlineKeyboardButton('›› ɴᴇxᴛ', 'settings_page_2')]
     ])
@@ -83,8 +83,7 @@ async def settings_page_2(client, query):
     """
     reply_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', 'protect'), InlineKeyboardButton('ᴘʜᴏᴛᴏs', 'photos')],
-        [InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ', 'custom_caption'), InlineKeyboardButton('ᴛᴇxᴛs', 'texts')],
-        [InlineKeyboardButton('sʜᴏʀᴛɴᴇʀ', 'shortner')],
+        [InlineKeyboardButton('ᴛᴇxᴛs', 'texts'), InlineKeyboardButton('sʜᴏʀᴛɴᴇʀ', 'shortner')],
         [InlineKeyboardButton('‹ ᴘʀᴇᴠ', 'settings'), InlineKeyboardButton('ʜᴏᴍᴇ', 'home')]
     ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
