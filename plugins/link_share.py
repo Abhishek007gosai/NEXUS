@@ -27,16 +27,16 @@ async def _edit_query_message(query, text, **kwargs):
 async def _show_link_share_home(client, query):
     """Render the Link Share home screen in the Kafka-style layout."""
     buttons = [
-        [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="ls_add"),
-         InlineKeyboardButton("Dᴇʟᴇᴛᴇ Cʜᴀɴɴᴇʟ", callback_data="ls_delete")],
-        [InlineKeyboardButton("Nᴏʀᴍᴀʟ Lɪɴᴋs", callback_data="ls_normal"),
-         InlineKeyboardButton("Rᴇǫᴜᴇsᴛ Lɪɴᴋs", callback_data="ls_request")],
-        [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="ls_list")],
-        [InlineKeyboardButton("Bᴀᴄᴋ", callback_data="settings")]
+        [InlineKeyboardButton("ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ", callback_data="ls_add"),
+         InlineKeyboardButton("ᴅᴇʟᴇᴛᴇ ᴄʜᴀɴɴᴇʟ", callback_data="ls_delete")],
+        [InlineKeyboardButton("ɴᴏʀᴍᴀʟ", callback_data="ls_normal"),
+         InlineKeyboardButton("ʀᴇǫᴜᴇsᴛ", callback_data="ls_request")],
+        [InlineKeyboardButton("ᴄʜᴀɴɴᴇʟs ʟɪsᴛ", callback_data="ls_list")],
+        [InlineKeyboardButton("ʙᴀᴄᴋ", callback_data="settings")]
     ]
     markup = InlineKeyboardMarkup(buttons)
     caption = (
-        "<b>Lɪɴᴋ Sʜᴀʀᴇ Mᴇɴᴜ</b>\n\n"
+        "<b>ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ</b>\n\n"
         "<blockquote>In this you can change and view your channels...!!</blockquote>"
     )
     photo = getattr(client, "messages", {}).get("START_PHOTO")
@@ -168,9 +168,9 @@ async def send_link_share_page(client, query, request_link: bool, page: int):
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◄ Pʀᴇᴠɪᴏᴜs", callback_data=f"{page_cb}:{page - 1}"))
+        nav.append(InlineKeyboardButton("ᴘʀᴇᴠɪᴏᴜs", callback_data=f"{page_cb}:{page - 1}"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("Nᴇxᴛ ►", callback_data=f"{page_cb}:{page + 1}"))
+        nav.append(InlineKeyboardButton("ɴᴇxᴛ", callback_data=f"{page_cb}:{page + 1}"))
     if nav:
         buttons.append(nav)
 
