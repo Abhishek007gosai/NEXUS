@@ -134,10 +134,10 @@ async def start_command(client: Client, message: Message):
                 caption=short_caption,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("»ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ«", url=short_link)
+                        InlineKeyboardButton("»ᴄʟɪᴄᴋ ʜᴇʀᴇ«", url=short_link)
                     ],
                     [
-                        InlineKeyboardButton("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ/ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", url=tutorial_link)
+                        InlineKeyboardButton("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", url=tutorial_link)
                     ]
                 ]),
                 protect_content=True
