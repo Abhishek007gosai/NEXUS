@@ -28,8 +28,8 @@ DB_NAME = "cluster0"
 # MongoDB (Link Share store) - separate database/cluster from the file store.
 # Falls back to the main DB_URI/DB_NAME if not set, so existing deployments
 # keep working without extra configuration.
-LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", "")
-LINKSHARE_DB_NAME = "cluster0"
+LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
+LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "linkshare")
 # Force Subscribe
 FSUBS = [[-1002369123167, True, 5]] 
 # Channels
