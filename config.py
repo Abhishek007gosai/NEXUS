@@ -2,81 +2,24 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 
-# Logging
+# ──────────────────────────────────────────────
+# Logging / Server
+# ──────────────────────────────────────────────
 LOG_FILE_NAME = "bot.log"
 PORT = int(os.getenv("PORT", "5010"))
 
-OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
-MSG_EFFECT = 5046509860389126442
-
-# Shortener
-SHORT_URL = os.getenv("SHORT_URL", "")
-SHORT_API = os.getenv("SHORT_API", "")
-SHORT_TUT = os.getenv("SHORT_TUT", "")
-
+# ──────────────────────────────────────────────
 # Telegram
+# ──────────────────────────────────────────────
 SESSION = os.getenv("SESSION", "Kaya")
 TOKEN = os.getenv("TOKEN", "") or os.getenv("BOT_TOKEN", "")
 API_ID = int(os.getenv("API_ID", "29245477"))
 API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
 WORKERS = int(os.getenv("WORKERS", "5"))
+OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
+MSG_EFFECT = 5046509860389126442
 
-# MongoDB (file store / core bot data: users, pros, fsub, settings, etc.)
-DB_URI = os.getenv("DB_URI", "")
-DB_NAME = os.getenv("DB_NAME", "cluster0")
 
-# MongoDB (Link Share store) - separate database/cluster from the file store.
-LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
-LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "cluster0")
-
-# ---------------------------------------------------------------------------
-# Anime Index / Mini App (Touka) — separate MongoDB so catalog data never
-# collides with file-store collections.
-# Falls back to DB_URI if WEB_DB_URI is not set.
-# ---------------------------------------------------------------------------
-WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
-WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
-
-# Public HTTPS URL of this deployment (required for Telegram Mini App + deep links)
-WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
-# Channel/group the bot posts anime request + report notifications to
-LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
-# Flask secret for session cookies
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
-# Branding for the mini app + /anidex
-BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
-BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
-BANNER_IMAGE_URL = os.getenv("BANNER_IMAGE_URL", "")
-START_MSG = os.getenv(
-    "START_MSG",
-    "HELLO {first_name}\\n\\n"
-    "I am {brand_name} bot. Use /anidex to browse, search and request anime.\\n\\n"
-    "\U0001f4fa Browse trending anime, search for your favorites, and "
-    "request anime that isn't available yet.\\n\\n"
-    "_Your all-in-one anime station._",
-).replace("\\n", "\n")
-CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
-ANILIST_ENDPOINT = "https://graphql.anilist.co"
-
-# Force Subscribe
-# Format: [[channel_id, request_enabled, timer_minutes], ...]
-_fsubs_raw = os.getenv("FSUBS", "")
-if _fsubs_raw:
-    import ast
-    try:
-        FSUBS = ast.literal_eval(_fsubs_raw)
-    except Exception:
-        FSUBS = [[-1002369123167, True, 5]]
-else:
-    FSUBS = [[-1002369123167, True, 5]]
-
-# Channels
-DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1002497924209"))
-
-# Auto Delete
-AUTO_DEL = os.getenv("AUTO_DEL", "300")
-
-# Admins (used by both file-store and anime mini-app)
 def _split_ids(raw: str):
     ids = []
     for chunk in str(raw).split(","):
@@ -85,45 +28,94 @@ def _split_ids(raw: str):
             ids.append(int(chunk))
     return ids
 
+
 ADMINS = _split_ids(os.getenv("ADMINS", "8771195193"))
 if OWNER_ID not in ADMINS:
     ADMINS.append(OWNER_ID)
 
-# Bot Settings
+# ──────────────────────────────────────────────
+# MongoDB — File Store
+# ──────────────────────────────────────────────
+DB_URI = os.getenv("DB_URI", "")
+DB_NAME = os.getenv("DB_NAME", "cluster0")
+
+# ──────────────────────────────────────────────
+# MongoDB — Link Share
+# ──────────────────────────────────────────────
+LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
+LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "linkshare")
+
+# ──────────────────────────────────────────────
+# MongoDB — Anime Index / Mini App
+# ──────────────────────────────────────────────
+WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
+WEB_DB_NAME = os.getenv("WEB_DB_NAME", "anime_index")
+
+# ──────────────────────────────────────────────
+# Anime Index branding + /anidex
+# ──────────────────────────────────────────────
+BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
+BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
+BANNER_IMAGE_URL = os.getenv("BANNER_IMAGE_URL", "")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
+SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
+ANILIST_ENDPOINT = "https://graphql.anilist.co"
+
+# /anidex welcome message  ({first_name}, {brand_name} placeholders)
+INDEX_MSG = os.getenv(
+    "INDEX_MSG",
+    "HELLO {first_name}\\n\\n"
+    "I am {brand_name} bot. Use /anidex to browse, search and request anime.\\n\\n"
+    "\U0001f4fa Browse trending anime, search for your favorites, and "
+    "request anime that isn't available yet.\\n\\n"
+    "_Your all-in-one anime station._",
+).replace("\\n", "\n")
+
+# Keep old name as alias so plugins/index.py still works
+START_MSG = INDEX_MSG
+
+# ──────────────────────────────────────────────
+# Shortener
+# ──────────────────────────────────────────────
+SHORT_URL = os.getenv("SHORT_URL", "")
+SHORT_API = os.getenv("SHORT_API", "")
+SHORT_TUT = os.getenv("SHORT_TUT", "")
+
+# ──────────────────────────────────────────────
+# Channels / Force Sub / Bot settings
+# ──────────────────────────────────────────────
+DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1002497924209"))
+FSUBS = [[-1002369123167, True, 5]]
+AUTO_DEL = os.getenv("AUTO_DEL", "300")
 DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
 PROTECT = os.getenv("PROTECT", "False").lower() == "true"
 
-# Messages
+# ──────────────────────────────────────────────
+# Messages (file-store start / fsub / about / shortener)
+# ──────────────────────────────────────────────
 MESSAGES = {
-    "START": os.getenv(
-        "MSG_START",
-        "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴄᴏᴍᴍᴜɴɪᴛʏ ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ʏᴏᴜ ᴄᴀɴ ᴅᴏ sᴏ ʙʏ sᴜʙsᴄʀɪʙɪɴɢ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ\nᴛʜᴀɴᴋs ғᴏʀ ʏᴏᴜʀ sᴜᴘᴘᴏʀᴛ</b>",
-    ),
-    "FSUB": os.getenv(
-        "MSG_FSUB",
-        "<b><blockquote>ʜᴇʟʟᴏ ᴡᴇʟᴄᴏᴍᴇ</blockquote>ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴊᴏɪɴ ɪɴ ᴍʏ ᴄʜᴀɴɴᴇʟ/ɢʀᴏᴜᴘ ғɪʀsᴛ</b>",
-    ),
-    "ABOUT": os.getenv(
-        "MSG_ABOUT",
-        "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ</b>",
-    ),
-    "REPLY": os.getenv("MSG_REPLY", "<b>ᴡʀᴏɴɢ ᴄᴏᴍᴍᴀɴᴅ</b>"),
-    "SHORT_MSG": os.getenv(
-        "MSG_SHORT",
-        "<b><blockquote>ʏᴏᴜʀ ᴀᴅs ᴛᴏᴋᴇɴ ɪs ᴇxᴘɪʀᴇᴅ ᴘʟᴇᴀsᴇ ᴠᴇʀɪғʏ ᴛᴏ ʀᴇɢᴀɪɴ ᴀᴄᴄᴇss</blockquote></b>",
-    ),
-    "START_PHOTO": os.getenv("START_PHOTO", ""),
-    "FSUB_PHOTO": os.getenv("FSUB_PHOTO", ""),
-    "SHORT_PIC": os.getenv("SHORT_PIC", ""),
+    "START": "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴄᴏᴍᴍᴜɴɪᴛʏ ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ʏᴏᴜ ᴄᴀɴ ᴅᴏ sᴏ ʙʏ sᴜʙsᴄʀɪʙɪɴɢ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ\nᴛʜᴀɴᴋs ғᴏʀ ʏᴏᴜʀ sᴜᴘᴘᴏʀᴛ</b>",
+    "FSUB": "<b><blockquote>ʜᴇʟʟᴏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ <a href='https://t.me/Ecchi_Dex'>ᴇᴄᴄʜɪ ᴅᴇx</a></blockquote>ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴊᴏɪɴ ɪɴ ᴍʏ ᴄʜᴀɴɴᴇʟ/ɢʀᴏᴜᴘ ғɪʀsᴛ, ᴘʟᴇᴀsᴇ sᴜʙsᴄʀɪʙᴇ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs ᴛʜʀᴏᴜɢʜ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴀɴᴅ sᴛᴀʀᴛ ʙᴏᴛ ᴀɢᴀɪɴ<blockquote>ʜᴏᴡ ᴛᴏ ᴜsᴇ ʙᴏᴛ <a href=https://t.me/NexusTutorial/6>ᴛᴜᴛᴏʀɪᴀʟ ᴄʟɪᴄᴋ ʜᴇʀᴇ</a></blockquote></b>",
+    "ABOUT": "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ʏᴏᴜ ᴄᴀɴ ᴅᴏ sᴏ ʙʏ sᴜʙsᴄʀɪʙɪɴɢ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ ᴛʜᴀɴᴋs Fᴏʀ ʏᴏᴜʀ sᴜᴘᴘᴏʀᴛ\n❏ ʙᴏᴛ ᴄᴏᴍᴍᴀɴᴅs\n├/start : sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ\nsɪᴍᴘʟʏ ᴄʟɪᴄᴋ ᴏɴ ʟɪɴᴋ ᴀɴᴅ sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ ᴊᴏɪɴ ʙᴏᴛʜ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ ᴛʜᴀᴛs ɪᴛ.</b>",
+    "REPLY": "<b>ᴡʀᴏɴɢ ᴄᴏᴍᴍᴀɴᴅ</b>",
+    "SHORT_MSG": "<b><blockquote>ʏᴏᴜʀ ᴀᴅs ᴛᴏᴋᴇɴ ɪs ᴇxᴘɪʀᴇᴅ ᴘʟᴇᴀsᴇ ᴠᴇʀɪғʏ ᴛᴏ ʀᴇɢᴀɪɴ ᴀᴄᴄᴇss ᴛᴏ ᴛʜᴇ ʙᴏᴛs</blockquote>ᴡʜᴀᴛ ɪs ᴛʜᴇ ᴛᴏᴋᴇɴ?ᴛʜɪs ɪs ᴀɴ ᴀᴅs ᴛᴏᴋᴇɴ. ᴘᴀssɪɴɢ ᴏɴᴇ ᴀᴅ ᴀʟʟᴏᴡs ʏᴏᴜ ᴛᴏ ᴜsᴇ ᴛʜᴇ ᴏᴜʀ ʙᴏᴛs</b>",
+    "START_PHOTO": "https://i.ibb.co/0R9k9x4M/tmpbtpr7q0.jpg",
+    "FSUB_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
+    "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
+    "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
 }
 
-# Compat alias used by Touka-style code
+# ──────────────────────────────────────────────
+# Compat namespace for Anime Index mini-app / DB layer
+# ──────────────────────────────────────────────
 class Config:
-    """Namespace matching ToukaV5 Config for the mini-app / anime_database."""
     BRAND_NAME = BRAND_NAME
     BRAND_HANDLE = BRAND_HANDLE
     BANNER_IMAGE_URL = BANNER_IMAGE_URL
-    START_MSG = START_MSG
+    START_MSG = INDEX_MSG
+    INDEX_MSG = INDEX_MSG
     BOT_TOKEN = TOKEN
     WEBAPP_URL = WEBAPP_URL
     LOG_CHANNEL_ID = LOG_CHANNEL_ID

@@ -21,7 +21,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_from_dir
 from flask_compress import Compress
 
 from config import Config, TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE, CATALOG_CACHE_TTL, LOG_CHANNEL_ID
-from helper import anime_database as db
+from helper import database as db
 
 # AniList source
 from plugins.anilist import AniListSource
