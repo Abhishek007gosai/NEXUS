@@ -82,8 +82,9 @@ async def settings_page_2(client, query):
 <pre>{client.reply_text}</pre>
     """
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', 'protect'), InlineKeyboardButton('ᴘʜᴏᴛᴏs', 'photos')],
-        [InlineKeyboardButton('ᴛᴇxᴛs', 'texts'), InlineKeyboardButton('sʜᴏʀᴛɴᴇʀ', 'shortner')],
+        [InlineKeyboardButton('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', 'protect'), InlineKeyboardButton('ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ', 'disable_btn')],
+        [InlineKeyboardButton('ᴘʜᴏᴛᴏs', 'photos'), InlineKeyboardButton('ᴛᴇxᴛs', 'texts')],
+        [InlineKeyboardButton('sʜᴏʀᴛɴᴇʀ', 'shortner')],
         [InlineKeyboardButton('‹ ᴘʀᴇᴠ', 'settings'), InlineKeyboardButton('ʜᴏᴍᴇ', 'home')]
     ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
@@ -512,6 +513,13 @@ __Use the appropriate button below to add or remove any admin based on your need
 async def protect(client, query):
     client.protect = False if client.protect else True
     return await settings(client, query)
+
+#===============================================================#
+
+@Client.on_callback_query(filters.regex("^disable_btn$"))
+async def disable_btn(client, query):
+    client.disable_btn = False if client.disable_btn else True
+    return await settings_page_2(client, query)
 
 #===============================================================#
 

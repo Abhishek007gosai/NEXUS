@@ -13,6 +13,38 @@ async def _delete_after(message, seconds):
         pass
 
 
+def _strip_share_button(reply_markup):
+    """Remove only the 'Share URL' button from a reply markup, keeping every
+    other button (season/episode nav, etc.) untouched.
+    Returns (changed, new_markup)."""
+    if not reply_markup or not getattr(reply_markup, "inline_keyboard", None):
+        return False, reply_markup
+    changed = False
+    new_rows = []
+    for row in reply_markup.inline_keyboard:
+        new_row = [btn for btn in row if not (btn.url and "telegram.me/share/url" in btn.url)]
+        if len(new_row) != len(row):
+            changed = True
+        if new_row:
+            new_rows.append(new_row)
+    if not changed:
+        return False, reply_markup
+    return True, (InlineKeyboardMarkup(new_rows) if new_rows else None)
+
+
+async def _strip_share_button_from_copy(client, chat_id, copied_message):
+    """After copying a message into the DB channel, remove its Share URL
+    button (if any) so it never gets re-delivered to end users."""
+    if not copied_message:
+        return
+    changed, new_markup = _strip_share_button(copied_message.reply_markup)
+    if changed:
+        try:
+            await client.edit_message_reply_markup(chat_id, copied_message.id, reply_markup=new_markup)
+        except Exception:
+            pass
+
+
 async def _get_source_message(client, user_message):
     """Resolve an admin-provided forwarded message or t.me message link."""
     if user_message.forward_from_chat and user_message.forward_from_message_id:
@@ -40,6 +72,7 @@ async def _copy_one_to_db(client, source_channel_id, source_message_id):
         message_id=source_message_id,
         disable_notification=True
     )
+    await _strip_share_button_from_copy(client, client.primary_db_channel, copied)
     return copied.id
 
 
@@ -60,7 +93,11 @@ async def _copy_range_to_db(client, source_channel_id, first_id, last_id):
                 disable_notification=True
             )
             if copied:
-                copied_ids.extend(m.id for m in copied if m)
+                for m in copied:
+                    if not m:
+                        continue
+                    await _strip_share_button_from_copy(client, client.primary_db_channel, m)
+                    copied_ids.append(m.id)
         except Exception:
             # Fall back to individual copies so one unsupported/service message
             # does not prevent the rest of the selected range from being stored.
