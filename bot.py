@@ -16,22 +16,24 @@ from helper import MongoDB, LinkShareDB
 version = "v2.0.0"
 
 # ──────────────────────────────
-# ✅ FLASK + THREAD (Render Support)
+# Flask = Anime Index mini app (Touka) + health endpoint
 # ──────────────────────────────
 
-flask_app = Flask(__name__)
+from app import app as flask_app, set_bot_client
 
-@flask_app.route("/")
-def home():
+
+@flask_app.route("/bot-health")
+def bot_health():
     return "Bot is running!", 200
 
 
 def run_flask():
+    port = int(os.environ.get("PORT", PORT or 10000))
     flask_app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000)),
+        port=port,
         threaded=True,
-        use_reloader=False
+        use_reloader=False,
     )
 
 #================================================
@@ -246,6 +248,12 @@ class Bot(Client):
             )
 
         self.username = usr_bot_me.username
+
+        # Share Pyrogram client with the mini-app (invite links / logs)
+        try:
+            set_bot_client(self)
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"set_bot_client: {e}")
 
     async def stop(self, *args):
         await super().stop()
