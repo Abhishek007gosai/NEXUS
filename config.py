@@ -82,8 +82,7 @@ MESSAGES = {
     "FSUB_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
-    # Custom image shown on every bot anime search result (paste https URL)
-    "SEARCH_PHOTO": "",
+    "SEARCH_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
 }
 
 # Aliases for /anidex
