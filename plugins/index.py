@@ -33,8 +33,9 @@ from config import (
     BRAND_NAME,
     WEBAPP_URL,
     BANNER_IMAGE_URL,
-    INDEX_MSG, START_MSG,
+    INDEX_MSG,
     ADMINS,
+    MESSAGES,
 )
 from helper import database as db
 
@@ -73,25 +74,57 @@ def new_session(**kwargs) -> str:
 
 
 def _webapp_button(label: str | None = None) -> InlineKeyboardButton:
-    label = label or f"\U0001f4d6 Open {BRAND_NAME}"
+    """/anidex — open the Anime Index mini app."""
+    label = label or "ᴏᴘᴇɴ ɪɴᴅᴇx"
     if WEBAPP_URL.startswith("https://"):
         return InlineKeyboardButton(label, web_app=WebAppInfo(url=WEBAPP_URL))
     return InlineKeyboardButton(label, url=WEBAPP_URL or "https://telegram.org")
 
 
-def _open_post_button(anime: dict) -> InlineKeyboardButton:
-    if WEBAPP_URL.startswith("https://"):
-        url = f"{WEBAPP_URL}?anime={anime['id']}"
-        return InlineKeyboardButton("\u25b6 Open Post", web_app=WebAppInfo(url=url))
-    return InlineKeyboardButton("\u25b6 Open Post", url=WEBAPP_URL or "https://telegram.org")
+def _open_post_button(anime: dict) -> InlineKeyboardButton | None:
+    """Available titles: direct join_link only — never the mini app."""
+    join = (anime.get("join_link") or "").strip()
+    if join.startswith("http://") or join.startswith("https://"):
+        return InlineKeyboardButton("ᴄʟɪᴄᴋ", url=join)
+    return None
 
 
 def _search_in_app_button(text: str) -> InlineKeyboardButton:
-    label = f"\U0001f4d6 Open {BRAND_NAME}"
+    """Not available — open mini app Search to request it."""
+    label = "ᴏᴘᴇɴ"
     if WEBAPP_URL.startswith("https://"):
         url = f"{WEBAPP_URL}?search={quote(text)}"
         return InlineKeyboardButton(label, web_app=WebAppInfo(url=url))
     return InlineKeyboardButton(label, url=WEBAPP_URL or "https://telegram.org")
+
+
+async def _send_anime_result(
+    message: Message,
+    anime: dict,
+    reply_markup: InlineKeyboardMarkup,
+    client: Client | None = None,
+    chat_id: int | None = None,
+):
+    """Send poster image when available, otherwise plain title text."""
+    title = anime.get("title") or "Anime"
+    custom = (MESSAGES.get("SEARCH_PHOTO") or "").strip()
+    # Prefer your custom SEARCH_PHOTO for all search results when set
+    if custom.startswith(("http://", "https://")):
+        poster = custom
+    else:
+        poster = (anime.get("poster_url") or "").strip()
+    target = chat_id or (message.chat.id if message and message.chat else None)
+    kwargs = dict(reply_markup=reply_markup, protect_content=True)
+    if poster.startswith("http://") or poster.startswith("https://"):
+        try:
+            if client and target is not None:
+                return await client.send_photo(target, poster, caption=title, **kwargs)
+            return await message.reply_photo(poster, caption=title, **kwargs)
+        except Exception:
+            pass
+    if client and target is not None:
+        return await client.send_message(target, title, **kwargs)
+    return await message.reply_text(title, **kwargs)
 
 
 def _delete_message_later(chat_id: int, message_id: int, delay: float = 120) -> None:
@@ -123,19 +156,23 @@ def _display_name(user) -> str:
 
 @Client.on_message(filters.command("anidex") & filters.private)
 async def cmd_anidex(client: Client, message: Message):
-    user = message.from_user
     try:
         text = INDEX_MSG.format(
-            first_name=getattr(user, "first_name", None) or "there",
+            first_name=(message.from_user.first_name if message.from_user else None) or "there",
             brand_name=BRAND_NAME,
         )
     except (KeyError, IndexError, ValueError):
         text = INDEX_MSG
     kb = InlineKeyboardMarkup([[_webapp_button()]])
     if BANNER_IMAGE_URL:
-        await message.reply_photo(BANNER_IMAGE_URL, caption=text, reply_markup=kb, protect_content=True)
+        sent = await message.reply_photo(
+            BANNER_IMAGE_URL, caption=text, reply_markup=kb, protect_content=True,
+        )
     else:
-        await message.reply_text(text, reply_markup=kb, protect_content=True)
+        sent = await message.reply_text(
+            text, reply_markup=kb, protect_content=True,
+        )
+    _delete_message_later(sent.chat.id, sent.id)
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +186,19 @@ async def cmd_anidex(client: Client, message: Message):
 )
 async def on_text_search(client: Client, message: Message):
     text = (message.text or "").strip()
-    if len(text) < 2:
+    if len(text) < 2 or len(text) > 80:
         return
     # Skip file-store / link-share deep-link style payloads
     if text.startswith(("yu3elk", "ls_")):
+        return
+    # Don't treat URLs, pure IDs, or command-like text as anime titles
+    # (avoids clashing with admin settings input / channel IDs)
+    lower = text.lower()
+    if lower.startswith(("http://", "https://", "t.me/", "tg://")):
+        return
+    if text.lstrip("-").isdigit():
+        return
+    if text.startswith(("/", "@")):
         return
 
     try:
@@ -172,25 +218,50 @@ async def on_text_search(client: Client, message: Message):
 
     if len(local_matches) == 1:
         anime = local_matches[0]
-        sent = await message.reply_text(
-            anime["title"],
-            reply_markup=InlineKeyboardMarkup([[_open_post_button(anime)]]),
-            protect_content=True,
+        btn = _open_post_button(anime)
+        if not btn:
+            # listed as available but no usable link — fall back to mini app search
+            btn = _search_in_app_button(anime.get("title") or text)
+        sent = await _send_anime_result(
+            message, anime, InlineKeyboardMarkup([[btn]]),
         )
         _delete_message_later(sent.chat.id, sent.id)
         return
 
-    sid = new_session(kind="searchpick", matches=local_matches[:8])
+    matches = local_matches[:8]
+    sid = new_session(kind="searchpick", matches=matches)
     rows = [
         [InlineKeyboardButton(m["title"], callback_data=f"searchpick:{sid}:{i}")]
-        for i, m in enumerate(local_matches[:8])
+        for i, m in enumerate(matches)
     ]
     rows.append([InlineKeyboardButton("Cancel", callback_data=f"cancel:{sid}")])
-    sent = await message.reply_text(
-        f"Found {len(local_matches)} matches for '{text}':",
-        reply_markup=InlineKeyboardMarkup(rows),
-        protect_content=True,
-    )
+    kb = InlineKeyboardMarkup(rows)
+    caption = f"Found {len(local_matches)} matches for '{text}':"
+    custom = (MESSAGES.get("SEARCH_PHOTO") or "").strip()
+    if custom.startswith(("http://", "https://")):
+        poster = custom
+    else:
+        poster = next(
+            (
+                (m.get("poster_url") or "").strip()
+                for m in matches
+                if (m.get("poster_url") or "").startswith(("http://", "https://"))
+            ),
+            "",
+        )
+    if poster:
+        try:
+            sent = await message.reply_photo(
+                poster, caption=caption, reply_markup=kb, protect_content=True,
+            )
+        except Exception:
+            sent = await message.reply_text(
+                caption, reply_markup=kb, protect_content=True,
+            )
+    else:
+        sent = await message.reply_text(
+            caption, reply_markup=kb, protect_content=True,
+        )
     _delete_message_later(sent.chat.id, sent.id)
 
 
@@ -233,10 +304,19 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         SESSIONS.pop(sid, None)
         await q.answer()
         try:
-            await q.message.edit_text(
-                match["title"],
-                reply_markup=InlineKeyboardMarkup([[_open_post_button(match)]]),
+            btn = _open_post_button(match)
+            if not btn:
+                btn = _search_in_app_button(match.get("title") or "")
+            kb = InlineKeyboardMarkup([[btn]])
+            chat_id = q.message.chat.id if q.message and q.message.chat else q.from_user.id
+            try:
+                await q.message.delete()
+            except Exception:
+                pass
+            sent = await _send_anime_result(
+                q.message, match, kb, client=client, chat_id=chat_id,
             )
+            _delete_message_later(sent.chat.id, sent.id)
         except Exception:
             pass
         return
