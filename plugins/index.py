@@ -33,10 +33,10 @@ from config import (
     BRAND_NAME,
     WEBAPP_URL,
     BANNER_IMAGE_URL,
-    START_MSG,
+    INDEX_MSG, START_MSG,
     ADMINS,
 )
-from helper import anime_database as db
+from helper import database as db
 
 SESSIONS: dict[str, dict] = {}
 SESSION_TTL = 15 * 60
@@ -125,17 +125,17 @@ def _display_name(user) -> str:
 async def cmd_anidex(client: Client, message: Message):
     user = message.from_user
     try:
-        text = START_MSG.format(
+        text = INDEX_MSG.format(
             first_name=user.first_name or "there",
             brand_name=BRAND_NAME,
         )
     except (KeyError, IndexError, ValueError):
-        text = START_MSG
+        text = INDEX_MSG
     kb = InlineKeyboardMarkup([[_webapp_button()]])
     if BANNER_IMAGE_URL:
-        await message.reply_photo(BANNER_IMAGE_URL, caption=text, reply_markup=kb)
+        await message.reply_photo(BANNER_IMAGE_URL, caption=text, reply_markup=kb, protect_content=True)
     else:
-        await message.reply_text(text, reply_markup=kb)
+        await message.reply_text(text, reply_markup=kb, protect_content=True)
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +165,7 @@ async def on_text_search(client: Client, message: Message):
         sent = await message.reply_text(
             f"'{text}' isn't posted yet. Open {BRAND_NAME} to search and request it.",
             reply_markup=kb,
+            protect_content=True,
         )
         _delete_message_later(sent.chat.id, sent.id)
         return
@@ -174,6 +175,7 @@ async def on_text_search(client: Client, message: Message):
         sent = await message.reply_text(
             anime["title"],
             reply_markup=InlineKeyboardMarkup([[_open_post_button(anime)]]),
+            protect_content=True,
         )
         _delete_message_later(sent.chat.id, sent.id)
         return
@@ -187,6 +189,7 @@ async def on_text_search(client: Client, message: Message):
     sent = await message.reply_text(
         f"Found {len(local_matches)} matches for '{text}':",
         reply_markup=InlineKeyboardMarkup(rows),
+        protect_content=True,
     )
     _delete_message_later(sent.chat.id, sent.id)
 
