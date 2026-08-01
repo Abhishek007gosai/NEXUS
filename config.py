@@ -20,18 +20,7 @@ OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
 MSG_EFFECT = 5046509860389126442
 
 
-def _split_ids(raw: str):
-    ids = []
-    for chunk in str(raw).split(","):
-        chunk = chunk.strip()
-        if chunk.lstrip("-").isdigit():
-            ids.append(int(chunk))
-    return ids
-
-
-ADMINS = _split_ids(os.getenv("ADMINS", "8771195193"))
-if OWNER_ID not in ADMINS:
-    ADMINS.append(OWNER_ID)
+ADMINS = [8771195193]
 
 # ──────────────────────────────────────────────
 # MongoDB — File Store
@@ -93,11 +82,17 @@ MESSAGES = {
     "FSUB_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
+    # Custom image shown on every bot anime search result (paste https URL)
+    "SEARCH_PHOTO": "",
 }
 
 # Aliases for /anidex
 INDEX_MSG = MESSAGES["INDEX"]
 START_MSG = INDEX_MSG
+
+_search_photo_env = os.getenv("SEARCH_PHOTO", "").strip()
+if _search_photo_env:
+    MESSAGES["SEARCH_PHOTO"] = _search_photo_env
 
 # ──────────────────────────────────────────────
 # Compat namespace for Anime Index mini-app / DB layer

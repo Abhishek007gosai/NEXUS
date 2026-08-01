@@ -314,6 +314,11 @@ def index():
     return render_template("index.html", brand_name=Config.BRAND_NAME, brand_handle=Config.BRAND_HANDLE)
 
 
+@app.get("/favicon.ico")
+def favicon():
+    return "", 204
+
+
 @app.get("/healthz")
 def healthz():
     # Also opportunistically warms the Trending/Popular/Most-popular cache

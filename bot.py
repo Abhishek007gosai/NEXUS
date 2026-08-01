@@ -5,7 +5,6 @@ import os
 from aiohttp import web
 from plugins import web_server
 from threading import Thread
-from flask import Flask
 from pyrogram import Client
 from pyrogram.enums import ParseMode
 import sys
@@ -28,6 +27,8 @@ def bot_health():
 
 
 def run_flask():
+    import logging
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
     port = int(os.environ.get("PORT", PORT or 10000))
     flask_app.run(
         host="0.0.0.0",
@@ -249,12 +250,23 @@ class Bot(Client):
 
         self.username = usr_bot_me.username
 
-        # Polling mode: clear any leftover webhook so Telegram stops POSTing to /
+        # Polling mode: clear any leftover webhook so Telegram stops POSTing to /.
+        # Use Bot API HTTP — pyrofork Client may not expose delete_webhook().
         try:
-            await self.delete_webhook(drop_pending_updates=False)
-            self.LOGGER(__name__, self.name).info("Webhook cleared (polling mode)")
+            import requests as _req
+            from config import TOKEN as _tok
+            r = _req.get(
+                f"https://api.telegram.org/bot{_tok}/deleteWebhook",
+                params={"drop_pending_updates": "true"},
+                timeout=15,
+            )
+            data = r.json() if r.ok else {}
+            if data.get("ok"):
+                self.LOGGER(__name__, self.name).info("Webhook cleared (polling mode)")
+            else:
+                self.LOGGER(__name__, self.name).warning(f"deleteWebhook: {data}")
         except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"delete_webhook: {e}")
+            self.LOGGER(__name__, self.name).warning(f"deleteWebhook: {e}")
 
         # Share Pyrogram client with the mini-app (invite links / logs)
         try:
