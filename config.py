@@ -27,7 +27,7 @@ DB_NAME = os.getenv("DB_NAME", "cluster0")
 
 # MongoDB (Link Share store) - separate database/cluster from the file store.
 LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
-LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "linkshare")
+LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "cluster0")
 
 # ---------------------------------------------------------------------------
 # Anime Index / Mini App (Touka) — separate MongoDB so catalog data never
@@ -35,7 +35,7 @@ LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "linkshare")
 # Falls back to DB_URI if WEB_DB_URI is not set.
 # ---------------------------------------------------------------------------
 WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
-WEB_DB_NAME = os.getenv("WEB_DB_NAME", "anime_index")
+WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
 
 # Public HTTPS URL of this deployment (required for Telegram Mini App + deep links)
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
