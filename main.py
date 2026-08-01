@@ -27,7 +27,9 @@ async def main():
             API_ID,
             API_HASH,
             PROTECT,
-            DISABLE_BTN
+            DISABLE_BTN,
+            LINKSHARE_DB_URI,
+            LINKSHARE_DB_NAME
         )
     )
 

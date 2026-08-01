@@ -21,9 +21,15 @@ API_ID = int(os.getenv("API_ID", "29245477"))
 API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
 WORKERS = int(os.getenv("WORKERS", "5"))
 
-# MongoDB
+# MongoDB (file store / core bot data: users, pros, fsub, settings, etc.)
 DB_URI = os.getenv("DB_URI", "")
 DB_NAME = "cluster0"
+
+# MongoDB (Link Share store) - separate database/cluster from the file store.
+# Falls back to the main DB_URI/DB_NAME if not set, so existing deployments
+# keep working without extra configuration.
+LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
+LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "linkshare")
 # Force Subscribe
 FSUBS = [[-1002369123167, True, 5]] 
 # Channels
