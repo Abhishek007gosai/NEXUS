@@ -1,1 +1,1 @@
-from .database import MongoDB
+from .database import MongoDB, LinkShareDB
