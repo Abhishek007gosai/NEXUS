@@ -1,7 +1,7 @@
 import motor.motor_asyncio
 from datetime import datetime, timedelta
 import time
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from config import Config
 
@@ -893,7 +893,7 @@ def _next_id(counter_name: str) -> int:
         {"_id": counter_name},
         {"$inc": {"seq": 1}},
         upsert=True,
-        return_document=True,
+        return_document=ReturnDocument.AFTER,
     )
     return doc["seq"]
 
