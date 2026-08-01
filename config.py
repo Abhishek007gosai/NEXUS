@@ -52,7 +52,7 @@ WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
 WEB_DB_NAME = os.getenv("WEB_DB_NAME", "anime_index")
 
 # ──────────────────────────────────────────────
-# Anime Index branding + /anidex
+# Anime Index branding
 # ──────────────────────────────────────────────
 BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
 BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
@@ -62,19 +62,6 @@ LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
 ANILIST_ENDPOINT = "https://graphql.anilist.co"
-
-# /anidex welcome message  ({first_name}, {brand_name} placeholders)
-INDEX_MSG = os.getenv(
-    "INDEX_MSG",
-    "HELLO {first_name}\\n\\n"
-    "I am {brand_name} bot. Use /anidex to browse, search and request anime.\\n\\n"
-    "\U0001f4fa Browse trending anime, search for your favorites, and "
-    "request anime that isn't available yet.\\n\\n"
-    "_Your all-in-one anime station._",
-).replace("\\n", "\n")
-
-# Keep old name as alias so plugins/index.py still works
-START_MSG = INDEX_MSG
 
 # ──────────────────────────────────────────────
 # Shortener
@@ -93,9 +80,10 @@ DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
 PROTECT = os.getenv("PROTECT", "False").lower() == "true"
 
 # ──────────────────────────────────────────────
-# Messages (file-store start / fsub / about / shortener)
+# Messages
 # ──────────────────────────────────────────────
 MESSAGES = {
+    "INDEX": "ᴛʜɪs ɪs ᴀɴɪᴍᴇ ɪɴᴅᴇx ʜᴇʀᴇ ʏᴏᴜ ᴄᴀɴ ʙʀᴏᴡsᴇ, sᴇᴀʀᴄʜ ʏᴏᴜ ғᴀᴠᴏᴜʀɪᴛᴇ ᴀɴɪᴍᴇ",
     "START": "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴄᴏᴍᴍᴜɴɪᴛʏ ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ʏᴏᴜ ᴄᴀɴ ᴅᴏ sᴏ ʙʏ sᴜʙsᴄʀɪʙɪɴɢ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ\nᴛʜᴀɴᴋs ғᴏʀ ʏᴏᴜʀ sᴜᴘᴘᴏʀᴛ</b>",
     "FSUB": "<b><blockquote>ʜᴇʟʟᴏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ <a href='https://t.me/Ecchi_Dex'>ᴇᴄᴄʜɪ ᴅᴇx</a></blockquote>ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴊᴏɪɴ ɪɴ ᴍʏ ᴄʜᴀɴɴᴇʟ/ɢʀᴏᴜᴘ ғɪʀsᴛ, ᴘʟᴇᴀsᴇ sᴜʙsᴄʀɪʙᴇ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs ᴛʜʀᴏᴜɢʜ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴀɴᴅ sᴛᴀʀᴛ ʙᴏᴛ ᴀɢᴀɪɴ<blockquote>ʜᴏᴡ ᴛᴏ ᴜsᴇ ʙᴏᴛ <a href=https://t.me/NexusTutorial/6>ᴛᴜᴛᴏʀɪᴀʟ ᴄʟɪᴄᴋ ʜᴇʀᴇ</a></blockquote></b>",
     "ABOUT": "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ʏᴏᴜ ᴄᴀɴ ᴅᴏ sᴏ ʙʏ sᴜʙsᴄʀɪʙɪɴɢ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ ᴛʜᴀɴᴋs Fᴏʀ ʏᴏᴜʀ sᴜᴘᴘᴏʀᴛ\n❏ ʙᴏᴛ ᴄᴏᴍᴍᴀɴᴅs\n├/start : sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ\nsɪᴍᴘʟʏ ᴄʟɪᴄᴋ ᴏɴ ʟɪɴᴋ ᴀɴᴅ sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ ᴊᴏɪɴ ʙᴏᴛʜ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ ᴛʜᴀᴛs ɪᴛ.</b>",
@@ -107,6 +95,10 @@ MESSAGES = {
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
 }
 
+# Aliases for /anidex
+INDEX_MSG = MESSAGES["INDEX"]
+START_MSG = INDEX_MSG
+
 # ──────────────────────────────────────────────
 # Compat namespace for Anime Index mini-app / DB layer
 # ──────────────────────────────────────────────
@@ -114,8 +106,8 @@ class Config:
     BRAND_NAME = BRAND_NAME
     BRAND_HANDLE = BRAND_HANDLE
     BANNER_IMAGE_URL = BANNER_IMAGE_URL
-    START_MSG = INDEX_MSG
-    INDEX_MSG = INDEX_MSG
+    START_MSG = MESSAGES["INDEX"]
+    INDEX_MSG = MESSAGES["INDEX"]
     BOT_TOKEN = TOKEN
     WEBAPP_URL = WEBAPP_URL
     LOG_CHANNEL_ID = LOG_CHANNEL_ID

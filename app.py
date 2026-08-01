@@ -305,8 +305,12 @@ def propagate_link_full_franchise(anime_id: int, link: str) -> int:
     return updated
 
 
-@app.get("/")
+@app.route("/", methods=["GET", "POST"])
 def index():
+    # Telegram may still POST updates here if an old webhook points at WEBAPP_URL.
+    # We run Pyrogram in polling mode, so ignore POSTs with 200 to stop retry spam.
+    if request.method == "POST":
+        return "", 200
     return render_template("index.html", brand_name=Config.BRAND_NAME, brand_handle=Config.BRAND_HANDLE)
 
 

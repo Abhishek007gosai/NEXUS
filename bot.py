@@ -249,6 +249,13 @@ class Bot(Client):
 
         self.username = usr_bot_me.username
 
+        # Polling mode: clear any leftover webhook so Telegram stops POSTing to /
+        try:
+            await self.delete_webhook(drop_pending_updates=False)
+            self.LOGGER(__name__, self.name).info("Webhook cleared (polling mode)")
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"delete_webhook: {e}")
+
         # Share Pyrogram client with the mini-app (invite links / logs)
         try:
             set_bot_client(self)
