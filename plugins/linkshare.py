@@ -1,4 +1,4 @@
-"""
+.....#"""
 Permanent Link Share Menu.
 
 - Settings -> Link Share Menu
