@@ -36,7 +36,7 @@ AUTO_DEL = "300"
 ADMINS = [8771195193]
 
 # Bot Settings
-DISABLE_BTN = os.getenv("DISABLE_BTN", "True").lower() == "true"
+DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
 PROTECT = os.getenv("PROTECT", "False").lower() == "true"
 
 # Messages
