@@ -203,9 +203,8 @@ async def batch(client: Client, message: Message):
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 sʜᴀʀᴇ ᴜʀʟ", url=f'https://telegram.me/share/url?url={link}')]])
     sent = await second_message.reply_text(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʙᴀᴛᴄʜ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
-        quote=True, reply_markup=reply_markup, protect_content=True
+        quote=True, reply_markup=reply_markup
     )
-    asyncio.create_task(_delete_after(sent, 300))
 
 #===============================================================#
 
@@ -255,8 +254,7 @@ async def link_generator(client: Client, message: Message):
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 sʜᴀʀᴇ ᴜʀʟ", url=f'https://telegram.me/share/url?url={link}')]])
     sent = await channel_message.reply_text(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
-        quote=True, reply_markup=reply_markup, protect_content=True
+        quote=True, reply_markup=reply_markup
     )
-    asyncio.create_task(_delete_after(sent, 300))
 
 #===============================================================#
