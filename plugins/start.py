@@ -48,7 +48,7 @@ async def start_command(client: Client, message: Message):
         if base64_string.startswith("ls_"):
             try:
                 token = base64_string[3:]
-                token_data = await client.mongodb.get_link_share_token(token)
+                token_data = await client.linkshare_db.get_link_share_token(token)
                 if not token_data:
                     return await message.reply_text(
                         "<b>Invalid or expired invite link.</b>",
@@ -282,13 +282,17 @@ async def start_command(client: Client, message: Message):
                 else ("" if not msg.caption else msg.caption.html)
             )
             reply_markup = msg.reply_markup if not client.disable_btn else None
+            # Only posts that have a button get forced forward protection,
+            # regardless of the global PROTECT setting. Posts without a
+            # button keep using client.protect as before.
+            protect_this = True if reply_markup else client.protect
 
             try:
                 copied_msg = await msg.copy(
                     chat_id=message.from_user.id,
                     caption=caption,
                     reply_markup=reply_markup,
-                    protect_content=client.protect
+                    protect_content=protect_this
                 )
                 yugen_msgs.append(copied_msg)
             except FloodWait as e:
@@ -297,7 +301,7 @@ async def start_command(client: Client, message: Message):
                     chat_id=message.from_user.id,
                     caption=caption,
                     reply_markup=reply_markup,
-                    protect_content=client.protect
+                    protect_content=protect_this
                 )
                 yugen_msgs.append(copied_msg)
             except Exception as e:

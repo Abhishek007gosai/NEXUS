@@ -93,7 +93,7 @@ async def link_share_add(client, query):
         return await msg.reply("<b>I am not a member of that channel.</b>", reply_markup=back)
     except RPCError as e:
         return await msg.reply(f"<b>Unable to access channel:</b> {e}", reply_markup=back)
-    await client.mongodb.add_link_share_channel(channel_id, {"name": chat.title, "username": chat.username, "added_at": datetime.utcnow(), "is_active": True})
+    await client.linkshare_db.add_link_share_channel(channel_id, {"name": chat.title, "username": chat.username, "added_at": datetime.utcnow(), "is_active": True})
     await msg.reply(f"<b>Channel <code>{chat.title}</code> ({channel_id}) has been added successfully.</b>", reply_markup=back)
 
 
@@ -101,7 +101,7 @@ async def link_share_add(client, query):
 async def link_share_delete(client, query):
     if not is_admin(client, query.from_user.id):
         return await query.answer("Only admins can delete channels!", show_alert=True)
-    channels = await client.mongodb.get_link_share_channels()
+    channels = await client.linkshare_db.get_link_share_channels()
     if not channels:
         return await _edit_query_message(query, "<b>No Link Share channels found.</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="link_share")]]))
     buttons = [[InlineKeyboardButton(data.get("name", cid), callback_data=f"ls_del:{cid}")] for cid, data in channels.items()]
@@ -114,7 +114,7 @@ async def link_share_delete_confirm(client, query):
     if not is_admin(client, query.from_user.id):
         return await query.answer("Only admins can delete channels!", show_alert=True)
     channel_id = int(query.data.split(":", 1)[1])
-    removed = await client.mongodb.remove_link_share_channel(channel_id)
+    removed = await client.linkshare_db.remove_link_share_channel(channel_id)
     await query.answer("Channel deleted." if removed else "Channel not found.", show_alert=True)
     await _show_link_share_home(client, query)
 
@@ -124,11 +124,11 @@ async def _get_channel_link(client, channel_id: int, is_request: bool) -> str:
     build its deep link. The token never changes once created, so the
     button for a given channel always points to the same URL."""
     kind = "request" if is_request else "normal"
-    token = await client.mongodb.get_link_share_channel_token(channel_id, kind)
+    token = await client.linkshare_db.get_link_share_channel_token(channel_id, kind)
     if not token:
         token = secrets.token_urlsafe(16)
-        await client.mongodb.create_link_share_token(token, channel_id, is_request, None)
-        await client.mongodb.set_link_share_channel_token(channel_id, kind, token)
+        await client.linkshare_db.create_link_share_token(token, channel_id, is_request, None)
+        await client.linkshare_db.set_link_share_channel_token(channel_id, kind, token)
     return f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
 
 
@@ -138,7 +138,7 @@ async def send_link_share_page(client, query, request_link: bool, page: int):
     if not is_admin(client, query.from_user.id):
         return await query.answer("Only admins can access this!", show_alert=True)
 
-    channels = await client.mongodb.get_link_share_channels()
+    channels = await client.linkshare_db.get_link_share_channels()
     if not channels:
         await _edit_query_message(
             query,
@@ -212,7 +212,7 @@ async def link_share_request_page(client, query):
 async def link_share_list(client, query):
     if not is_admin(client, query.from_user.id):
         return await query.answer("Only admins can access this!", show_alert=True)
-    channels = await client.mongodb.get_link_share_channels()
+    channels = await client.linkshare_db.get_link_share_channels()
     if not channels:
         text = "<b>No Link Share channels configured.</b>"
     else:
