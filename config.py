@@ -82,7 +82,7 @@ MESSAGES = {
     "FSUB_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
-    "SEARCH_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
+    "SEARCH_PHOTO": "",
 }
 
 # Aliases for /anidex
