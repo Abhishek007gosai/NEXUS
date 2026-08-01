@@ -126,7 +126,7 @@ async def cmd_anidex(client: Client, message: Message):
     user = message.from_user
     try:
         text = INDEX_MSG.format(
-            first_name=user.first_name or "there",
+            first_name=getattr(user, "first_name", None) or "there",
             brand_name=BRAND_NAME,
         )
     except (KeyError, IndexError, ValueError):
