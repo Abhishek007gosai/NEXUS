@@ -46,13 +46,22 @@ async def _strip_share_button_from_copy(client, chat_id, copied_message):
 
 
 async def _get_source_message(client, user_message):
-    """Resolve an admin-provided forwarded message or t.me message link."""
+    """Resolve an admin-provided forwarded message, a t.me message link, or
+    a plain message ID that is already inside the primary DB channel."""
     if user_message.forward_from_chat and user_message.forward_from_message_id:
         return user_message.forward_from_chat.id, user_message.forward_from_message_id
     if user_message.forward_sender_name:
         return None, None
     if user_message.text:
-        match = re.match(r"https://t.me/(?:c/)?([^/]+)/([0-9]+)", user_message.text.strip())
+        text = user_message.text.strip()
+
+        # Plain message ID (e.g. "1523") = a message already sitting in the
+        # primary DB channel. This avoids relying on forward metadata, which
+        # Telegram can strip when the DB channel has content protection on.
+        if text.isdigit():
+            return getattr(client, 'primary_db_channel', client.db), int(text)
+
+        match = re.match(r"https://t.me/(?:c/)?([^/]+)/([0-9]+)", text)
         if not match:
             return None, None
         channel_ref, msg_id = match.group(1), int(match.group(2))
@@ -62,6 +71,17 @@ async def _get_source_message(client, user_message):
         except Exception:
             return None, None
     return None, None
+
+
+def _is_db_channel(client, channel_id):
+    """True if channel_id is already one of the configured DB channels
+    (primary or any secondary channel added via the DB Channels settings)."""
+    if channel_id is None:
+        return False
+    if channel_id == getattr(client, 'primary_db_channel', client.db):
+        return True
+    db_channels = getattr(client, 'db_channels', {})
+    return str(channel_id) in db_channels
 
 
 async def _copy_forward_to_db(client, message):
@@ -165,7 +185,7 @@ async def batch(client: Client, message: Message):
                 text=f"""<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ꜰɪʀsᴛ ꜰɪʟᴇ/ᴍᴇssᴀɢᴇ ᴛᴏ sᴛᴏʀᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ.</blockquote>
 {db_channels_info}
 
-<blockquote>ᴏʀ sᴇɴᴅ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ ᴘᴏsᴛ ʟɪɴᴋ</blockquote>""",
+<blockquote>ᴏʀ sᴇɴᴅ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ ᴘᴏsᴛ ʟɪɴᴋ, ᴏʀ ᴊᴜsᴛ ᴛʜᴇ ᴍᴇssᴀɢᴇ ID ɪғ ɪᴛ's ᴀʟʀᴇᴀᴅʏ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ</blockquote>""",
                 chat_id=message.from_user.id,
                 filters=(filters.forwarded | (filters.text & ~filters.forwarded)),
                 timeout=60
@@ -173,6 +193,14 @@ async def batch(client: Client, message: Message):
         except Exception:
             return
         source_channel_id, first_id = await _get_source_message(client, first_message)
+        if source_channel_id and first_id and not _is_db_channel(client, source_channel_id):
+            await first_message.reply(
+                "<blockquote>✗ ɴᴏᴛ ᴀ ᴅʙ ᴄʜᴀɴɴᴇʟ ᴘᴏsᴛ</blockquote>\n\n"
+                "/batch only works for files already stored in a DB channel. "
+                "Use /genlink first to store files from other channels.",
+                quote=True
+            )
+            continue
         if source_channel_id and first_id:
             break
         await first_message.reply("<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\nForward a valid channel post or send its t.me message link.", quote=True)
@@ -180,7 +208,7 @@ async def batch(client: Client, message: Message):
     while True:
         try:
             second_message = await client.ask(
-                text="<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ʟᴀsᴛ ꜰɪʟᴇ/ᴍᴇssᴀɢᴇ ᴛᴏ sᴛᴏʀᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ.</blockquote>",
+                text="<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ʟᴀsᴛ ꜰɪʟᴇ/ᴍᴇssᴀɢᴇ ᴛᴏ sᴛᴏʀᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ, ᴏʀ ᴊᴜsᴛ ɪᴛs ᴍᴇssᴀɢᴇ ID.</blockquote>",
                 chat_id=message.from_user.id,
                 filters=(filters.forwarded | (filters.text & ~filters.forwarded)),
                 timeout=60
@@ -192,12 +220,18 @@ async def batch(client: Client, message: Message):
             break
         await second_message.reply("<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\nThe first and last messages must be from the same source channel.", quote=True)
 
-    copied_ids = await _copy_range_to_db(client, source_channel_id, first_id, last_id)
+    # source_channel_id is guaranteed to already be a DB channel at this
+    # point (enforced above), so we only ever reuse existing message IDs -
+    # /batch never copies/re-uploads files from outside channels.
+    lo, hi = min(first_id, last_id), max(first_id, last_id)
+    copied_ids = list(range(lo, hi + 1))
+    multiplier_channel = source_channel_id
+
     if not copied_ids:
         return await second_message.reply("<blockquote>✗ ɴᴏ ᴍᴇssᴀɢᴇs ᴄᴏᴜʟᴅ ʙᴇ sᴛᴏʀᴇᴅ.</blockquote>", quote=True)
 
     copied_start, copied_end = min(copied_ids), max(copied_ids)
-    string = f"get-{copied_start * abs(client.primary_db_channel)}-{copied_end * abs(client.primary_db_channel)}"
+    string = f"get-{copied_start * abs(multiplier_channel)}-{copied_end * abs(multiplier_channel)}"
     base64_string = await encode(string)
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 sʜᴀʀᴇ ᴜʀʟ", url=f'https://telegram.me/share/url?url={link}')]])
