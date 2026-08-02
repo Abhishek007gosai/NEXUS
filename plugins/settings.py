@@ -480,29 +480,44 @@ __Use the appropriate button below to add or remove an admin based on your needs
 
 @Client.on_callback_query(filters.regex("^photos$"))
 async def photos(client, query):
-    msg = f"""<blockquote>**Force Subscription Settings:**</blockquote>
-**Start Photo:** `{client.messages.get("START_PHOTO", "None")}`
-**Force Sub Photo:** `{client.messages.get('FSUB_PHOTO', 'None')}`
+    msg = f"""<blockquote>**Photo Settings:**</blockquote>
+**Start Photo:** `{client.messages.get("START_PHOTO") or "None"}`
+**Force Sub Photo:** `{client.messages.get("FSUB_PHOTO") or "None"}`
+**Search Photo:** `{client.messages.get("SEARCH_PHOTO") or "None"}`
+**Index Photo:** `{client.messages.get("INDEX_PHOTO") or "None"}`
 
-__Use the appropriate button below to add or remove any admin based on your needs!__
+__Set or remove images used by /start, force-sub, anime search, and /anidex.__
 """
     reply_markup = InlineKeyboardMarkup([
-    [
-        InlineKeyboardButton(
-            ('ꜱᴇᴛ' if client.messages.get("START_PHOTO", "") == "" else 'ᴄʜᴀɴɢᴇ') + '\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ', 
-            callback_data='add_start_photo'
-        ),
-        InlineKeyboardButton(
-            ('ꜱᴇᴛ' if client.messages.get("FSUB_PHOTO", "") == "" else 'ᴄʜᴀɴɢᴇ') + '\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ', 
-            callback_data='add_fsub_photo'
-        )
-    ],
-    [
-        InlineKeyboardButton('ʀᴇᴍᴏᴠᴇ\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ', callback_data='rm_start_photo'),
-        InlineKeyboardButton('ʀᴇᴍᴏᴠᴇ\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ', callback_data='rm_fsub_photo')
-    ],
-    [InlineKeyboardButton('◂ ʙᴀᴄᴋ', callback_data='settings')]
-
+        [
+            InlineKeyboardButton(
+                ("ꜱᴇᴛ" if not client.messages.get("START_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ",
+                callback_data="add_start_photo",
+            ),
+            InlineKeyboardButton(
+                ("ꜱᴇᴛ" if not client.messages.get("FSUB_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ",
+                callback_data="add_fsub_photo",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                ("ꜱᴇᴛ" if not client.messages.get("SEARCH_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nꜱᴇᴀʀᴄʜ ᴘʜᴏᴛᴏ",
+                callback_data="add_search_photo",
+            ),
+            InlineKeyboardButton(
+                ("ꜱᴇᴛ" if not client.messages.get("INDEX_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nɪɴᴅᴇx ᴘʜᴏᴛᴏ",
+                callback_data="add_index_photo",
+            ),
+        ],
+        [
+            InlineKeyboardButton("ʀᴇᴍᴏᴠᴇ\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ", callback_data="rm_start_photo"),
+            InlineKeyboardButton("ʀᴇᴍᴏᴠᴇ\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ", callback_data="rm_fsub_photo"),
+        ],
+        [
+            InlineKeyboardButton("ʀᴇᴍᴏᴠᴇ\nꜱᴇᴀʀᴄʜ ᴘʜᴏᴛᴏ", callback_data="rm_search_photo"),
+            InlineKeyboardButton("ʀᴇᴍᴏᴠᴇ\nɪɴᴅᴇx ᴘʜᴏᴛᴏ", callback_data="rm_index_photo"),
+        ],
+        [InlineKeyboardButton("◂ ʙᴀᴄᴋ", callback_data="settings")],
     ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return
@@ -558,14 +573,17 @@ async def texts(client, query):
 <pre>{client.messages.get('FSUB', 'Empty')}</pre>
 **About Message:**
 <pre>{client.messages.get('ABOUT', 'Empty')}</pre>
+**Index Message (/anidex):**
+<pre>{client.messages.get('INDEX', 'Empty')}</pre>
 **Reply Message:**
 <pre>{client.reply_text}</pre>
     """
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f'ꜱᴛᴀʀᴛ ᴛᴇxᴛ', 'start_txt'), InlineKeyboardButton(f'ꜰꜱᴜʙ ᴛᴇxᴛ', 'fsub_txt')],
-        [InlineKeyboardButton('ʀᴇᴘʟʏ ᴛᴇxᴛ', 'reply_txt'), InlineKeyboardButton('ᴀʙᴏᴜᴛ ᴛᴇxᴛ', 'about_txt')],
-        [InlineKeyboardButton('◂ ʙᴀᴄᴋ', 'settings')]]
-    )
+        [InlineKeyboardButton("ꜱᴛᴀʀᴛ ᴛᴇxᴛ", "start_txt"), InlineKeyboardButton("ꜰꜱᴜʙ ᴛᴇxᴛ", "fsub_txt")],
+        [InlineKeyboardButton("ʀᴇᴘʟʏ ᴛᴇxᴛ", "reply_txt"), InlineKeyboardButton("ᴀʙᴏᴜᴛ ᴛᴇxᴛ", "about_txt")],
+        [InlineKeyboardButton("ɪɴᴅᴇx ᴛᴇxᴛ", "index_txt")],
+        [InlineKeyboardButton("◂ ʙᴀᴄᴋ", "settings")],
+    ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return
 

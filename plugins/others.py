@@ -379,5 +379,45 @@ async def unban(client: Client, message: Message):
     
         return await message.reply(f"**Error:** `{e}`")
 
-#==========================================================================#                
+#==========================================================================#
 
+# ---------------------------------------------------------------------------
+# /commands — owner only: list every bot command
+# ---------------------------------------------------------------------------
+from config import OWNER_ID as _CMD_OWNER_ID
+
+
+@Client.on_message(filters.command("commands") & filters.private)
+async def list_all_commands(client: Client, message: Message):
+    uid = message.from_user.id if message.from_user else 0
+    if uid != _CMD_OWNER_ID:
+        return
+    text = """<b>📋 Bot Commands</b>
+
+<b>User</b>
+├ /start — Start the bot
+├ /anidex — Open Anime Index
+├ /profile — Your profile
+├ /request — Request something
+└ (send anime title) — Search library
+
+<b>Links</b>
+├ /genlink — Generate file link
+└ /batch — Batch file links
+
+<b>Admin</b>
+├ /stats — Bot stats
+├ /users — User count
+├ /broadcast — Broadcast message
+├ /pbroadcast — Premium broadcast
+├ /shortner — Shortener panel
+├ /db — DB channels
+├ /adddb — Add DB channel
+├ /removedb — Remove DB channel
+├ /ban — Ban user
+├ /unban — Unban user
+├ /addpremium — Add premium
+├ /delpremium — Remove premium
+├ /premiumusers — List premium
+└ /commands — This list (owner only)"""
+    await message.reply_text(text)

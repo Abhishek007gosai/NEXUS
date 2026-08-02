@@ -54,7 +54,7 @@ _BOT_COMMANDS = {
     "start", "anidex", "shortner", "users", "broadcast", "batch", "genlink",
     "usage", "pbroadcast", "ban", "unban", "addpremium", "delpremium",
     "premiumusers", "request", "profile", "db", "adddb", "removedb",
-    "settings", "help", "about",
+    "settings", "help", "about", "commands",
 }
 
 
@@ -107,15 +107,19 @@ async def _send_anime_result(
 ):
     """Send poster image when available, otherwise plain title text."""
     title = anime.get("title") or "Anime"
-    custom = (MESSAGES.get("SEARCH_PHOTO") or "").strip()
-    # Prefer your custom SEARCH_PHOTO for all search results when set
-    if custom.startswith(("http://", "https://")):
+    custom = ""
+    if client is not None:
+        custom = (getattr(client, "messages", {}) or {}).get("SEARCH_PHOTO") or ""
+    if not custom:
+        custom = (MESSAGES.get("SEARCH_PHOTO") or "").strip()
+    custom = (custom or "").strip()
+    if custom:
         poster = custom
     else:
         poster = (anime.get("poster_url") or "").strip()
     target = chat_id or (message.chat.id if message and message.chat else None)
     kwargs = dict(reply_markup=reply_markup, protect_content=True)
-    if poster.startswith("http://") or poster.startswith("https://"):
+    if poster:
         try:
             if client and target is not None:
                 return await client.send_photo(target, poster, caption=title, **kwargs)
@@ -156,17 +160,20 @@ def _display_name(user) -> str:
 
 @Client.on_message(filters.command("anidex") & filters.private)
 async def cmd_anidex(client: Client, message: Message):
+    msgs = getattr(client, "messages", None) or {}
+    raw = msgs.get("INDEX") or INDEX_MSG
     try:
-        text = INDEX_MSG.format(
+        text = raw.format(
             first_name=(message.from_user.first_name if message.from_user else None) or "there",
             brand_name=BRAND_NAME,
         )
     except (KeyError, IndexError, ValueError):
-        text = INDEX_MSG
+        text = raw
     kb = InlineKeyboardMarkup([[_webapp_button()]])
-    if BANNER_IMAGE_URL:
+    photo = (msgs.get("INDEX_PHOTO") or BANNER_IMAGE_URL or "").strip()
+    if photo:
         sent = await message.reply_photo(
-            BANNER_IMAGE_URL, caption=text, reply_markup=kb, protect_content=True,
+            photo, caption=text, reply_markup=kb, protect_content=True,
         )
     else:
         sent = await message.reply_text(
@@ -219,12 +226,19 @@ async def on_text_search(client: Client, message: Message):
     if len(local_matches) == 1:
         anime = local_matches[0]
         btn = _open_post_button(anime)
-        if not btn:
-            # listed as available but no usable link — fall back to mini app search
+        if btn:
+            # Available: title + direct link only (no poster)
+            sent = await message.reply_text(
+                anime.get("title") or text,
+                reply_markup=InlineKeyboardMarkup([[btn]]),
+                protect_content=True,
+            )
+        else:
+            # Not fully linked — open mini app (optional custom/search photo)
             btn = _search_in_app_button(anime.get("title") or text)
-        sent = await _send_anime_result(
-            message, anime, InlineKeyboardMarkup([[btn]]),
-        )
+            sent = await _send_anime_result(
+                message, anime, InlineKeyboardMarkup([[btn]]), client=client,
+            )
         _delete_message_later(sent.chat.id, sent.id)
         return
 
@@ -237,31 +251,9 @@ async def on_text_search(client: Client, message: Message):
     rows.append([InlineKeyboardButton("Cancel", callback_data=f"cancel:{sid}")])
     kb = InlineKeyboardMarkup(rows)
     caption = f"Found {len(local_matches)} matches for '{text}':"
-    custom = (MESSAGES.get("SEARCH_PHOTO") or "").strip()
-    if custom.startswith(("http://", "https://")):
-        poster = custom
-    else:
-        poster = next(
-            (
-                (m.get("poster_url") or "").strip()
-                for m in matches
-                if (m.get("poster_url") or "").startswith(("http://", "https://"))
-            ),
-            "",
-        )
-    if poster:
-        try:
-            sent = await message.reply_photo(
-                poster, caption=caption, reply_markup=kb, protect_content=True,
-            )
-        except Exception:
-            sent = await message.reply_text(
-                caption, reply_markup=kb, protect_content=True,
-            )
-    else:
-        sent = await message.reply_text(
-            caption, reply_markup=kb, protect_content=True,
-        )
+    sent = await message.reply_text(
+        caption, reply_markup=kb, protect_content=True,
+    )
     _delete_message_later(sent.chat.id, sent.id)
 
 
@@ -305,17 +297,25 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         await q.answer()
         try:
             btn = _open_post_button(match)
-            if not btn:
-                btn = _search_in_app_button(match.get("title") or "")
-            kb = InlineKeyboardMarkup([[btn]])
             chat_id = q.message.chat.id if q.message and q.message.chat else q.from_user.id
             try:
                 await q.message.delete()
             except Exception:
                 pass
-            sent = await _send_anime_result(
-                q.message, match, kb, client=client, chat_id=chat_id,
-            )
+            if btn:
+                # Available: title + direct link only (no poster)
+                sent = await client.send_message(
+                    chat_id,
+                    match.get("title") or "Anime",
+                    reply_markup=InlineKeyboardMarkup([[btn]]),
+                    protect_content=True,
+                )
+            else:
+                btn = _search_in_app_button(match.get("title") or "")
+                sent = await _send_anime_result(
+                    q.message, match, InlineKeyboardMarkup([[btn]]),
+                    client=client, chat_id=chat_id,
+                )
             _delete_message_later(sent.chat.id, sent.id)
         except Exception:
             pass
