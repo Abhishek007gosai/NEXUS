@@ -15,9 +15,9 @@ async def texts(client, query):
 <pre>{client.reply_text}</pre>
     """
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f'ꜱᴛᴀʀᴛ ᴛᴇxᴛ', 'start_txt'), InlineKeyboardButton(f'ꜰꜱᴜʙ ᴛᴇxᴛ', 'fsub_txt')],
-        [InlineKeyboardButton('ʀᴇᴘʟʏ ᴛᴇxᴛ', 'reply_txt'), InlineKeyboardButton('ᴀʙᴏᴜᴛ ᴛᴇxᴛ', 'about_txt')],
-        [InlineKeyboardButton('◂ ʙᴀᴄᴋ', 'settings')]]
+        [InlineKeyboardButton(f'🔵 ꜱᴛᴀʀᴛ ᴛᴇxᴛ', 'start_txt'), InlineKeyboardButton(f'🔵 ꜰꜱᴜʙ ᴛᴇxᴛ', 'fsub_txt')],
+        [InlineKeyboardButton('🔵 ʀᴇᴘʟʏ ᴛᴇxᴛ', 'reply_txt'), InlineKeyboardButton('🔵 ᴀʙᴏᴜᴛ ᴛᴇxᴛ', 'about_txt')],
+        [InlineKeyboardButton('🔴 ◂ ʙᴀᴄᴋ', 'settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return

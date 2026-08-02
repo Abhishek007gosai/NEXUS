@@ -42,11 +42,11 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
 """
     
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'add_db_channel')],
-        [InlineKeyboardButton('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'rm_db_channel')],
-        [InlineKeyboardButton('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', 'set_primary_db')],
-        [InlineKeyboardButton('›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', 'toggle_db_status')],
-        [InlineKeyboardButton('›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', 'db_details')]
+        [InlineKeyboardButton('🟢 ›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'add_db_channel')],
+        [InlineKeyboardButton('🔴 ›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'rm_db_channel')],
+        [InlineKeyboardButton('🔵 ›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', 'set_primary_db')],
+        [InlineKeyboardButton('🔵 ›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', 'toggle_db_status')],
+        [InlineKeyboardButton('🔵 ›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', 'db_details')]
     ])
     
     await message.reply(msg, reply_markup=reply_markup)
@@ -101,7 +101,7 @@ async def db_details(client, query):
 • ʏᴏᴜ ᴄᴀɴ ʜᴀᴠᴇ ᴍᴜʟᴛɪᴘʟᴇ ᴅʙ ᴄʜᴀɴɴᴇʟs ғᴏʀ ʙᴇᴛᴛᴇʀ ʀᴇʟɪᴀʙɪʟɪᴛʏ"""
     
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton('‹ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ', 'back_to_db_management')]
+        [InlineKeyboardButton('🔴 ‹ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ', 'back_to_db_management')]
     ])
     
     await query.message.edit_text(msg, reply_markup=reply_markup)
@@ -144,11 +144,11 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
 """
     
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'add_db_channel')],
-        [InlineKeyboardButton('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'rm_db_channel')],
-        [InlineKeyboardButton('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', 'set_primary_db')],
-        [InlineKeyboardButton('›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', 'toggle_db_status')],
-        [InlineKeyboardButton('›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', 'db_details')]
+        [InlineKeyboardButton('🟢 ›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'add_db_channel')],
+        [InlineKeyboardButton('🔴 ›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', 'rm_db_channel')],
+        [InlineKeyboardButton('🔵 ›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', 'set_primary_db')],
+        [InlineKeyboardButton('🔵 ›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', 'toggle_db_status')],
+        [InlineKeyboardButton('🔵 ›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', 'db_details')]
     ])
     
     
@@ -285,9 +285,9 @@ async def quick_remove_db(client: Client, message: Message):
 
 @Client.on_callback_query(filters.regex('^home$'))
 async def home(client: Client, query: CallbackQuery):
-    buttons = [[InlineKeyboardButton("Help", callback_data = "about"), InlineKeyboardButton("Close", callback_data = "close")]]
+    buttons = [[InlineKeyboardButton("🔴 Help", callback_data = "about"), InlineKeyboardButton("🔴 Close", callback_data = "close")]]
     if query.from_user.id in client.admins:
-        buttons.insert(0, [InlineKeyboardButton("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", callback_data="settings")])
+        buttons.insert(0, [InlineKeyboardButton("🔴 ⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", callback_data="settings")])
     await query.message.edit_text(
         text=client.messages.get('START', 'No Start Message').format(
             first=query.from_user.first_name,
@@ -305,7 +305,7 @@ async def home(client: Client, query: CallbackQuery):
 
 @Client.on_callback_query(filters.regex('^about$'))
 async def about(client: Client, query: CallbackQuery):
-    buttons = [[InlineKeyboardButton("Back", callback_data = "home"), InlineKeyboardButton("Close", callback_data = "close")]]
+    buttons = [[InlineKeyboardButton("🔴 Back", callback_data = "home"), InlineKeyboardButton("🔴 Close", callback_data = "close")]]
     await query.message.edit_text(
         text=client.messages.get('ABOUT', 'No Start Message').format(
             owner_id=client.owner,
