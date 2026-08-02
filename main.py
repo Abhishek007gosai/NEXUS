@@ -3,8 +3,6 @@ from threading import Thread
 
 asyncio.set_event_loop(asyncio.new_event_loop())
 
-# Patch Client with ask/listen (Kurigram has no built-in pyromod)
-import pyromod  # noqa: F401
 
 from bot import Bot, run_flask
 from pyrogram import compose
