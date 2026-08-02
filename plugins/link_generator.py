@@ -2,7 +2,7 @@ import asyncio
 import re
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from helper.helper_func import encode, get_message_id
+from helper.helper_func import encode, get_message_id, styled_button
 from config import LOGGER
 
 async def _delete_after(message, seconds):
@@ -234,7 +234,7 @@ async def batch(client: Client, message: Message):
     string = f"get-{copied_start * abs(multiplier_channel)}-{copied_end * abs(multiplier_channel)}"
     base64_string = await encode(string)
     link = f"https://t.me/{client.username}?start={base64_string}"
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 sʜᴀʀᴇ ᴜʀʟ", url=f'https://telegram.me/share/url?url={link}')]])
+    reply_markup = InlineKeyboardMarkup([[styled_button("🔁 sʜᴀʀᴇ ᴜʀʟ", style="primary", url=f'https://telegram.me/share/url?url={link}')]])
     sent = await second_message.reply_text(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʙᴀᴛᴄʜ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
         quote=True, reply_markup=reply_markup
@@ -285,7 +285,7 @@ async def link_generator(client: Client, message: Message):
 
     base64_string = await encode(f"get-{db_message_id * abs(client.primary_db_channel)}")
     link = f"https://t.me/{client.username}?start={base64_string}"
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 sʜᴀʀᴇ ᴜʀʟ", url=f'https://telegram.me/share/url?url={link}')]])
+    reply_markup = InlineKeyboardMarkup([[styled_button("🔁 sʜᴀʀᴇ ᴜʀʟ", style="primary", url=f'https://telegram.me/share/url?url={link}')]])
     sent = await channel_message.reply_text(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
         quote=True, reply_markup=reply_markup

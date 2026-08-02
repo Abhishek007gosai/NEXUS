@@ -1,5 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from helper.helper_func import styled_button
 import time
 
 import psutil
@@ -16,8 +17,8 @@ async def admins(client, query):
 __Use the appropriate button below to add or remove an admin based on your needs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton('ᴀᴅᴅ ᴀᴅᴍɪɴ', 'add_admin'), InlineKeyboardButton('ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ', 'rm_admin')],
-        [InlineKeyboardButton('◂ ʙᴀᴄᴋ', 'settings')]]
+        [styled_button('ᴀᴅᴅ ᴀᴅᴍɪɴ', style="success", callback_data='add_admin'), styled_button('ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ', style="danger", callback_data='rm_admin')],
+        [styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return

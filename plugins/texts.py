@@ -1,5 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from helper.helper_func import styled_button
 
 #===============================================================#
 
@@ -15,9 +16,9 @@ async def texts(client, query):
 <pre>{client.reply_text}</pre>
     """
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f'ꜱᴛᴀʀᴛ ᴛᴇxᴛ', 'start_txt'), InlineKeyboardButton(f'ꜰꜱᴜʙ ᴛᴇxᴛ', 'fsub_txt')],
-        [InlineKeyboardButton('ʀᴇᴘʟʏ ᴛᴇxᴛ', 'reply_txt'), InlineKeyboardButton('ᴀʙᴏᴜᴛ ᴛᴇxᴛ', 'about_txt')],
-        [InlineKeyboardButton('◂ ʙᴀᴄᴋ', 'settings')]]
+        [styled_button(f'ꜱᴛᴀʀᴛ ᴛᴇxᴛ', style="primary", callback_data='start_txt'), styled_button(f'ꜰꜱᴜʙ ᴛᴇxᴛ', style="primary", callback_data='fsub_txt')],
+        [styled_button('ʀᴇᴘʟʏ ᴛᴇxᴛ', style="primary", callback_data='reply_txt'), styled_button('ᴀʙᴏᴜᴛ ᴛᴇxᴛ', style="primary", callback_data='about_txt')],
+        [styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return

@@ -38,6 +38,7 @@ from config import (
     MESSAGES,
 )
 from helper import database as db
+from helper.helper_func import styled_button
 
 SESSIONS: dict[str, dict] = {}
 SESSION_TTL = 15 * 60
@@ -77,15 +78,15 @@ def _webapp_button(label: str | None = None) -> InlineKeyboardButton:
     """/anidex — open the Anime Index mini app."""
     label = label or "ᴏᴘᴇɴ ɪɴᴅᴇx"
     if WEBAPP_URL.startswith("https://"):
-        return InlineKeyboardButton(label, web_app=WebAppInfo(url=WEBAPP_URL))
-    return InlineKeyboardButton(label, url=WEBAPP_URL or "https://telegram.org")
+        return styled_button(label, style="success", web_app=WebAppInfo(url=WEBAPP_URL))
+    return styled_button(label, style="success", url=WEBAPP_URL or "https://telegram.org")
 
 
 def _open_post_button(anime: dict) -> InlineKeyboardButton | None:
     """Available titles: direct join_link only — never the mini app."""
     join = (anime.get("join_link") or "").strip()
     if join.startswith("http://") or join.startswith("https://"):
-        return InlineKeyboardButton("ᴄʟɪᴄᴋ", url=join)
+        return styled_button("ᴄʟɪᴄᴋ", style="success", url=join)
     return None
 
 
@@ -94,8 +95,8 @@ def _search_in_app_button(text: str) -> InlineKeyboardButton:
     label = "ᴏᴘᴇɴ"
     if WEBAPP_URL.startswith("https://"):
         url = f"{WEBAPP_URL}?search={quote(text)}"
-        return InlineKeyboardButton(label, web_app=WebAppInfo(url=url))
-    return InlineKeyboardButton(label, url=WEBAPP_URL or "https://telegram.org")
+        return styled_button(label, style="success", web_app=WebAppInfo(url=url))
+    return styled_button(label, style="success", url=WEBAPP_URL or "https://telegram.org")
 
 
 async def _send_anime_result(
@@ -245,10 +246,10 @@ async def on_text_search(client: Client, message: Message):
     matches = local_matches[:8]
     sid = new_session(kind="searchpick", matches=matches)
     rows = [
-        [InlineKeyboardButton(f"{m['title']}", callback_data=f"searchpick:{sid}:{i}")]
+        [styled_button(f"{m['title']}", style="success", callback_data=f"searchpick:{sid}:{i}")]
         for i, m in enumerate(matches)
     ]
-    rows.append([InlineKeyboardButton("Cancel", callback_data=f"cancel:{sid}")])
+    rows.append([styled_button("Cancel", style="danger", callback_data=f"cancel:{sid}")])
     kb = InlineKeyboardMarkup(rows)
     caption = f"Found {len(local_matches)} matches for '{text}':"
     sent = await message.reply_text(
@@ -351,11 +352,11 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         rid = parts[1] if len(parts) > 1 else ""
         await q.answer()
         rows = [
-            [InlineKeyboardButton("Already posted", callback_data=f"reqreason:{rid}:dup")],
-            [InlineKeyboardButton("Not available", callback_data=f"reqreason:{rid}:unavailable")],
-            [InlineKeyboardButton("Not release yet", callback_data=f"reqreason:{rid}:unreleased")],
-            [InlineKeyboardButton("Other", callback_data=f"reqreason:{rid}:other")],
-            [InlineKeyboardButton("\u2190 Back", callback_data=f"reqback:{rid}")],
+            [styled_button("Already posted", style="primary", callback_data=f"reqreason:{rid}:dup")],
+            [styled_button("Not available", style="primary", callback_data=f"reqreason:{rid}:unavailable")],
+            [styled_button("Not release yet", style="primary", callback_data=f"reqreason:{rid}:unreleased")],
+            [styled_button("Other", style="primary", callback_data=f"reqreason:{rid}:other")],
+            [styled_button("\u2190 Back", style="danger", callback_data=f"reqback:{rid}")],
         ]
         try:
             await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
@@ -367,8 +368,8 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         rid = parts[1] if len(parts) > 1 else ""
         await q.answer()
         rows = [[
-            InlineKeyboardButton("\u2705 Accept", callback_data=f"reqaccept:{rid}"),
-            InlineKeyboardButton("\u274c Reject", callback_data=f"reqreject:{rid}"),
+            styled_button("\u2705 Accept", style="success", callback_data=f"reqaccept:{rid}"),
+            styled_button("\u274c Reject", style="danger", callback_data=f"reqreject:{rid}"),
         ]]
         try:
             await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
