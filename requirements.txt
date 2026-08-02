@@ -1,6 +1,7 @@
 aiohttp
 dnspython
 kurigram>=2.2.24
+pyromod>=3.1.6
 humanize
 psutil
 motor
