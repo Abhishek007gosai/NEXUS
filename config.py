@@ -27,18 +27,10 @@ ADMINS = [8771195193]
 # ──────────────────────────────────────────────
 DB_URI = os.getenv("DB_URI", "")
 DB_NAME = os.getenv("DB_NAME", "cluster0")
-
-# ──────────────────────────────────────────────
-# MongoDB — Link Share
-# ──────────────────────────────────────────────
 LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
-LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "linkshare")
-
-# ──────────────────────────────────────────────
-# MongoDB — Anime Index / Mini App
-# ──────────────────────────────────────────────
+LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "cluster0")
 WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
-WEB_DB_NAME = os.getenv("WEB_DB_NAME", "anime_index")
+WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
 
 # ──────────────────────────────────────────────
 # Anime Index branding
