@@ -1,4 +1,4 @@
-# NexusV2 + Anime Index (Touka)
+# Nexus
 
 Unified **Telegram file-store bot** (Nexus) and **Anime Index Mini App** (Touka) in one process, one bot token.
 
