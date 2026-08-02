@@ -83,10 +83,10 @@ async def shortner_panel(client, query_or_message):
 <blockquote>**≡ ᴜꜱᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴꜱ ʙᴇʟᴏᴡ ᴛᴏ ᴄᴏɴꜰɪɢᴜʀᴇ ʏᴏᴜʀ ꜱʜᴏʀᴛɴᴇʀ ꜱᴇᴛᴛɪɴɢꜱ!**</blockquote>"""
     
     reply_markup = InlineKeyboardMarkup([
-        [styled_button(f'• {toggle_text} ꜱʜᴏʀᴛɴᴇʀ •', style="primary", callback_data='toggle_shortner'), styled_button('• ᴀᴅᴅ ꜱʜᴏʀᴛɴᴇʀ •', style="success", callback_data='add_shortner')],
+        [styled_button(f'• {toggle_text} ꜱʜᴏʀᴛɴᴇʀ •', style="primary", callback_data='toggle_shortner'), styled_button('• ᴀᴅᴅ ꜱʜᴏʀᴛɴᴇʀ •', style="primary", callback_data='add_shortner')],
         [styled_button('• ꜱᴇᴛ ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ •', style="primary", callback_data='set_tutorial_link')],
         [styled_button('• ᴛᴇꜱᴛ ꜱʜᴏʀᴛɴᴇʀ •', style="primary", callback_data='test_shortner')],
-        [styled_button('◂ ʙᴀᴄᴋ ᴛᴏ ꜱᴇᴛᴛɪɴɢꜱ', style="danger", callback_data='settings')] if hasattr(query_or_message, 'message') else []
+        [styled_button('◂ ʙᴀᴄᴋ ᴛᴏ ꜱᴇᴛᴛɪɴɢꜱ', style="primary", callback_data='settings')] if hasattr(query_or_message, 'message') else []
     ])
     
     image_url = MESSAGES.get("SHORT", "https://telegra.ph/file/8aaf4df8c138c6685dcee-05d3b183d4978ec347.jpg")
@@ -172,16 +172,16 @@ __<blockquote>**≡ ꜱᴇɴᴅ ɴᴇᴡ ꜱʜᴏʀᴛɴᴇʀ ᴜʀʟ ᴀɴᴅ �
                 await client.mongodb.update_shortner_setting('short_api', new_api)
                 
                 await query.message.edit_text(f"**✓ ꜱʜᴏʀᴛɴᴇʀ ꜱᴇᴛᴛɪɴɢꜱ ᴜᴘᴅᴀᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ!**\n\n**ɴᴇᴡ ᴜʀʟ:** `{new_url}`\n**ɴᴇᴡ ᴀᴘɪ:** `{new_api[:20]}...`", 
-                                            reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+                                            reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
             else:
                 await query.message.edit_text("**✗ ɪɴᴠᴀʟɪᴅ ꜰᴏʀᴍᴀᴛ! ᴘʟᴇᴀꜱᴇ ᴄʜᴇᴄᴋ ᴜʀʟ ᴀɴᴅ ᴀᴘɪ ᴋᴇʏ.**", 
-                                            reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+                                            reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
         else:
             await query.message.edit_text("**✗ ɪɴᴠᴀʟɪᴅ ꜰᴏʀᴍᴀᴛ! ᴘʟᴇᴀꜱᴇ ᴜꜱᴇ: `ᴜʀʟ ᴀᴘɪ`**", 
-                                        reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+                                        reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
     except ListenerTimeout:
         await query.message.edit_text("**⏰ ᴛɪᴍᴇᴏᴜᴛ! ᴛʀʏ ᴀɢᴀɪɴ.**", 
-                                    reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+                                    reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
 
 #===============================================================#
 
@@ -209,13 +209,13 @@ __ꜱᴇɴᴅ ᴛʜᴇ ɴᴇᴡ ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ ɪɴ ᴛʜᴇ ɴ
             # Save to database
             await client.mongodb.update_shortner_setting('tutorial_link', new_tutorial)
             await query.message.edit_text(f"**✓ ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ ᴜᴘᴅᴀᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ!**", 
-                                        reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+                                        reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
         else:
             await query.message.edit_text("**✗ ɪɴᴠᴀʟɪᴅ ʟɪɴᴋ ꜰᴏʀᴍᴀᴛ! ᴍᴜꜱᴛ ꜱᴛᴀʀᴛ ᴡɪᴛʜ https:// ᴏʀ http://**", 
-                                        reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+                                        reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
     except ListenerTimeout:
         await query.message.edit_text("**⏰ ᴛɪᴍᴇᴏᴜᴛ! ᴛʀʏ ᴀɢᴀɪɴ.**", 
-                                    reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+                                    reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
 
 #===============================================================#
 
@@ -255,6 +255,6 @@ async def test_shortner(client: Client, query: CallbackQuery):
     except Exception as e:
         msg = f"**❌ ꜱʜᴏʀᴛɴᴇʀ ᴛᴇꜱᴛ ꜰᴀɪʟᴇᴅ!**\n\n**ᴇʀʀᴏʀ:** `{str(e)}`"
     
-    await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='shortner')]]))
+    await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='shortner')]]))
 
 

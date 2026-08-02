@@ -68,7 +68,7 @@ async def start_command(client: Client, message: Message):
                 )
                 invite_link = invite.invite_link
                 button = InlineKeyboardMarkup([
-                    [styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="success", url=invite_link)]
+                    [styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="primary", url=invite_link)]
                 ])
 
                 link_msg = await message.reply_text(

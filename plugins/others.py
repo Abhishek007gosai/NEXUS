@@ -43,8 +43,8 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
 """
     
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="success", callback_data='add_db_channel')],
-        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="danger", callback_data='rm_db_channel')],
+        [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_db_channel')],
+        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_db_channel')],
         [styled_button('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', style="primary", callback_data='set_primary_db')],
         [styled_button('›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', style="primary", callback_data='toggle_db_status')],
         [styled_button('›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', style="primary", callback_data='db_details')]
@@ -102,7 +102,7 @@ async def db_details(client, query):
 • ʏᴏᴜ ᴄᴀɴ ʜᴀᴠᴇ ᴍᴜʟᴛɪᴘʟᴇ ᴅʙ ᴄʜᴀɴɴᴇʟs ғᴏʀ ʙᴇᴛᴛᴇʀ ʀᴇʟɪᴀʙɪʟɪᴛʏ"""
     
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('‹ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ', style="danger", callback_data='back_to_db_management')]
+        [styled_button('‹ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ', style="primary", callback_data='back_to_db_management')]
     ])
     
     await query.message.edit_text(msg, reply_markup=reply_markup)
@@ -145,8 +145,8 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
 """
     
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="success", callback_data='add_db_channel')],
-        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="danger", callback_data='rm_db_channel')],
+        [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_db_channel')],
+        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_db_channel')],
         [styled_button('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', style="primary", callback_data='set_primary_db')],
         [styled_button('›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', style="primary", callback_data='toggle_db_status')],
         [styled_button('›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', style="primary", callback_data='db_details')]

@@ -18,7 +18,7 @@ async def texts(client, query):
     reply_markup = InlineKeyboardMarkup([
         [styled_button(f'ꜱᴛᴀʀᴛ ᴛᴇxᴛ', style="primary", callback_data='start_txt'), styled_button(f'ꜰꜱᴜʙ ᴛᴇxᴛ', style="primary", callback_data='fsub_txt')],
         [styled_button('ʀᴇᴘʟʏ ᴛᴇxᴛ', style="primary", callback_data='reply_txt'), styled_button('ᴀʙᴏᴜᴛ ᴛᴇxᴛ', style="primary", callback_data='about_txt')],
-        [styled_button('◂ ʙᴀᴄᴋ', style="danger", callback_data='settings')]]
+        [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return

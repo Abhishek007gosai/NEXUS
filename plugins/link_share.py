@@ -27,12 +27,12 @@ async def _edit_query_message(query, text, **kwargs):
 async def _show_link_share_home(client, query):
     """Render the Link Share home screen in the Kafka-style layout."""
     buttons = [
-        [styled_button("ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ", style="success", callback_data="ls_add"),
-         styled_button("ᴅᴇʟᴇᴛᴇ ᴄʜᴀɴɴᴇʟ", style="danger", callback_data="ls_delete")],
+        [styled_button("ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ", style="primary", callback_data="ls_add"),
+         styled_button("ᴅᴇʟᴇᴛᴇ ᴄʜᴀɴɴᴇʟ", style="primary", callback_data="ls_delete")],
         [styled_button("ɴᴏʀᴍᴀʟ", style="primary", callback_data="ls_normal"),
          styled_button("ʀᴇǫᴜᴇsᴛ", style="primary", callback_data="ls_request")],
         [styled_button("ᴄʜᴀɴɴᴇʟs ʟɪsᴛ", style="primary", callback_data="ls_list")],
-        [styled_button("ʙᴀᴄᴋ", style="danger", callback_data="settings")]
+        [styled_button("ʙᴀᴄᴋ", style="primary", callback_data="settings")]
     ]
     markup = InlineKeyboardMarkup(buttons)
     caption = (
@@ -73,7 +73,7 @@ async def link_share_menu(client, query):
 async def link_share_add(client, query):
     if not is_admin(client, query.from_user.id):
         return await query.answer("Only admins can add channels!", show_alert=True)
-    back = InlineKeyboardMarkup([[styled_button("back", style="danger", callback_data="link_share")]])
+    back = InlineKeyboardMarkup([[styled_button("back", style="primary", callback_data="link_share")]])
     await _edit_query_message(query, "<b>Send the channel ID to add.\n\nExample: <code>-1001234567890</code>\n\n/cancel to cancel.</b>", reply_markup=back)
     try:
         msg = await client.listen(chat_id=query.message.chat.id, filters=filters.text, timeout=300)
@@ -103,9 +103,9 @@ async def link_share_delete(client, query):
         return await query.answer("Only admins can delete channels!", show_alert=True)
     channels = await client.linkshare_db.get_link_share_channels()
     if not channels:
-        return await _edit_query_message(query, "<b>No Link Share channels found.</b>", reply_markup=InlineKeyboardMarkup([[styled_button("back", style="danger", callback_data="link_share")]]))
-    buttons = [[styled_button(f"{data.get('name', cid)}", style="danger", callback_data=f"ls_del:{cid}")] for cid, data in channels.items()]
-    buttons.append([styled_button("back", style="danger", callback_data="link_share")])
+        return await _edit_query_message(query, "<b>No Link Share channels found.</b>", reply_markup=InlineKeyboardMarkup([[styled_button("back", style="primary", callback_data="link_share")]]))
+    buttons = [[styled_button(f"{data.get('name', cid)}", style="primary", callback_data=f"ls_del:{cid}")] for cid, data in channels.items()]
+    buttons.append([styled_button("back", style="primary", callback_data="link_share")])
     await _edit_query_message(query, "<b>Select a channel to delete:</b>", reply_markup=InlineKeyboardMarkup(buttons))
 
 
@@ -143,7 +143,7 @@ async def send_link_share_page(client, query, request_link: bool, page: int):
         await _edit_query_message(
             query,
             "<b>No Link Share channels found. Add a channel first.</b>",
-            reply_markup=InlineKeyboardMarkup([[styled_button("‹ Bᴀᴄᴋ", style="danger", callback_data="link_share")]])
+            reply_markup=InlineKeyboardMarkup([[styled_button("‹ Bᴀᴄᴋ", style="primary", callback_data="link_share")]])
         )
         return await query.answer()
 
@@ -174,7 +174,7 @@ async def send_link_share_page(client, query, request_link: bool, page: int):
     if nav:
         buttons.append(nav)
 
-    buttons.append([styled_button("‹ Bᴀᴄᴋ", style="danger", callback_data="link_share")])
+    buttons.append([styled_button("‹ Bᴀᴄᴋ", style="primary", callback_data="link_share")])
 
     title = "📢 Nᴏʀᴍᴀʟ Iɴᴠɪᴛᴇ Lɪɴᴋs" if not request_link else "📩 Rᴇǫᴜᴇsᴛ Iɴᴠɪᴛᴇ Lɪɴᴋs"
     text = (
@@ -217,5 +217,5 @@ async def link_share_list(client, query):
         text = "<b>No Link Share channels configured.</b>"
     else:
         text = "<b>Link Share Channels</b>\n\n" + "\n\n".join(f"• <b>{data.get('name', 'Unknown')}</b>\n  <code>{cid}</code>" for cid, data in channels.items())
-    await _edit_query_message(query, text, reply_markup=InlineKeyboardMarkup([[styled_button("back", style="danger", callback_data="link_share")]]))
+    await _edit_query_message(query, text, reply_markup=InlineKeyboardMarkup([[styled_button("back", style="primary", callback_data="link_share")]]))
     await query.answer()
