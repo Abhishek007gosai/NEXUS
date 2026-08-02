@@ -8,19 +8,62 @@ from pyrogram.errors import UserNotParticipant, Forbidden, PeerIdInvalid, ChatAd
 from datetime import datetime, timedelta
 from pyrogram import errors
 
+# Telegram Bot API button colors (Kurigram / docs.kurigram.icu/api/enums/ButtonStyle)
+# PRIMARY = blue, SUCCESS = green, DANGER = red, DEFAULT = client theme
+try:
+    from pyrogram.enums import ButtonStyle
+except ImportError:  # older forks without the enum
+    ButtonStyle = None
+
+_STYLE_MAP = {}
+if ButtonStyle is not None:
+    _STYLE_MAP = {
+        "primary": ButtonStyle.PRIMARY,
+        "success": ButtonStyle.SUCCESS,
+        "danger": ButtonStyle.DANGER,
+        "default": getattr(ButtonStyle, "DEFAULT", None),
+        ButtonStyle.PRIMARY: ButtonStyle.PRIMARY,
+        ButtonStyle.SUCCESS: ButtonStyle.SUCCESS,
+        ButtonStyle.DANGER: ButtonStyle.DANGER,
+    }
+    if hasattr(ButtonStyle, "DEFAULT"):
+        _STYLE_MAP[ButtonStyle.DEFAULT] = ButtonStyle.DEFAULT
+
 #===============================================================#
 
 def styled_button(text, style=None, **kwargs):
-    """Wraps InlineKeyboardButton, applying Telegram's native button
-    color (style='primary'/'success'/'danger') when the installed
-    pyrofork version supports it. Falls back to a plain button
-    (no color) if the 'style' keyword isn't recognized, so buttons
-    keep working either way."""
-    if style:
+    """Create an InlineKeyboardButton with Telegram's native color style.
+
+    style may be:
+      - a ButtonStyle enum member (ButtonStyle.PRIMARY / SUCCESS / DANGER)
+      - a string: "primary" (blue), "success" (green), "danger" (red)
+      - None / omitted → default client style
+
+    Requires Kurigram (or any pyrogram fork that exposes ButtonStyle).
+    Falls back to a plain unstyled button if the installed library does
+    not support the style= argument.
+    """
+    resolved = None
+    if style is not None:
+        if ButtonStyle is not None and isinstance(style, ButtonStyle):
+            resolved = style
+        elif isinstance(style, str):
+            resolved = _STYLE_MAP.get(style.lower())
+        else:
+            resolved = _STYLE_MAP.get(style)
+
+    if resolved is not None:
         try:
-            return InlineKeyboardButton(text, style=style, **kwargs)
+            return InlineKeyboardButton(text, style=resolved, **kwargs)
         except TypeError:
             pass
+        # Some builds accept the raw string value instead of the enum
+        try:
+            value = resolved.value if hasattr(resolved, "value") else str(resolved)
+            return InlineKeyboardButton(text, style=value, **kwargs)
+        except TypeError:
+            pass
+
     return InlineKeyboardButton(text, **kwargs)
 
 #===============================================================#
@@ -391,7 +434,7 @@ def force_sub(func):
         from_link = message.text.split(" ")
         if len(from_link) > 1:
             try_again_link = f"https://t.me/{client.username}/?start={from_link[1]}"
-            rows.append([InlineKeyboardButton("🔄 Try Again", url=try_again_link)])
+            rows.append([styled_button("🔄 Try Again", style="primary", url=try_again_link)])
 
         buttons_markup = InlineKeyboardMarkup(rows)
         buttons_markup = None if not rows else buttons_markup
