@@ -68,7 +68,7 @@ async def start_command(client: Client, message: Message):
                 )
                 invite_link = invite.invite_link
                 button = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🟢 • ᴄʟɪᴄᴋ ʜᴇʀᴇ • 🟢", url=invite_link)]
+                    [InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)]
                 ])
 
                 link_msg = await message.reply_text(
@@ -134,10 +134,10 @@ async def start_command(client: Client, message: Message):
                 caption=short_caption,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("🔵 »ᴄʟɪᴄᴋ ʜᴇʀᴇ« 🔵", url=short_link)
+                        InlineKeyboardButton("»ᴄʟɪᴄᴋ ʜᴇʀᴇ«", url=short_link)
                     ],
                     [
-                        InlineKeyboardButton("🔵 »ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ« 🔵", url=tutorial_link)
+                        InlineKeyboardButton("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", url=tutorial_link)
                     ]
                 ]),
                 protect_content=True
@@ -332,9 +332,9 @@ async def start_command(client: Client, message: Message):
 
     # 9. Normal start message
     else:
-        buttons = [[InlineKeyboardButton("🔴 ʜᴇʟᴘ", callback_data="about"), InlineKeyboardButton("🔴 ᴄʟᴏsᴇ", callback_data='close')]]
+        buttons = [[InlineKeyboardButton("ʜᴇʟᴘ", callback_data="about"), InlineKeyboardButton("ᴄʟᴏsᴇ", callback_data='close')]]
         if user_id in client.admins:
-            buttons.insert(0, [InlineKeyboardButton("🔴 ⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", callback_data="settings")])
+            buttons.insert(0, [InlineKeyboardButton("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", callback_data="settings")])
 
         photo = client.messages.get("START_PHOTO", "")
         start_caption = client.messages.get('START', 'Welcome, {mention}').format(
@@ -377,7 +377,7 @@ async def request_command(client: Client, message: Message):
     if not is_user_premium: 
         BUTTON_URL = "https://t.me/+wekKcN1tjbAxY2U1"
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🟢 💎 Upgrade to Premium", url=BUTTON_URL)]
+            [InlineKeyboardButton("💎 Upgrade to Premium", url=BUTTON_URL)]
         ])
         await message.reply(
             "❌ **You are not a premium user.**\nUpgrade to premium to access this feature.",

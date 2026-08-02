@@ -25,8 +25,8 @@ async def fsub(client, query):
 __Use the appropriate button below to add or remove a force subscription channel based on your needs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton('🟢 ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ', 'add_fsub'), InlineKeyboardButton('🔴 ʀᴇᴍᴏᴠᴇ ᴄʜᴀɴɴᴇʟ', 'rm_fsub')],
-        [InlineKeyboardButton('🔴 ◂ ʙᴀᴄᴋ', 'settings')]]
+        [InlineKeyboardButton('ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ', 'add_fsub'), InlineKeyboardButton('ʀᴇᴍᴏᴠᴇ ᴄʜᴀɴɴᴇʟ', 'rm_fsub')],
+        [InlineKeyboardButton('◂ ʙᴀᴄᴋ', 'settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return

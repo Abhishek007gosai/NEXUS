@@ -75,7 +75,7 @@ def new_session(**kwargs) -> str:
 
 def _webapp_button(label: str | None = None) -> InlineKeyboardButton:
     """/anidex — open the Anime Index mini app."""
-    label = label or "🟢 ᴏᴘᴇɴ ɪɴᴅᴇx 🟢"
+    label = label or "ᴏᴘᴇɴ ɪɴᴅᴇx"
     if WEBAPP_URL.startswith("https://"):
         return InlineKeyboardButton(label, web_app=WebAppInfo(url=WEBAPP_URL))
     return InlineKeyboardButton(label, url=WEBAPP_URL or "https://telegram.org")
@@ -85,13 +85,13 @@ def _open_post_button(anime: dict) -> InlineKeyboardButton | None:
     """Available titles: direct join_link only — never the mini app."""
     join = (anime.get("join_link") or "").strip()
     if join.startswith("http://") or join.startswith("https://"):
-        return InlineKeyboardButton("🟢 ᴄʟɪᴄᴋ 🟢", url=join)
+        return InlineKeyboardButton("ᴄʟɪᴄᴋ", url=join)
     return None
 
 
 def _search_in_app_button(text: str) -> InlineKeyboardButton:
     """Not available — open mini app Search to request it."""
-    label = "🟢 ᴏᴘᴇɴ 🟢"
+    label = "ᴏᴘᴇɴ"
     if WEBAPP_URL.startswith("https://"):
         url = f"{WEBAPP_URL}?search={quote(text)}"
         return InlineKeyboardButton(label, web_app=WebAppInfo(url=url))
@@ -245,10 +245,10 @@ async def on_text_search(client: Client, message: Message):
     matches = local_matches[:8]
     sid = new_session(kind="searchpick", matches=matches)
     rows = [
-        [InlineKeyboardButton(f"🟢 {m['title']}", callback_data=f"searchpick:{sid}:{i}")]
+        [InlineKeyboardButton(f"{m['title']}", callback_data=f"searchpick:{sid}:{i}")]
         for i, m in enumerate(matches)
     ]
-    rows.append([InlineKeyboardButton("🔴 Cancel", callback_data=f"cancel:{sid}")])
+    rows.append([InlineKeyboardButton("Cancel", callback_data=f"cancel:{sid}")])
     kb = InlineKeyboardMarkup(rows)
     caption = f"Found {len(local_matches)} matches for '{text}':"
     sent = await message.reply_text(
@@ -351,11 +351,11 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         rid = parts[1] if len(parts) > 1 else ""
         await q.answer()
         rows = [
-            [InlineKeyboardButton("🔵 Already posted", callback_data=f"reqreason:{rid}:dup")],
-            [InlineKeyboardButton("🔵 Not available", callback_data=f"reqreason:{rid}:unavailable")],
-            [InlineKeyboardButton("🔵 Not release yet", callback_data=f"reqreason:{rid}:unreleased")],
-            [InlineKeyboardButton("🔵 Other", callback_data=f"reqreason:{rid}:other")],
-            [InlineKeyboardButton("🔴 \u2190 Back", callback_data=f"reqback:{rid}")],
+            [InlineKeyboardButton("Already posted", callback_data=f"reqreason:{rid}:dup")],
+            [InlineKeyboardButton("Not available", callback_data=f"reqreason:{rid}:unavailable")],
+            [InlineKeyboardButton("Not release yet", callback_data=f"reqreason:{rid}:unreleased")],
+            [InlineKeyboardButton("Other", callback_data=f"reqreason:{rid}:other")],
+            [InlineKeyboardButton("\u2190 Back", callback_data=f"reqback:{rid}")],
         ]
         try:
             await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
@@ -367,8 +367,8 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         rid = parts[1] if len(parts) > 1 else ""
         await q.answer()
         rows = [[
-            InlineKeyboardButton("🟢 \u2705 Accept", callback_data=f"reqaccept:{rid}"),
-            InlineKeyboardButton("🔴 \u274c Reject", callback_data=f"reqreject:{rid}"),
+            InlineKeyboardButton("\u2705 Accept", callback_data=f"reqaccept:{rid}"),
+            InlineKeyboardButton("\u274c Reject", callback_data=f"reqreject:{rid}"),
         ]]
         try:
             await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
