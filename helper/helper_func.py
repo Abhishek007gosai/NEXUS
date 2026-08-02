@@ -421,7 +421,7 @@ def force_sub(func):
                     else:
                         button_text = f"{channel_name}"
                 
-                buttons.append(styled_button("» 𝙹𝙾𝙸𝙽 𝙲𝙷𝙰𝙽𝙽𝙴𝙻 «", style="success", url=channel_link))
+                buttons.append(styled_button("𝙹𝙾𝙸𝙽 𝙲𝙷𝙰𝙽𝙽𝙴𝙻", style="success", url=channel_link))
 
         # Arrange join channel buttons 2 per row; if an odd one is left over,
         # it gets its own full-width row
