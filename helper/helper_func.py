@@ -366,14 +366,17 @@ def force_sub(func):
         if not client.fsub_dict:
             return await func(client, message)
         photo = client.messages.get('FSUB_PHOTO', '')
+        # protect_content=True → users cannot forward the force-sub message
         if photo:
             msg = await message.reply_photo(
-                caption="<b>ᴡᴀɪᴛ ᴀ sᴇᴄᴏɴᴅ.....</b>", 
-                photo=photo
+                caption="<b>ᴡᴀɪᴛ ᴀ sᴇᴄᴏɴᴅ.....</b>",
+                photo=photo,
+                protect_content=True,
             )
         else:
             msg = await message.reply(
-                "<code><b>ᴡᴀɪᴛ ᴀ sᴇᴄᴏɴᴅ.....</b></code>"
+                "<code><b>ᴡᴀɪᴛ ᴀ sᴇᴄᴏɴᴅ.....</b></code>",
+                protect_content=True,
             )
         user_id = message.from_user.id
         statuses = await check_subscription(client, user_id)
@@ -422,7 +425,7 @@ def force_sub(func):
                     else:
                         button_text = f"{channel_name}"
                 
-                buttons.append(styled_button("𝙹𝙾𝙸𝙽 𝙲𝙷𝙰𝙽𝙽𝙴𝙻", style="success", url=channel_link))
+                buttons.append(styled_button("𝙹𝙾𝙸𝙽 𝙲𝙷𝙰𝙽𝙽𝙴𝙻", style="primary", url=channel_link))
 
         # Arrange join channel buttons 2 per row; if an odd one is left over,
         # it gets its own full-width row
@@ -448,9 +451,14 @@ def force_sub(func):
             # Fallback: send new message if edit fails
             try:
                 await msg.delete()
-                await message.reply(text=channels_message, reply_markup=buttons_markup)
+                await message.reply(
+                    text=channels_message,
+                    reply_markup=buttons_markup,
+                    protect_content=True,
+                )
             except Exception:
                 pass
+
 
     return wrapper
 
