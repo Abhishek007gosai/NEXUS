@@ -9,28 +9,10 @@ import humanize
 
 @Client.on_callback_query(filters.regex("^settings$"))
 async def settings(client, query):
-    # Count active force subscription channels by type
-    total_fsub = len(client.fsub_dict)
-    request_enabled = sum(1 for data in client.fsub_dict.values() if data[2])
-    timer_enabled = sum(1 for data in client.fsub_dict.values() if data[3] > 0)
-    
-    # Count DB channels
-    total_db_channels = len(getattr(client, 'db_channels', {}))
-    primary_db = getattr(client, 'primary_db_channel', client.db)
-    
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
-›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
-›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
-›› **ʀᴇᴘʟʏ ᴛᴇxᴛ:** `{client.reply_text if client.reply_text else 'ɴᴏɴᴇ'}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
-›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
-›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
-›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('START_PHOTO', ''))}`
-›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('FSUB_PHOTO', ''))}`
-    """
+›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"ᴏɴ" if client.protect else "ᴏꜰꜰ"}`
+›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}`
+"""
     reply_markup = InlineKeyboardMarkup([
         [styled_button('ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ', style="primary", callback_data='link_share'), styled_button('ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='fsub')],
         [styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='db_channels'), styled_button('ᴄᴀᴘᴛɪᴏɴ', style="primary", callback_data='custom_caption')],
@@ -44,30 +26,16 @@ async def settings(client, query):
 
 @Client.on_callback_query(filters.regex("^settings_page_2$"))
 async def settings_page_2(client, query):
-    # Count active force subscription channels by type
-    total_fsub = len(client.fsub_dict)
-    request_enabled = sum(1 for data in client.fsub_dict.values() if data[2])
-    timer_enabled = sum(1 for data in client.fsub_dict.values() if data[3] > 0)
-    
-    # Count DB channels
-    total_db_channels = len(getattr(client, 'db_channels', {}))
-    primary_db = getattr(client, 'primary_db_channel', client.db)
-    
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
-›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
-›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
-›› **ʀᴇᴘʟʏ ᴛᴇxᴛ:** `{client.reply_text if client.reply_text else 'ɴᴏɴᴇ'}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
-›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
-›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
-›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('START_PHOTO', ''))}`
-›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('FSUB_PHOTO', ''))}`
-    """
+›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"ᴏɴ" if client.protect else "ᴏꜰꜰ"}`
+›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}`
+"""
     reply_markup = InlineKeyboardMarkup([
-        [styled_button(f'ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ: {"ᴏɴ" if client.protect else "ᴏꜰꜰ"}', style="primary" if client.protect else "danger", callback_data='protect'), styled_button(f'ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ: {"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}', style="primary" if client.disable_btn else "danger", callback_data='disable_btn')],
+        # ON/OFF only in message text — buttons are plain labels, always blue
+        [
+            styled_button('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', style="primary", callback_data='protect'),
+            styled_button('ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ', style="primary", callback_data='disable_btn'),
+        ],
         [styled_button('ᴘʜᴏᴛᴏs', style="primary", callback_data='photos'), styled_button('ᴛᴇxᴛs', style="primary", callback_data='texts')],
         [styled_button('sʜᴏʀᴛɴᴇʀ', style="primary", callback_data='shortner')],
         [styled_button('‹ ᴘʀᴇᴠ', style="primary", callback_data='settings'), styled_button('ʜᴏᴍᴇ', style="primary", callback_data='home')]
