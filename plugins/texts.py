@@ -88,27 +88,3 @@ async def reply_txt(client: Client, query: CallbackQuery):
         return client.logger(__name__, client.name).error(e)
 
 #===============================================================#
-
-@Client.on_callback_query(filters.regex("^index_txt$"))
-async def index_txt(client: Client, query: CallbackQuery):
-    await query.answer()
-    ask_text = await client.ask(
-        query.from_user.id,
-        "Send new /anidex index text in the next 60 seconds, send `0` to cancel.\n\n__Markdown/HTML allowed.__".replace("\\n", "\n"),
-        filters=filters.text,
-        timeout=60,
-    )
-    try:
-        text = ask_text.text
-        if text == "0":
-            return await ask_text.reply("__Index text has not changed!__")
-        client.messages["INDEX"] = text
-        try:
-            await client.mongodb.update_message_setting("INDEX", text)
-        except Exception:
-            pass
-        from plugins.settings import texts as texts_panel
-        await texts_panel(client, query)
-        return await ask_text.reply("__Index text has been changed!__")
-    except Exception as e:
-        return client.logger(__name__, client.name).error(e)

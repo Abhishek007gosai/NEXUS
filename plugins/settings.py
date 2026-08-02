@@ -436,10 +436,8 @@ async def photos(client, query):
     msg = f"""<blockquote>**Photo Settings:**</blockquote>
 **Start Photo:** `{client.messages.get("START_PHOTO") or "None"}`
 **Force Sub Photo:** `{client.messages.get("FSUB_PHOTO") or "None"}`
-**Search Photo:** `{client.messages.get("SEARCH_PHOTO") or "None"}`
-**Index Photo:** `{client.messages.get("INDEX_PHOTO") or "None"}`
 
-__Set or remove images used by /start, force-sub, anime search, and /anidex.__
+__Set or remove images used by /start and force-sub.__
 """
     reply_markup = InlineKeyboardMarkup([
         [
@@ -455,24 +453,8 @@ __Set or remove images used by /start, force-sub, anime search, and /anidex.__
             ),
         ],
         [
-            styled_button(
-                ("ꜱᴇᴛ" if not client.messages.get("SEARCH_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nꜱᴇᴀʀᴄʜ ᴘʜᴏᴛᴏ",
-                style="primary",
-                callback_data="add_search_photo",
-            ),
-            styled_button(
-                ("ꜱᴇᴛ" if not client.messages.get("INDEX_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nɪɴᴅᴇx ᴘʜᴏᴛᴏ",
-                style="primary",
-                callback_data="add_index_photo",
-            ),
-        ],
-        [
             styled_button("ʀᴇᴍᴏᴠᴇ\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ", style="primary", callback_data="rm_start_photo"),
             styled_button("ʀᴇᴍᴏᴠᴇ\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ", style="primary", callback_data="rm_fsub_photo"),
-        ],
-        [
-            styled_button("ʀᴇᴍᴏᴠᴇ\nꜱᴇᴀʀᴄʜ ᴘʜᴏᴛᴏ", style="primary", callback_data="rm_search_photo"),
-            styled_button("ʀᴇᴍᴏᴠᴇ\nɪɴᴅᴇx ᴘʜᴏᴛᴏ", style="primary", callback_data="rm_index_photo"),
         ],
         [styled_button("◂ ʙᴀᴄᴋ", style="primary", callback_data="settings")],
     ])
@@ -530,15 +512,12 @@ async def texts(client, query):
 <pre>{client.messages.get('FSUB', 'Empty')}</pre>
 **About Message:**
 <pre>{client.messages.get('ABOUT', 'Empty')}</pre>
-**Index Message (/anidex):**
-<pre>{client.messages.get('INDEX', 'Empty')}</pre>
 **Reply Message:**
 <pre>{client.reply_text}</pre>
     """
     reply_markup = InlineKeyboardMarkup([
         [styled_button("ꜱᴛᴀʀᴛ ᴛᴇxᴛ", style="primary", callback_data="start_txt"), styled_button("ꜰꜱᴜʙ ᴛᴇxᴛ", style="primary", callback_data="fsub_txt")],
         [styled_button("ʀᴇᴘʟʏ ᴛᴇxᴛ", style="primary", callback_data="reply_txt"), styled_button("ᴀʙᴏᴜᴛ ᴛᴇxᴛ", style="primary", callback_data="about_txt")],
-        [styled_button("ɪɴᴅᴇx ᴛᴇxᴛ", style="primary", callback_data="index_txt")],
         [styled_button("◂ ʙᴀᴄᴋ", style="primary", callback_data="settings")],
     ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
