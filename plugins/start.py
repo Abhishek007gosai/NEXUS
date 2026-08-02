@@ -2,7 +2,7 @@ from helper.helper_func import *
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import humanize
-from config import MSG_EFFECT, OWNER_ID
+from config import OWNER_ID
 from plugins.shortner import get_short
 from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification
 import asyncio
@@ -350,14 +350,12 @@ async def start_command(client: Client, message: Message):
                 chat_id=message.chat.id,
                 photo=photo,
                 caption=start_caption,
-                message_effect_id=MSG_EFFECT,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         else:
             await client.send_message(
                 chat_id=message.chat.id,
                 text=start_caption,
-                message_effect_id=MSG_EFFECT,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         return
