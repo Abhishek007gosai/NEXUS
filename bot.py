@@ -2,8 +2,6 @@
 # support @BotifyX_Pro_Botz
 
 import os
-from aiohttp import web
-from plugins import web_server
 from threading import Thread
 from pyrogram import Client
 from pyrogram.enums import ParseMode
@@ -284,5 +282,4 @@ class Bot(Client):
 # ============================================
 
 async def web_app():
-    print("Flask already running, aiohttp disabled")
     return

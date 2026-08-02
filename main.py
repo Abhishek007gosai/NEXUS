@@ -10,21 +10,17 @@ from config import (
     AUTO_DEL, DB_URI, DB_NAME, API_ID, API_HASH, PROTECT, DISABLE_BTN,
     LINKSHARE_DB_URI, LINKSHARE_DB_NAME,
 )
-from plugins import web_server
 
-
-# Start Flask (Anime Index mini app + health) first for Render/Koyeb
 
 # Clear any leftover Telegram webhook ASAP (polling mode).
-# Stops POST / spam before Flask even starts accepting traffic.
 def _clear_webhook_early():
     try:
         import requests
-        from config import TOKEN
-        if not TOKEN:
+        from config import TOKEN as tok
+        if not tok:
             return
         r = requests.get(
-            f"https://api.telegram.org/bot{TOKEN}/deleteWebhook",
+            f"https://api.telegram.org/bot{tok}/deleteWebhook",
             params={"drop_pending_updates": "true"},
             timeout=15,
         )
@@ -32,8 +28,10 @@ def _clear_webhook_early():
     except Exception as e:
         print("deleteWebhook error:", e)
 
+
 _clear_webhook_early()
 
+# Flask (Anime Index mini app + health) — required for Render/Koyeb health checks
 Thread(target=run_flask, daemon=True).start()
 
 
@@ -61,29 +59,4 @@ async def main():
     await compose(apps)
 
 
-async def runner():
-    await asyncio.gather(
-        main(),
-        _run_aiohttp(),
-    )
-
-
-async def _run_aiohttp():
-    """Optional legacy aiohttp routes (plugins/route.py)."""
-    try:
-        from aiohttp import web
-        app = await web_server()
-        runner = web.AppRunner(app)
-        await runner.setup()
-        # Bind a different internal port so it does not clash with Flask
-        site = web.TCPSite(runner, "0.0.0.0", 8081)
-        await site.start()
-        while True:
-            await asyncio.sleep(3600)
-    except Exception as e:
-        print(f"[aiohttp] skipped: {e}")
-        while True:
-            await asyncio.sleep(3600)
-
-
-asyncio.run(runner())
+asyncio.run(main())
