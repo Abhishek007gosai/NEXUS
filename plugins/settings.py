@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyromod.exceptions import ListenerTimeout
+from pyrogram.errors.pyromod import ListenerTimeout
 from config import OWNER_ID
 from helper.helper_func import styled_button
 import humanize

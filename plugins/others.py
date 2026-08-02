@@ -4,7 +4,7 @@ from config import MSG_EFFECT
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pyromod.exceptions import ListenerTimeout
+from pyrogram.errors.pyromod import ListenerTimeout
 from helper.helper_func import styled_button
 
 #===============================================================#
