@@ -1,6 +1,6 @@
 aiohttp
 dnspython
-pyrofork==2.3.50
+pyrofork>=2.3.69
 humanize
 psutil
 motor
