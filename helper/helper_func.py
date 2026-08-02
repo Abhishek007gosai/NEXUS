@@ -32,39 +32,40 @@ if ButtonStyle is not None:
 #===============================================================#
 
 def styled_button(text, style=None, **kwargs):
-    """Create an InlineKeyboardButton with Telegram's native color style.
+    """Create an InlineKeyboardButton with Telegram native colors.
 
-    style may be:
-      - a ButtonStyle enum member (ButtonStyle.PRIMARY / SUCCESS / DANGER)
-      - a string: "primary" (blue), "success" (green), "danger" (red)
-      - None / omitted → default client style
+    style: "primary" (blue) | "success" (green) | "danger" (red)
+           or ButtonStyle.PRIMARY / SUCCESS / DANGER
 
-    Requires Kurigram (or any pyrogram fork that exposes ButtonStyle).
-    Falls back to a plain unstyled button if the installed library does
-    not support the style= argument.
+    Needs Kurigram (ButtonStyle). Always attaches the enum on the button
+    object so write() serializes bg_primary / bg_success / bg_danger.
     """
     resolved = None
-    if style is not None:
-        if ButtonStyle is not None and isinstance(style, ButtonStyle):
+    if style is not None and ButtonStyle is not None:
+        if isinstance(style, ButtonStyle):
             resolved = style
         elif isinstance(style, str):
-            resolved = _STYLE_MAP.get(style.lower())
+            resolved = _STYLE_MAP.get(style.lower().strip())
         else:
             resolved = _STYLE_MAP.get(style)
 
+    # Prefer constructor with style=
     if resolved is not None:
         try:
-            return InlineKeyboardButton(text, style=resolved, **kwargs)
-        except TypeError:
-            pass
-        # Some builds accept the raw string value instead of the enum
-        try:
-            value = resolved.value if hasattr(resolved, "value") else str(resolved)
-            return InlineKeyboardButton(text, style=value, **kwargs)
+            btn = InlineKeyboardButton(text, style=resolved, **kwargs)
+            # Guarantee enum (never a bare string — strings make all bg_* False)
+            btn.style = resolved
+            return btn
         except TypeError:
             pass
 
-    return InlineKeyboardButton(text, **kwargs)
+    btn = InlineKeyboardButton(text, **kwargs)
+    if resolved is not None:
+        try:
+            btn.style = resolved
+        except Exception:
+            pass
+    return btn
 
 #===============================================================#
 
