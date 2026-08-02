@@ -74,6 +74,17 @@ class Bot(Client):
         try:
             from helper.pyro_listen import install_listen
             install_listen(self)
+
+        try:
+            import pyrogram
+            from pyrogram.enums import ButtonStyle as _BS
+            self.LOGGER(__name__, self.name).info(
+                f"Library: pyrogram/kurigram {pyrogram.__version__} | ButtonStyle OK ({_BS.DANGER.value})"
+            )
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(
+                f"ButtonStyle NOT available — buttons will be uncolored: {e}"
+            )
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(f"install_listen: {e}")
         usr_bot_me = await self.get_me()
