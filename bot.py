@@ -70,6 +70,12 @@ class Bot(Client):
 
     async def start(self):
         await super().start()
+        # Colored buttons need Kurigram; ask/listen without external pyromod
+        try:
+            from helper.pyro_listen import install_listen
+            install_listen(self)
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"install_listen: {e}")
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
 
