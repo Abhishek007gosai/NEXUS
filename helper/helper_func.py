@@ -8,7 +8,7 @@ from pyrogram.errors import UserNotParticipant, Forbidden, PeerIdInvalid, ChatAd
 from datetime import datetime, timedelta
 from pyrogram import errors
 
-# Telegram Bot API button colors (Kurigram / docs.kurigram.icu/api/enums/ButtonStyle)
+# Telegram Bot API button colors (Kurigram)
 # PRIMARY = blue, SUCCESS = green, DANGER = red, DEFAULT = client theme
 try:
     from pyrogram.enums import ButtonStyle
@@ -49,25 +49,21 @@ def styled_button(text, style=None, **kwargs):
         else:
             resolved = _STYLE_MAP.get(style)
 
-    # Prefer constructor with style=
     if resolved is not None:
         try:
             btn = InlineKeyboardButton(text, style=resolved, **kwargs)
-            # Guarantee enum (never a bare string — strings make all bg_* False)
             btn.style = resolved
             return btn
         except TypeError:
             pass
 
-    btn = InlineKeyboardButton(text, **kwargs)
+    btn = styled_button(text, **kwargs, style="primary")
     if resolved is not None:
         try:
             btn.style = resolved
         except Exception:
             pass
     return btn
-
-#===============================================================#
 
 #===============================================================#
 
@@ -97,7 +93,7 @@ async def get_messages(client, message_ids):
             # Use new multi-DB channel function
             msgs = await get_messages_from_db_channels(client, temb_ids)
         except FloodWait as e:
-            await asyncio.sleep(e.x)
+            await asyncio.sleep(getattr(e, "value", getattr(e, "x", 1)))
             msgs = await get_messages_from_db_channels(client, temb_ids)
         except:
             pass
@@ -215,7 +211,7 @@ async def get_messages_from_db_channels(client, temb_ids):
                 continue
         
     except FloodWait as e:
-        await asyncio.sleep(e.x)
+        await asyncio.sleep(getattr(e, "value", getattr(e, "x", 1)))
         # Retry with the same function
         return await get_messages_from_db_channels(client, temb_ids)
     except Exception as e:
@@ -388,6 +384,7 @@ def force_sub(func):
         # User is not subscribed to all channels
         buttons = []
         channels_message = f"{client.messages.get('FSUB', '')}\n\n"
+        join_index = 0
 
         for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
             status = statuses.get(channel_id, None)
@@ -413,22 +410,13 @@ def force_sub(func):
                     if request_status == "pending":
                         # Don't add button if request is still pending
                         continue
-                    elif request_status == "approved":
-                        # User can now join the channel
-                        button_text = f"{channel_name}"
-                    else:
-                        button_text = f"{channel_name}"
-                else:
-                    # User hasn't submitted request or it's a regular channel
-                    if request:
-                        button_text = f"{channel_name}"
-                    else:
-                        button_text = f"{channel_name}"
-                
-                buttons.append(styled_button("𝙹𝙾𝙸𝙽 𝙲𝙷𝙰𝙽𝙽𝙴𝙻", style="primary", url=channel_link))
 
-        # Arrange join channel buttons 2 per row; if an odd one is left over,
-        # it gets its own full-width row
+                join_index += 1
+                buttons.append(
+                    styled_button(f"JOIN CHANNEL {join_index}", style="success", url=channel_link)
+                )
+
+        # Arrange join channel buttons 2 per row (odd leftover gets its own full-width row)
         rows = []
         for i in range(0, len(buttons), 2):
             pair = buttons[i:i + 2]
@@ -438,10 +426,9 @@ def force_sub(func):
         from_link = message.text.split(" ")
         if len(from_link) > 1:
             try_again_link = f"https://t.me/{client.username}/?start={from_link[1]}"
-            rows.append([styled_button("🔄 Try Again", style="primary", url=try_again_link)])
+            rows.append([styled_button("• TRY AGAIN •", style="success", url=try_again_link)])
 
-        buttons_markup = InlineKeyboardMarkup(rows)
-        buttons_markup = None if not rows else buttons_markup
+        buttons_markup = InlineKeyboardMarkup(rows) if rows else None
 
         # Edit message with status update and buttons
         try:
@@ -458,7 +445,6 @@ def force_sub(func):
                 )
             except Exception:
                 pass
-
 
     return wrapper
 
@@ -505,7 +491,10 @@ async def auto_del_notification(bot_username, msg, delay_time, transfer):
             try:
                 name = "• ɢᴇᴛ ᴀɢᴀɪɴ •"
                 link = f"https://t.me/{bot_username}?start={transfer}"
-                button = [[styled_button(text=f"{name}", style="primary", url=link), styled_button(text="ᴄʟᴏsᴇ •", style="danger", callback_data = "close")]]
+                button = [[
+                    styled_button(text=f"{name}", style="primary", url=link),
+                    styled_button(text="ᴄʟᴏsᴇ •", style="danger", callback_data="close"),
+                ]]
 
                 await temp.edit_text(text=f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ<blockquote>ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ɢᴇᴛ ᴛʜᴇ ғɪʟᴇs ᴀɢᴀɪɴ, ᴛʜᴇɴ ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ. ᴇʟsᴇ ᴄʟᴏsᴇ ᴛʜɪs ᴍᴇssᴀɢᴇ.</blockquote></b>", reply_markup=InlineKeyboardMarkup(button), disable_web_page_preview = True)
 
@@ -559,7 +548,10 @@ async def batch_auto_del_notification(bot_username, messages, delay_time, transf
             try:
                 name = "• ɢᴇᴛ ғɪʟᴇs •"
                 link = f"https://t.me/{bot_username}?start={transfer_link}"
-                button = [[styled_button(text=f"{name}", style="primary", url=link), styled_button(text="ᴄʟᴏsᴇ •", style="danger", callback_data="close")]]
+                button = [[
+                    styled_button(text=name, style="primary", url=link),
+                    styled_button(text="ᴄʟᴏsᴇ •", style="danger", callback_data="close"),
+                ]]
                 
                 await notification_msg.edit_text(
                     text=f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ<blockquote>ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ɢᴇᴛ ᴛʜᴇ ғɪʟᴇs ᴀɢᴀɪɴ, ᴛʜᴇɴ ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ. ᴇʟsᴇ ᴄʟᴏsᴇ ᴛʜɪs ᴍᴇssᴀɢᴇ.</blockquote></b>",
