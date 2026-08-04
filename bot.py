@@ -2,43 +2,53 @@
 # support @BotifyX_Pro_Botz
 
 import os
+from aiohttp import web
+from plugins import web_server
 from threading import Thread
+from flask import Flask
 from pyrogram import Client
 from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
 from config import LOGGER, PORT, OWNER_ID, SHORT_URL, SHORT_API, SHORT_TUT
-from helper import MongoDB, LinkShareDB
+from helper import MongoDB
 
 version = "v2.0.0"
 
 # ──────────────────────────────
-# Flask = Anime Index mini app (Touka) + health endpoint
+# ✅ FLASK + THREAD (Render Support)
 # ──────────────────────────────
 
-from app import app as flask_app, set_bot_client
+flask_app = Flask(__name__)
 
-
-@flask_app.route("/bot-health")
-def bot_health():
+@flask_app.route("/", methods=["GET", "HEAD", "POST"])
+def home():
+    # GET/HEAD = health checks (Koyeb/Render)
+    # POST accepted so leftover Telegram webhooks don't spam 405
     return "Bot is running!", 200
+
+
+@flask_app.route("/webhook", methods=["GET", "POST"])
+@flask_app.route("/webhook/<path:subpath>", methods=["GET", "POST"])
+def webhook_stub(subpath=None):
+    # Placeholder path some platforms hit; bot uses polling, not webhooks
+    return "ok", 200
 
 
 def run_flask():
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
-    port = int(os.environ.get("PORT", PORT or 10000))
     flask_app.run(
         host="0.0.0.0",
-        port=port,
+        port=int(os.environ.get("PORT", 10000)),
         threaded=True,
-        use_reloader=False,
+        use_reloader=False
     )
 
 #================================================
 
 class Bot(Client):
-    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn, linkshare_db_uri=None, linkshare_db_name=None):
+    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn):
         super().__init__(
             name=session,
             api_hash=api_hash,
@@ -57,25 +67,21 @@ class Bot(Client):
         self.fsub_dict = {}
         self.admins = admins + [OWNER_ID] if OWNER_ID not in admins else admins
         self.messages = messages
-        self.auto_del = int(auto_del or 0)
+        self.auto_del = auto_del
         self.protect = protect
         self.req_fsub = {}
         self.disable_btn = disable_btn
         self.reply_text = messages.get('REPLY', 'ғᴜᴄᴋ ᴏғғ ʙɪᴛᴄʜ !!!')
         self.mongodb = MongoDB(db_uri, db_name)
-        self.linkshare_db = LinkShareDB(linkshare_db_uri or db_uri, linkshare_db_name or "linkshare")
         self.req_channels = []
         self.db_channels = {}
         self.primary_db_channel = db
 
     async def start(self):
         await super().start()
-        # Colored buttons need Kurigram; ask/listen without external pyromod
-        try:
-            from helper.pyro_listen import install_listen
-            install_listen(self)
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"install_listen: {e}")
+        usr_bot_me = await self.get_me()
+        self.uptime = datetime.now()
+
         try:
             import pyrogram
             from pyrogram.enums import ButtonStyle as _BS
@@ -86,8 +92,12 @@ class Bot(Client):
             self.LOGGER(__name__, self.name).warning(
                 f"ButtonStyle NOT available — buttons will be uncolored: {e}"
             )
-        usr_bot_me = await self.get_me()
-        self.uptime = datetime.now()
+
+        try:
+            from helper.pyro_listen import install_listen
+            install_listen(self)
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"install_listen: {e}")
 
         if len(self.fsub) > 0:
             for channel in self.fsub:
@@ -182,17 +192,6 @@ class Bot(Client):
                 f"Error loading DB channels: {e}"
             )
 
-        # Load persisted message settings. Custom file captions are stored in MongoDB,
-        # so they are not required in config.py.
-        try:
-            persisted_messages = await self.mongodb.get_messages_settings()
-            if persisted_messages:
-                self.messages.update(persisted_messages)
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(
-                f"Error loading persisted message settings: {e}"
-            )
-
         try:
             shortner_settings = await self.mongodb.get_shortner_settings()
 
@@ -265,7 +264,6 @@ class Bot(Client):
         self.username = usr_bot_me.username
 
         # Polling mode: clear any leftover webhook so Telegram stops POSTing to /.
-        # Use Bot API HTTP — pyrofork Client may not expose delete_webhook().
         try:
             import requests as _req
             from config import TOKEN as _tok
@@ -282,12 +280,6 @@ class Bot(Client):
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(f"deleteWebhook: {e}")
 
-        # Share Pyrogram client with the mini-app (invite links / logs)
-        try:
-            set_bot_client(self)
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"set_bot_client: {e}")
-
     async def stop(self, *args):
         await super().stop()
         self.LOGGER(__name__, self.name).info("Bot stopped.")
@@ -298,4 +290,5 @@ class Bot(Client):
 # ============================================
 
 async def web_app():
+    print("Flask already running, aiohttp disabled")
     return

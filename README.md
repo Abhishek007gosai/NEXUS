@@ -1,27 +1,3 @@
-# Nexus
-
-Unified **Telegram file-store bot** (Nexus) and **Anime Index Mini App** (Touka) in one process, one bot token.
-
-## Architecture
-
-| Piece | Role |
-|-------|------|
-| **Pyrogram bot** (`bot.py` / `plugins/*`) | File store, force-sub, shortener, **and** `/anidex` + library search + request Accept/Reject |
-| **Flask mini app** (`app.py` + `plugins/web/`) | Telegram WebApp UI + JSON API for catalog, requests, reports, admin link editor |
-| **MongoDB `DB_URI` / `DB_NAME`** | File-store data (users, premium, fsub, links) |
-| **MongoDB `WEB_DB_URI` / `WEB_DB_NAME`** | Anime Index catalog, requests, notifications (separate DB) |
-
-Set `WEBAPP_URL` to your public HTTPS URL and `LOG_CHANNEL_ID` for request/report notifications.
-
-Commands of note:
-- `/start` — file-store start (deep links for files / link-share)
-- `/anidex` — open Anime Index mini app
-- Plain text in private chat — searches the **Available** anime library
-
-See `.env.example` for all variables.
-
----
-
 ━━━━━━━━━━━━━━━━━━━━
 
 <h2 align="center">
