@@ -7,22 +7,6 @@ async def handle_join_request(client, join_request: ChatJoinRequest):
     """Handle join request for fsub channels"""
     user_id = join_request.from_user.id
     channel_id = join_request.chat.id
-
-    # Auto approve join requests. This intentionally sends text only: no image and no button.
-    try:
-        await client.approve_chat_join_request(chat_id=channel_id, user_id=user_id)
-        try:
-            await client.send_message(
-                chat_id=user_id,
-                text=(
-                    f"<b>ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ <code>{join_request.chat.title}</code> "
-                    "ʜᴀs ʙᴇᴇɴ ᴀᴘᴘʀᴏᴠᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ.</b>"
-                )
-            )
-        except Exception as e:
-            client.LOGGER(__name__, client.name).warning(f"Auto approve notification error: {user_id}: {e}")
-    except Exception as e:
-        client.LOGGER(__name__, client.name).warning(f"Auto approve error: {user_id} in {channel_id}: {e}")
     
     # Only process monitored fsub channels
     if channel_id not in client.fsub_dict:

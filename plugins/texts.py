@@ -86,5 +86,3 @@ async def reply_txt(client: Client, query: CallbackQuery):
         return await ask_text.reply("__Reply text has been changed!__")
     except Exception as e:
         return client.logger(__name__, client.name).error(e)
-
-#===============================================================#

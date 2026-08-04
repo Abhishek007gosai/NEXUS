@@ -1,6 +1,7 @@
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
-from helper.helper_func import is_bot_admin, styled_button
+from helper.helper_func import styled_button
+from helper.helper_func import is_bot_admin
 
 #===============================================================#
 
@@ -25,7 +26,7 @@ async def fsub(client, query):
 __Use the appropriate button below to add or remove a force subscription channel based on your needs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_fsub'), styled_button('ʀᴇᴍᴏᴠᴇ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_fsub')],
+        [styled_button('ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_fsub'), styled_button('ʀᴇᴍᴏᴠᴇ ᴄʜᴀɴɴᴇʟ', style="danger", callback_data='rm_fsub')],
         [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)

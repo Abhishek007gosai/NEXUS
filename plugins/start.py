@@ -6,10 +6,31 @@ from config import OWNER_ID
 from plugins.shortner import get_short
 from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification
 import asyncio
-from datetime import datetime, timedelta
-from pyrogram.enums import ParseMode
 
 #===============================================================#
+
+
+def _strip_share_url_button(reply_markup):
+    """Remove Share URL buttons only; keep season/episode and other buttons."""
+    if not reply_markup or not getattr(reply_markup, "inline_keyboard", None):
+        return reply_markup
+    new_rows = []
+    for row in reply_markup.inline_keyboard:
+        new_row = [
+            btn for btn in row
+            if not (getattr(btn, "url", None) and "telegram.me/share/url" in (btn.url or ""))
+        ]
+        if new_row:
+            new_rows.append(new_row)
+    if not new_rows:
+        return None
+    # unchanged?
+    if len(new_rows) == len(reply_markup.inline_keyboard) and all(
+        len(a) == len(b) for a, b in zip(new_rows, reply_markup.inline_keyboard)
+    ):
+        return reply_markup
+    return InlineKeyboardMarkup(new_rows)
+
 
 @Client.on_message(filters.command('start') & filters.private)
 @force_sub
@@ -43,73 +64,6 @@ async def start_command(client: Client, message: Message):
         except IndexError:
             return await message.reply("Invalid command format.")
 
-        # Link Share Menu deep links. Tokens are generated manually from the
-        # Link Share Menu and remain valid until removed from the database.
-        if base64_string.startswith("ls_"):
-            try:
-                token = base64_string[3:]
-                token_data = await client.linkshare_db.get_link_share_token(token)
-                if not token_data:
-                    return await message.reply_text(
-                        "<b>Invalid or expired invite link.</b>",
-                        parse_mode=ParseMode.HTML
-                    )
-
-                channel_id = int(token_data["channel_id"])
-                is_request_link = bool(token_data.get("is_request", False))
-
-                # The permanent ?start=ls_xxx token stays valid in MongoDB,
-                # but the actual Telegram channel invite generated for the
-                # user expires after 5 minutes, matching KafkaLinkBot.
-                invite = await client.create_chat_invite_link(
-                    chat_id=channel_id,
-                    expire_date=datetime.now() + timedelta(minutes=5),
-                    creates_join_request=is_request_link
-                )
-                invite_link = invite.invite_link
-                button = InlineKeyboardMarkup([
-                    [styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="primary", url=invite_link)]
-                ])
-
-                link_msg = await message.reply_text(
-                    "<b><blockquote>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
-                    reply_markup=button,
-                    parse_mode=ParseMode.HTML,
-                    protect_content=True
-                )
-                note_msg = await message.reply_text(
-                    "<blockquote><b>ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ ɪɴ 5 ᴍɪɴᴜᴛᴇs. ᴛʜᴇ ʟɪɴᴋ ʀᴇᴍᴀɪɴs ᴠᴀʟɪᴅ.</b></blockquote>",
-                    parse_mode=ParseMode.HTML
-                )
-
-                async def cleanup_link_share():
-                    await asyncio.sleep(300)
-                    for msg in (note_msg, link_msg):
-                        try:
-                            await msg.delete()
-                        except Exception:
-                            pass
-                    # Revoke the generated invite at the same 5-minute mark.
-                    # This is only the temporary Telegram invite; the
-                    # permanent ?start=ls_xxx Link Share token is untouched.
-                    try:
-                        await client.revoke_chat_invite_link(channel_id, invite_link)
-                    except Exception as revoke_error:
-                        client.LOGGER(__name__, client.name).warning(
-                            f"Failed to revoke Link Share invite: {revoke_error}"
-                        )
-
-                asyncio.create_task(cleanup_link_share())
-                return
-            except Exception as e:
-                client.LOGGER(__name__, client.name).warning(
-                    f"Link Share deep link error: {e}"
-                )
-                return await message.reply_text(
-                    "<b>Invalid or expired invite link.</b>",
-                    parse_mode=ParseMode.HTML
-                )
-
         # 3. Check premium status
         is_user_pro = await client.mongodb.is_pro(user_id)
         
@@ -128,19 +82,20 @@ async def start_command(client: Client, message: Message):
             short_caption = client.messages.get("SHORT_MSG", "")
             tutorial_link = getattr(client, 'tutorial_link', "https://t.me/+wekKcN1tjbAxY2U1")
 
+            from helper.helper_func import styled_button
             await client.send_photo(
                 chat_id=message.chat.id,
                 photo=short_photo,
                 caption=short_caption,
+                protect_content=True,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        styled_button("»ᴄʟɪᴄᴋ ʜᴇʀᴇ«", style="primary", url=short_link)
+                        styled_button("»ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ«", style="primary", url=short_link)
                     ],
                     [
-                        styled_button("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", style="primary", url=tutorial_link)
+                        styled_button("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ/ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", style="primary", url=tutorial_link)
                     ]
-                ]),
-                protect_content=True
+                ])
             )
             return  # prevent sending actual files
 
@@ -281,10 +236,12 @@ async def start_command(client: Client, message: Message):
                 ) if bool(client.messages.get('CAPTION', '')) and bool(msg.document)
                 else ("" if not msg.caption else msg.caption.html)
             )
-            reply_markup = msg.reply_markup if not client.disable_btn else None
-            # Only posts that have a button get forced forward protection,
-            # regardless of the global PROTECT setting. Posts without a
-            # button keep using client.protect as before.
+            # Keep season/episode buttons; strip Share URL only (user request).
+            # Posts with remaining buttons get forced forward protection.
+            if client.disable_btn:
+                reply_markup = None
+            else:
+                reply_markup = _strip_share_url_button(msg.reply_markup)
             protect_this = True if reply_markup else client.protect
 
             try:
@@ -292,16 +249,16 @@ async def start_command(client: Client, message: Message):
                     chat_id=message.from_user.id,
                     caption=caption,
                     reply_markup=reply_markup,
-                    protect_content=protect_this
+                    protect_content=protect_this,
                 )
                 yugen_msgs.append(copied_msg)
             except FloodWait as e:
-                await asyncio.sleep(e.x)
+                await asyncio.sleep(getattr(e, "value", getattr(e, "x", 1)))
                 copied_msg = await msg.copy(
                     chat_id=message.from_user.id,
                     caption=caption,
                     reply_markup=reply_markup,
-                    protect_content=protect_this
+                    protect_content=protect_this,
                 )
                 yugen_msgs.append(copied_msg)
             except Exception as e:
@@ -309,13 +266,7 @@ async def start_command(client: Client, message: Message):
                 pass
 
         # 8. Auto delete timer
-        try:
-            auto_del_seconds = int(client.auto_del or 0)
-        except (TypeError, ValueError):
-            auto_del_seconds = 0
-            client.auto_del = 0
-
-        if messages and auto_del_seconds > 0:
+        if messages and client.auto_del > 0:
             # Create transfer link for getting files again (original base64_string)
             transfer_link = original_payload
             
@@ -323,7 +274,7 @@ async def start_command(client: Client, message: Message):
             asyncio.create_task(batch_auto_del_notification(
                 bot_username=client.username,
                 messages=yugen_msgs,
-                delay_time=auto_del_seconds,
+                delay_time=client.auto_del,
                 transfer_link=transfer_link,
                 chat_id=message.from_user.id,
                 client=client
@@ -332,7 +283,11 @@ async def start_command(client: Client, message: Message):
 
     # 9. Normal start message
     else:
-        buttons = [[styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data='close')]]
+        from helper.helper_func import styled_button
+        buttons = [[
+            styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"),
+            styled_button("ᴄʟᴏsᴇ", style="danger", callback_data="close"),
+        ]]
         if user_id in client.admins:
             buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
 
@@ -375,7 +330,7 @@ async def request_command(client: Client, message: Message):
     if not is_user_premium: 
         BUTTON_URL = "https://t.me/+wekKcN1tjbAxY2U1"
         reply_markup = InlineKeyboardMarkup([
-            [styled_button("💎 Upgrade to Premium", style="success", url=BUTTON_URL)]
+            [styled_button("💎 Upgrade to Premium", style="primary", url=BUTTON_URL)]
         ])
         await message.reply(
             "❌ **You are not a premium user.**\nUpgrade to premium to access this feature.",

@@ -1,11 +1,11 @@
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from helper.helper_func import styled_button
 from config import MSG_EFFECT
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from helper.pyro_listen import ListenerTimeout
-from helper.helper_func import styled_button
 
 #===============================================================#
 
@@ -44,7 +44,7 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
     
     reply_markup = InlineKeyboardMarkup([
         [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_db_channel')],
-        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_db_channel')],
+        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="danger", callback_data='rm_db_channel')],
         [styled_button('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', style="primary", callback_data='set_primary_db')],
         [styled_button('›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', style="primary", callback_data='toggle_db_status')],
         [styled_button('›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', style="primary", callback_data='db_details')]
@@ -146,7 +146,7 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
     
     reply_markup = InlineKeyboardMarkup([
         [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_db_channel')],
-        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_db_channel')],
+        [styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="danger", callback_data='rm_db_channel')],
         [styled_button('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', style="primary", callback_data='set_primary_db')],
         [styled_button('›› ᴛᴏɢɢʟᴇ sᴛᴀᴛᴜs', style="primary", callback_data='toggle_db_status')],
         [styled_button('›› ᴠɪᴇᴡ ᴅᴇᴛᴀɪʟs', style="primary", callback_data='db_details')]
@@ -286,9 +286,9 @@ async def quick_remove_db(client: Client, message: Message):
 
 @Client.on_callback_query(filters.regex('^home$'))
 async def home(client: Client, query: CallbackQuery):
-    buttons = [[styled_button("Help", style="danger", callback_data = "about"), styled_button("Close", style="danger", callback_data = "close")]]
+    buttons = [[styled_button("Help", callback_data = "about", style="primary"), styled_button("Close", callback_data="close", style="danger")]]
     if query.from_user.id in client.admins:
-        buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
+        buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="primary", callback_data="settings")])
     await query.message.edit_text(
         text=client.messages.get('START', 'No Start Message').format(
             first=query.from_user.first_name,
@@ -306,7 +306,7 @@ async def home(client: Client, query: CallbackQuery):
 
 @Client.on_callback_query(filters.regex('^about$'))
 async def about(client: Client, query: CallbackQuery):
-    buttons = [[styled_button("Back", style="danger", callback_data = "home"), styled_button("Close", style="danger", callback_data = "close")]]
+    buttons = [[styled_button("Back", callback_data = "home", style="primary"), styled_button("Close", callback_data="close", style="danger")]]
     await query.message.edit_text(
         text=client.messages.get('ABOUT', 'No Start Message').format(
             owner_id=client.owner,
@@ -380,45 +380,5 @@ async def unban(client: Client, message: Message):
     
         return await message.reply(f"**Error:** `{e}`")
 
-#==========================================================================#
+#==========================================================================#                
 
-# ---------------------------------------------------------------------------
-# /commands — owner only: list every bot command
-# ---------------------------------------------------------------------------
-from config import OWNER_ID as _CMD_OWNER_ID
-
-
-@Client.on_message(filters.command("commands") & filters.private)
-async def list_all_commands(client: Client, message: Message):
-    uid = message.from_user.id if message.from_user else 0
-    if uid != _CMD_OWNER_ID:
-        return
-    text = """<b>📋 Bot Commands</b>
-
-<b>User</b>
-├ /start — Start the bot
-├ /anidex — Open Anime Index
-├ /profile — Your profile
-├ /request — Request something
-└ (send anime title) — Search library
-
-<b>Links</b>
-├ /genlink — Generate file link
-└ /batch — Batch file links
-
-<b>Admin</b>
-├ /stats — Bot stats
-├ /users — User count
-├ /broadcast — Broadcast message
-├ /pbroadcast — Premium broadcast
-├ /shortner — Shortener panel
-├ /db — DB channels
-├ /adddb — Add DB channel
-├ /removedb — Remove DB channel
-├ /ban — Ban user
-├ /unban — Unban user
-├ /addpremium — Add premium
-├ /delpremium — Remove premium
-├ /premiumusers — List premium
-└ /commands — This list (owner only)"""
-    await message.reply_text(text)

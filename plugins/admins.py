@@ -17,7 +17,7 @@ async def admins(client, query):
 __Use the appropriate button below to add or remove an admin based on your needs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('ᴀᴅᴅ ᴀᴅᴍɪɴ', style="primary", callback_data='add_admin'), styled_button('ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ', style="primary", callback_data='rm_admin')],
+        [styled_button('ᴀᴅᴅ ᴀᴅᴍɪɴ', style="primary", callback_data='add_admin'), styled_button('ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ', style="danger", callback_data='rm_admin')],
         [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)

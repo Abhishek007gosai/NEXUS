@@ -1,21 +1,46 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from helper.helper_func import styled_button
 from helper.pyro_listen import ListenerTimeout
 from config import OWNER_ID
-from helper.helper_func import styled_button
 import humanize
 
 #===============================================================#
 
 @Client.on_callback_query(filters.regex("^settings$"))
 async def settings(client, query):
+    # Count active force subscription channels by type
+    total_fsub = len(client.fsub_dict)
+    request_enabled = sum(1 for data in client.fsub_dict.values() if data[2])
+    timer_enabled = sum(1 for data in client.fsub_dict.values() if data[3] > 0)
+    
+    # Count DB channels
+    total_db_channels = len(getattr(client, 'db_channels', {}))
+    primary_db = getattr(client, 'primary_db_channel', client.db)
+    
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"ᴏɴ" if client.protect else "ᴏꜰꜰ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}`
-"""
+›› **ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
+›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
+›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
+›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
+›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
+›› **ʀᴇᴘʟʏ ᴛᴇxᴛ:** `{client.reply_text if client.reply_text else 'ɴᴏɴᴇ'}`
+›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
+›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
+›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
+›› **sᴛᴀʀᴛ ᴍᴇssᴀɢᴇ:**
+<pre>{client.messages.get('START', 'ᴇᴍᴘᴛʏ')}</pre>
+›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('START_PHOTO', ''))}`
+›› **ꜰᴏʀᴄᴇ sᴜʙ ᴍᴇssᴀɢᴇ:**
+<pre>{client.messages.get('FSUB', 'ᴇᴍᴘᴛʏ')}</pre>
+›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('FSUB_PHOTO', ''))}`
+›› **ᴀʙᴏᴜᴛ ᴍᴇssᴀɢᴇ:**
+<pre>{client.messages.get('ABOUT', 'ᴇᴍᴘᴛʏ')}</pre>
+›› **ʀᴇᴘʟʏ ᴍᴇssᴀɢᴇ:**
+<pre>{client.reply_text}</pre>
+    """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ', style="primary", callback_data='link_share'), styled_button('ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='fsub')],
-        [styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='db_channels'), styled_button('ᴄᴀᴘᴛɪᴏɴ', style="primary", callback_data='custom_caption')],
+        [styled_button('ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='fsub'), styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='db_channels')],
         [styled_button('ᴀᴅᴍɪɴꜱ', style="primary", callback_data='admins'), styled_button('ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', style="primary", callback_data='auto_del')],
         [styled_button('ʜᴏᴍᴇ', style="primary", callback_data='home'), styled_button('›› ɴᴇxᴛ', style="primary", callback_data='settings_page_2')]
     ])
@@ -26,62 +51,43 @@ async def settings(client, query):
 
 @Client.on_callback_query(filters.regex("^settings_page_2$"))
 async def settings_page_2(client, query):
+    # Count active force subscription channels by type
+    total_fsub = len(client.fsub_dict)
+    request_enabled = sum(1 for data in client.fsub_dict.values() if data[2])
+    timer_enabled = sum(1 for data in client.fsub_dict.values() if data[3] > 0)
+    
+    # Count DB channels
+    total_db_channels = len(getattr(client, 'db_channels', {}))
+    primary_db = getattr(client, 'primary_db_channel', client.db)
+    
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"ᴏɴ" if client.protect else "ᴏꜰꜰ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}`
-"""
+›› **ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
+›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
+›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
+›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
+›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
+›› **ʀᴇᴘʟʏ ᴛᴇxᴛ:** `{client.reply_text if client.reply_text else 'ɴᴏɴᴇ'}`
+›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
+›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
+›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
+›› **sᴛᴀʀᴛ ᴍᴇssᴀɢᴇ:**
+<pre>{client.messages.get('START', 'ᴇᴍᴘᴛʏ')}</pre>
+›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('START_PHOTO', ''))}`
+›› **ꜰᴏʀᴄᴇ sᴜʙ ᴍᴇssᴀɢᴇ:**
+<pre>{client.messages.get('FSUB', 'ᴇᴍᴘᴛʏ')}</pre>
+›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{bool(client.messages.get('FSUB_PHOTO', ''))}`
+›› **ᴀʙᴏᴜᴛ ᴍᴇssᴀɢᴇ:**
+<pre>{client.messages.get('ABOUT', 'ᴇᴍᴘᴛʏ')}</pre>
+›› **ʀᴇᴘʟʏ ᴍᴇssᴀɢᴇ:**
+<pre>{client.reply_text}</pre>
+    """
     reply_markup = InlineKeyboardMarkup([
-        # ON/OFF only in message text — buttons are plain labels, always blue
-        [
-            styled_button('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', style="primary", callback_data='protect'),
-            styled_button('ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ', style="primary", callback_data='disable_btn'),
-        ],
-        [styled_button('ᴘʜᴏᴛᴏs', style="primary", callback_data='photos'), styled_button('ᴛᴇxᴛs', style="primary", callback_data='texts')],
-        [styled_button('sʜᴏʀᴛɴᴇʀ', style="primary", callback_data='shortner')],
+        [styled_button('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', style="primary", callback_data='protect'), styled_button('ᴘʜᴏᴛᴏs', style="primary", callback_data='photos')],
+        [styled_button('ᴛᴇxᴛs', style="primary", callback_data='texts'), styled_button('sʜᴏʀᴛɴᴇʀ', style="primary", callback_data='shortner')],
         [styled_button('‹ ᴘʀᴇᴠ', style="primary", callback_data='settings'), styled_button('ʜᴏᴍᴇ', style="primary", callback_data='home')]
     ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return
-
-#===============================================================#
-
-@Client.on_callback_query(filters.regex("^custom_caption$"))
-async def custom_caption(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
-
-    current = client.messages.get("CAPTION", "")
-    current_display = current if current else "ɴᴏᴛ sᴇᴛ (ᴏʀɪɢɪɴᴀʟ ᴄᴀᴘᴛɪᴏɴ ᴡɪʟʟ ʙᴇ ᴜsᴇᴅ)"
-    msg = f"""<blockquote>✦ ᴄᴜsᴛᴏᴍ ꜰɪʟᴇ ᴄᴀᴘᴛɪᴏɴ</blockquote>
-›› **ᴄᴜʀʀᴇɴᴛ ᴄᴀᴘᴛɪᴏɴ:**
-<pre>{current_display}</pre>
-
-Send your new caption in the next 60 seconds.
-
-Use <code>{{previouscaption}}</code> where you want the original file caption/name to appear.
-Send <code>/remove</code> to disable the custom caption."""
-    await query.answer()
-    await query.message.edit_text(
-        msg,
-        reply_markup=InlineKeyboardMarkup([[styled_button("‹ ʙᴀᴄᴋ", style="primary", callback_data="settings_page_2")]])
-    )
-    try:
-        res = await client.listen(user_id=query.from_user.id, filters=filters.text, timeout=60)
-        value = res.text.strip()
-        if value.lower() == "/remove":
-            value = ""
-        await client.mongodb.update_message_setting("CAPTION", value)
-        client.messages["CAPTION"] = value
-        status = "disabled" if not value else "updated"
-        await query.message.edit_text(
-            f"<b>✓ ᴄᴜsᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ {status} sᴜᴄᴄᴇssғᴜʟʟʏ.</b>",
-            reply_markup=InlineKeyboardMarkup([[styled_button("‹ ʙᴀᴄᴋ", style="primary", callback_data="settings_page_2")]])
-        )
-    except ListenerTimeout:
-        await query.message.edit_text(
-            "<b>⌛ ᴛɪᴍᴇᴏᴜᴛ. ɴᴏ ᴄʜᴀɴɢᴇs ᴡᴇʀᴇ ᴍᴀᴅᴇ.</b>",
-            reply_markup=InlineKeyboardMarkup([[styled_button("‹ ʙᴀᴄᴋ", style="primary", callback_data="settings_page_2")]])
-        )
 
 #===============================================================#
 
@@ -107,7 +113,7 @@ async def fsub(client, query):
 __ᴜsᴇ ᴛʜᴇ ᴀᴘᴘʀᴏᴘʀɪᴀᴛᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ᴀᴅᴅ ᴏʀ ʀᴇᴍᴏᴠᴇ ᴀ ꜰᴏʀᴄᴇ sᴜʙsᴄʀɪᴘᴛɪᴏɴ ᴄʜᴀɴɴᴇʟ ʙᴀsᴇᴅ ᴏɴ ʏᴏᴜʀ ɴᴇᴇᴅs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('›› ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_fsub'), styled_button('›› ʀᴇᴍᴏᴠᴇ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_fsub')],
+        [styled_button('›› ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_fsub'), styled_button('›› ʀᴇᴍᴏᴠᴇ ᴄʜᴀɴɴᴇʟ', style="danger", callback_data='rm_fsub')],
         [styled_button('‹ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)
@@ -147,7 +153,7 @@ async def db_channels(client, query):
 __ᴜsᴇ ᴛʜᴇ ᴀᴘᴘʀᴏᴘʀɪᴀᴛᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏᴜʀ ᴅᴀᴛᴀʙᴀsᴇ ᴄʜᴀɴɴᴇʟs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_db_channel'), styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_db_channel')],
+        [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_db_channel'), styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="danger", callback_data='rm_db_channel')],
         [styled_button('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', style="primary", callback_data='set_primary_db'), styled_button('›› sᴛᴀᴛᴜs', style="primary", callback_data='toggle_db_status')],
         [styled_button('‹ ʙᴀᴄᴋ', style="primary", callback_data='settings')]
     ])
@@ -190,7 +196,7 @@ __sᴇɴᴅ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ɪᴅ (ɴᴇɢᴀᴛɪᴠᴇ ɪɴᴛᴇɢ
         # Verify bot can access the channel
         try:
             chat = await client.get_chat(channel_id)
-            test_msg = await client.send_message(chat_id=channel_id, text="ᴛᴇsᴛɪɴɢ ᴅʙ ᴄʜᴀɴɴᴇʟ")
+            test_msg = await client.send_message(chat_id=channel_id, text="ᴛᴇsᴛɪɴɢ ᴅʙ ᴄʜᴀɴɴᴇʟ ᴀᴄᴄᴇss - @Okabe_xRintarou")
             await test_msg.delete()
             
             # Add channel to database
@@ -372,7 +378,7 @@ async def toggle_db_status(client, query):
     
     for channel_id_str, channel_data in db_channels.items():
         channel_name = channel_data.get('name', 'Unknown')
-        status = "ᴀᴄᴛɪᴠᴇ" if channel_data.get('is_active', True) else "ɪɴᴀᴄᴛɪᴠᴇ"
+        status = "🟢 ᴀᴄᴛɪᴠᴇ" if channel_data.get('is_active', True) else "🔴 ɪɴᴀᴄᴛɪᴠᴇ"
         msg += f"• `{channel_name}` - `{channel_id_str}` ({status})\n"
     
     msg += "\n__Send the channel ID you want to ᴀᴄᴛɪᴠᴇ/ɪɴᴀᴄᴛɪᴠᴇ status for in the next 60 seconds!__"
@@ -400,7 +406,7 @@ async def toggle_db_status(client, query):
             client.db_channels[str(channel_id)]['is_active'] = new_status
             
             channel_name = db_channels[str(channel_id)].get('name', 'Unknown')
-            status_text = "Active" if new_status else "Inactive"
+            status_text = "🟢 Active" if new_status else "🔴 Inactive"
             await query.message.edit_text(f"**✅ Channel status updated!**\n\n**Channel:** `{channel_name}` (`{channel_id}`)\n**New Status:** {status_text}", 
                                         reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='db_channels')]]))
         else:
@@ -423,7 +429,7 @@ async def admins(client, query):
 __Use the appropriate button below to add or remove an admin based on your needs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('ᴀᴅᴅ ᴀᴅᴍɪɴ', style="primary", callback_data='add_admin'), styled_button('ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ', style="primary", callback_data='rm_admin')],
+        [styled_button('ᴀᴅᴅ ᴀᴅᴍɪɴ', style="primary", callback_data='add_admin'), styled_button('ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ', style="danger", callback_data='rm_admin')],
         [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
     )
     await query.message.edit_text(msg, reply_markup=reply_markup)
@@ -433,30 +439,30 @@ __Use the appropriate button below to add or remove an admin based on your needs
 
 @Client.on_callback_query(filters.regex("^photos$"))
 async def photos(client, query):
-    msg = f"""<blockquote>**Photo Settings:**</blockquote>
-**Start Photo:** `{client.messages.get("START_PHOTO") or "None"}`
-**Force Sub Photo:** `{client.messages.get("FSUB_PHOTO") or "None"}`
+    msg = f"""<blockquote>**Force Subscription Settings:**</blockquote>
+**Start Photo:** `{client.messages.get("START_PHOTO", "None")}`
+**Force Sub Photo:** `{client.messages.get('FSUB_PHOTO', 'None')}`
 
-__Set or remove images used by /start and force-sub.__
+__Use the appropriate button below to add or remove any admin based on your needs!__
 """
     reply_markup = InlineKeyboardMarkup([
         [
             styled_button(
-                ("ꜱᴇᴛ" if not client.messages.get("START_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ",
+                ('ꜱᴇᴛ' if client.messages.get("START_PHOTO", "") == "" else 'ᴄʜᴀɴɢᴇ') + '\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ',
                 style="primary",
-                callback_data="add_start_photo",
+                callback_data='add_start_photo',
             ),
             styled_button(
-                ("ꜱᴇᴛ" if not client.messages.get("FSUB_PHOTO") else "ᴄʜᴀɴɢᴇ") + "\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ",
+                ('ꜱᴇᴛ' if client.messages.get("FSUB_PHOTO", "") == "" else 'ᴄʜᴀɴɢᴇ') + '\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ',
                 style="primary",
-                callback_data="add_fsub_photo",
+                callback_data='add_fsub_photo',
             ),
         ],
         [
-            styled_button("ʀᴇᴍᴏᴠᴇ\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ", style="primary", callback_data="rm_start_photo"),
-            styled_button("ʀᴇᴍᴏᴠᴇ\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ", style="primary", callback_data="rm_fsub_photo"),
+            styled_button('ʀᴇᴍᴏᴠᴇ\nꜱᴛᴀʀᴛ ᴘʜᴏᴛᴏ', style="danger", callback_data='rm_start_photo'),
+            styled_button('ʀᴇᴍᴏᴠᴇ\nꜰꜱᴜʙ ᴘʜᴏᴛᴏ', style="danger", callback_data='rm_fsub_photo'),
         ],
-        [styled_button("◂ ʙᴀᴄᴋ", style="primary", callback_data="settings")],
+        [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')],
     ])
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return
@@ -467,13 +473,6 @@ __Set or remove images used by /start and force-sub.__
 async def protect(client, query):
     client.protect = False if client.protect else True
     return await settings(client, query)
-
-#===============================================================#
-
-@Client.on_callback_query(filters.regex("^disable_btn$"))
-async def disable_btn(client, query):
-    client.disable_btn = False if client.disable_btn else True
-    return await settings_page_2(client, query)
 
 #===============================================================#
 
@@ -516,10 +515,10 @@ async def texts(client, query):
 <pre>{client.reply_text}</pre>
     """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button("ꜱᴛᴀʀᴛ ᴛᴇxᴛ", style="primary", callback_data="start_txt"), styled_button("ꜰꜱᴜʙ ᴛᴇxᴛ", style="primary", callback_data="fsub_txt")],
-        [styled_button("ʀᴇᴘʟʏ ᴛᴇxᴛ", style="primary", callback_data="reply_txt"), styled_button("ᴀʙᴏᴜᴛ ᴛᴇxᴛ", style="primary", callback_data="about_txt")],
-        [styled_button("◂ ʙᴀᴄᴋ", style="primary", callback_data="settings")],
-    ])
+        [styled_button(f'ꜱᴛᴀʀᴛ ᴛᴇxᴛ', style="primary", callback_data='start_txt'), styled_button(f'ꜰꜱᴜʙ ᴛᴇxᴛ', style="primary", callback_data='fsub_txt')],
+        [styled_button('ʀᴇᴘʟʏ ᴛᴇxᴛ', style="primary", callback_data='reply_txt'), styled_button('ᴀʙᴏᴜᴛ ᴛᴇxᴛ', style="primary", callback_data='about_txt')],
+        [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
+    )
     await query.message.edit_text(msg, reply_markup=reply_markup)
     return
 
