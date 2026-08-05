@@ -14,10 +14,10 @@ PORT = int(os.getenv("PORT", "5010"))
 SESSION = os.getenv("SESSION", "Kaya")
 TOKEN = os.getenv("TOKEN", "") or os.getenv("BOT_TOKEN", "")
 BOT_TOKEN = TOKEN
-API_ID = int(os.getenv("API_ID", "29245477"))
-API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
+API_ID = int(os.getenv("API_ID", ""))
+API_HASH = os.getenv("API_HASH", "")
 WORKERS = int(os.getenv("WORKERS", "5"))
-OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
+OWNER_ID = int(os.getenv("OWNER_ID", ""))
 MSG_EFFECT = 5046509860389126442
 
 
@@ -30,7 +30,7 @@ ADMIN_IDS = ADMINS
 DB_URI = os.getenv("DB_URI", "")
 DB_NAME = os.getenv("DB_NAME", "cluster0")
 WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
-WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
+WEB_DB_NAME = os.getenv("WEB_DB_NAME", "nexus")
 MONGODB_URL = WEB_DB_URI
 MONGODB_NAME = WEB_DB_NAME
 
@@ -77,7 +77,7 @@ MESSAGES = {
     "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SEARCH_PHOTO": "",
-    "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", ""),
+    "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", "https://i.ibb.co/0R9k9x4M/tmpbtpr7q0.jpg"),
     "INDEX_PHOTO": os.getenv("INDEX_PHOTO", "") or os.getenv("BANNER_IMAGE_URL", ""),
 }
 
