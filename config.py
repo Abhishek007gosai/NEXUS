@@ -11,7 +11,7 @@ PORT = int(os.getenv("PORT", "5010"))
 # ──────────────────────────────────────────────
 # Telegram
 # ──────────────────────────────────────────────
-SESSION = os.getenv("SESSION", "Kaya")
+SESSION = os.getenv("SESSION", "ECCHI")
 TOKEN = os.getenv("TOKEN", "") or os.getenv("BOT_TOKEN", "")
 BOT_TOKEN = TOKEN
 API_ID = int(os.getenv("API_ID", ""))
