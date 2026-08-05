@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import time
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
-from config import Config
+from config import MONGODB_URL, MONGODB_NAME
 
 class MongoDB:
     _instances = {}
@@ -748,95 +748,6 @@ class MongoDB:
             }
 
 
-class LinkShareDB:
-    """
-    Separate MongoDB connection dedicated to the Link Share Menu.
-    Kept fully independent from the file-store MongoDB class above so the
-    two features can point at two different MongoDB databases (or even
-    two different clusters).
-    """
-    _instances = {}
-
-    def __new__(cls, uri: str, db_name: str):
-        if (uri, db_name) not in cls._instances:
-            instance = super().__new__(cls)
-            instance.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
-            instance.db = instance.client[db_name]
-            instance.link_share_data = instance.db["link_share_data"]
-            cls._instances[(uri, db_name)] = instance
-        return cls._instances[(uri, db_name)]
-
-    # ===============================================================
-    # LINK SHARE MENU FUNCTIONS
-
-    async def get_link_share_channels(self) -> dict:
-        """Return all channels configured for the Link Share Menu."""
-        data = await self.link_share_data.find_one({"_id": "link_share_channels"})
-        return data.get("channels", {}) if data else {}
-
-    async def add_link_share_channel(self, channel_id: int, channel_data: dict):
-        """Add or update a Link Share Menu channel."""
-        channels = await self.get_link_share_channels()
-        channels[str(channel_id)] = channel_data
-        await self.link_share_data.update_one(
-            {"_id": "link_share_channels"},
-            {"$set": {"channels": channels}},
-            upsert=True
-        )
-
-    async def remove_link_share_channel(self, channel_id: int) -> bool:
-        """Remove a Link Share Menu channel."""
-        channels = await self.get_link_share_channels()
-        existed = str(channel_id) in channels
-        channels.pop(str(channel_id), None)
-        await self.link_share_data.update_one(
-            {"_id": "link_share_channels"},
-            {"$set": {"channels": channels}},
-            upsert=True
-        )
-        return existed
-
-    async def get_link_share_channel(self, channel_id: int):
-        channels = await self.get_link_share_channels()
-        return channels.get(str(channel_id))
-
-    # Link Share token functions
-    async def create_link_share_token(self, token: str, channel_id: int, is_request: bool, expires_at):
-        await self.link_share_data.update_one(
-            {"_id": f"link_share_token:{token}"},
-            {"$set": {
-                "token": token,
-                "channel_id": channel_id,
-                "is_request": is_request,
-                "expires_at": expires_at
-            }},
-            upsert=True
-        )
-
-    async def get_link_share_token(self, token: str):
-        data = await self.link_share_data.find_one({"_id": f"link_share_token:{token}"})
-        if not data:
-            return None
-        return data
-
-    async def delete_link_share_token(self, token: str):
-        await self.link_share_data.delete_one({"_id": f"link_share_token:{token}"})
-
-    # Persistent per-channel Link Share tokens (one stable token per
-    # channel per kind, so the Normal/Request Links pages can show a
-    # direct, unchanging deep-link button for each channel).
-    async def get_link_share_channel_token(self, channel_id: int, kind: str):
-        data = await self.link_share_data.find_one({"_id": "link_share_channel_tokens"})
-        tokens = data.get("tokens", {}) if data else {}
-        return tokens.get(f"{channel_id}:{kind}")
-
-    async def set_link_share_channel_token(self, channel_id: int, kind: str, token: str):
-        await self.link_share_data.update_one(
-            {"_id": "link_share_channel_tokens"},
-            {"$set": {f"tokens.{channel_id}:{kind}": token}},
-            upsert=True
-        )
-
 
 # =============================================================================
 # Anime Index / Mini App (sync pymongo — separate WEB_DB_URI / WEB_DB_NAME)
@@ -863,9 +774,9 @@ def _ensure():
     global _client, _db
     if _client is not None:
         return
-    uri = Config.MONGODB_URL or "mongodb://localhost:27017"
+    uri = MONGODB_URL or "mongodb://localhost:27017"
     _client = MongoClient(uri, serverSelectionTimeoutMS=8000)
-    _db = _client[Config.MONGODB_NAME]
+    _db = _client[MONGODB_NAME]
 
 
 anime_col = _LazyCol("anime")
