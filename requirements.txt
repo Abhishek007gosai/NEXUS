@@ -8,4 +8,7 @@ markdown
 asyncio
 TgCrypto
 flask
+Flask-Compress
 requests
+pymongo
+python-dotenv

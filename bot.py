@@ -19,28 +19,39 @@ version = "v2.0.0"
 # ✅ FLASK + THREAD (Render Support)
 # ──────────────────────────────
 
-flask_app = Flask(__name__)
+# Unified Flask app: health + Anime Index mini-app (HTML/CSS/JS + JSON API)
+try:
+    from miniapp import app as flask_app
+    import miniapp as _miniapp_mod
+except Exception as _e:
+    # Fallback minimal health app if miniapp fails to import
+    flask_app = Flask(__name__)
+    _miniapp_mod = None
+    print(f"[warn] miniapp import failed: {_e}")
 
-@flask_app.route("/", methods=["GET", "HEAD", "POST"])
-def home():
-    # GET/HEAD = health checks (Koyeb/Render)
-    # POST accepted so leftover Telegram webhooks don't spam 405
+    @flask_app.route("/", methods=["GET", "HEAD", "POST"])
+    def home():
+        return "Bot is running!", 200
+
+# Keep a simple health alias even when miniapp is loaded
+@flask_app.route("/health", methods=["GET", "HEAD"])
+def health_alias():
     return "Bot is running!", 200
 
 
 @flask_app.route("/webhook", methods=["GET", "POST"])
 @flask_app.route("/webhook/<path:subpath>", methods=["GET", "POST"])
 def webhook_stub(subpath=None):
-    # Placeholder path some platforms hit; bot uses polling, not webhooks
     return "ok", 200
 
 
 def run_flask():
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    port = int(os.environ.get("PORT", 10000))
     flask_app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000)),
+        port=port,
         threaded=True,
         use_reloader=False
     )
@@ -79,6 +90,18 @@ class Bot(Client):
 
     async def start(self):
         await super().start()
+        # Wire Pyrogram client into mini-app + init anime catalog indexes
+        try:
+            import miniapp as _mm
+            _mm.pyro_bot = self
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"miniapp wire: {e}")
+        try:
+            from helper import catalog_db
+            catalog_db.init_db()
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"catalog_db init: {e}")
+
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
 
