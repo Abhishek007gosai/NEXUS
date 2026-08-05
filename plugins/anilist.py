@@ -462,7 +462,7 @@ class AniListSource(AnimeSource):
         if cached and now - cached[0] < (cached[2] if len(cached) > 2 else ttl):
             return cached[1]
         try:
-            from database import database as db
+            from helper import database as db
             mongo_hit = db.cache_get(key)
             if mongo_hit is not None:
                 self._cache[key] = (now, mongo_hit, ttl)
@@ -472,7 +472,7 @@ class AniListSource(AnimeSource):
         value = fetch()
         self._cache[key] = (now, value, ttl)
         try:
-            from database import database as db
+            from helper import database as db
             db.cache_set(key, value, ttl_seconds=ttl)
         except Exception:
             pass
