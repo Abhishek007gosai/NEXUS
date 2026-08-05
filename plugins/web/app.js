@@ -366,18 +366,18 @@
   }
 
   function trendingCard(item, onOpen) {
-    return posterScrollCard(item, onOpen, "HOT", "hot-badge");
+    return posterScrollCard(item, onOpen);
   }
 
   function topAiringCard(item, onOpen) {
-    return posterScrollCard(item, onOpen, "NEW EP", "new-ep-badge");
+    return posterScrollCard(item, onOpen);
   }
 
   function popularGridCard(item, onOpen) {
-    return posterScrollCard(item, onOpen, "POPULAR", "popular-badge");
+    return posterScrollCard(item, onOpen);
   }
 
-  function posterScrollCard(item, onOpen, badgeText, badgeClass) {
+  function posterScrollCard(item, onOpen) {
     const card = document.createElement("div");
     card.className = "poster-card";
 
@@ -389,10 +389,11 @@
     img.alt = item.title;
     art.appendChild(img);
 
-    if (badgeText) {
+    // Rating overlay on the poster (replaces HOT / NEW EP / POPULAR badges)
+    if (item.rating) {
       const badge = document.createElement("span");
-      badge.className = badgeClass;
-      badge.textContent = badgeText;
+      badge.className = "poster-rating";
+      badge.textContent = "\u2605 " + Number(item.rating).toFixed(1);
       art.appendChild(badge);
     }
     card.appendChild(art);

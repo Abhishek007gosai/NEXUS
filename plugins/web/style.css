@@ -428,8 +428,18 @@ html, body {
 }
 
 .poster-rating {
-  /* legacy absolute rating — unused; kept so old cached markup doesn't break */
-  display: none;
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--amber);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 6px;
+  line-height: 1.3;
+  letter-spacing: 0.2px;
 }
 .poster-rating-line {
   color: var(--amber);
