@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#131310" />
   <title>{{ brand_name }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=28" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body data-brand="{{ brand_name }}">
@@ -34,42 +34,64 @@
       </div>
 
       <div class="pill-tabs">
-        <button class="pill-tab active" data-tab="all">All</button>
-        <button class="pill-tab" data-tab="library">Available</button>
+        <button class="pill-tab active" data-tab="all">ALL</button>
+        <button class="pill-tab" data-tab="hanime">H-ANIME</button>
+        <button class="pill-tab" data-tab="hmanhwa">H-MANHWA</button>
       </div>
 
-      <!-- "All" tab: Trending + Top Airing -->
+      <!-- ALL: hentai + manga/manhwa side by side -->
       <div id="tab-all">
         <section>
           <div class="section-header-row">
-            <h2 class="section-header section-header--trending"><span class="accent-bar"></span>Trending Now</h2>
+            <h2 class="section-header section-header--trending"><span class="accent-bar"></span>Trending</h2>
           </div>
-          <div id="trending-row" class="hscroll"></div>
+          <p class="sub-section-label">Hentai</p>
+          <div id="all-trending-hentai" class="hscroll"></div>
+          <p class="sub-section-label">Manga / Manhwa</p>
+          <div id="all-trending-manga" class="hscroll"></div>
         </section>
 
         <section>
           <div class="section-header-row">
             <h2 class="section-header section-header--airing"><span class="accent-bar"></span>Top Airing</h2>
           </div>
-          <div id="top-airing-list" class="hscroll"></div>
-          <p id="popular-load-more" class="search-loading-more hidden">Loading more…</p>
+          <p class="sub-section-label">Hentai</p>
+          <div id="all-airing-hentai" class="hscroll"></div>
+          <p class="sub-section-label">Manga / Manhwa</p>
+          <div id="all-airing-manga" class="hscroll"></div>
         </section>
 
         <section>
           <div class="section-header-row">
             <h2 class="section-header section-header--popular"><span class="accent-bar"></span>Popular</h2>
           </div>
-          <div id="popular-grid-list" class="popular-grid"></div>
-          <button id="popular-grid-load-more" class="load-more-btn">Load more</button>
+          <p class="sub-section-label">Hentai</p>
+          <div id="all-popular-hentai" class="popular-grid"></div>
+          <button id="all-popular-hentai-more" class="load-more-btn hidden" type="button">Load more</button>
+          <p class="sub-section-label" style="margin-top:16px">Manga / Manhwa</p>
+          <div id="all-popular-manga" class="popular-grid"></div>
+          <button id="all-popular-manga-more" class="load-more-btn hidden" type="button">Load more</button>
         </section>
       </div>
 
-      <!-- "Available" tab: your posted library, browsable A–Z -->
-      <div id="tab-library" class="hidden">
-        <h2 class="section-header section-header--available"><span class="accent-bar"></span>Available Anime</h2>
-        <div id="letter-bar" class="letter-bar"></div>
-        <div id="available-groups"></div>
-        <p id="available-empty" class="empty-note hidden">No anime found.</p>
+      <!-- H-ANIME: A–Z + # of linked hentai only -->
+      <div id="tab-hanime" class="hidden">
+        <h2 class="section-header section-header--available"><span class="accent-bar"></span>Available H-ANIME</h2>
+        <div id="hanime-letter-bar" class="letter-bar"></div>
+        <div id="hanime-groups"></div>
+        <p id="hanime-empty" class="empty-note">No hanime linked yet. Open a title from ALL and use + to set a join link.</p>
+      </div>
+
+      <!-- H-MANHWA: Ongoing / Finished — posted titles only (A–Z) -->
+      <div id="tab-hmanhwa" class="hidden">
+        <div class="status-tabs" role="tablist">
+          <button class="status-tab active" data-status="ongoing" type="button">Ongoing</button>
+          <button class="status-tab" data-status="finished" type="button">Finished</button>
+        </div>
+
+        <div id="hmanhwa-letter-bar" class="letter-bar"></div>
+        <div id="hmanhwa-groups"></div>
+        <p id="hmanhwa-empty" class="empty-note">No ongoing manhwa linked yet. Open a title and use + to set a join link.</p>
       </div>
 
     </div>
@@ -83,12 +105,12 @@
     </div>
     <div class="search-row">
       <span class="search-icon-left">&#128269;</span>
-      <input id="search-view-input" class="search-input" type="text" placeholder="Search anime..." autocomplete="off" />
+      <input id="search-view-input" class="search-input" type="text" placeholder="Search hentai / manhwa..." autocomplete="off" />
     </div>
 
     <div id="search-results" class="hidden">
       <div id="search-results-groups"></div>
-      <p id="search-results-empty" class="empty-note hidden">No anime found.</p>
+      <p id="search-results-empty" class="empty-note hidden">No titles found.</p>
     </div>
 
     <div id="search-landing">
@@ -117,7 +139,12 @@
       <button class="back-btn" data-back="search">&#8249; back</button>
       <span class="subview-title" id="genre-view-title">Genre</span>
     </div>
-    <div id="genre-browse-grid" class="grid-2"></div>
+    <div class="pill-tabs genre-type-tabs" style="margin: 0 16px 12px;">
+      <button class="pill-tab active" type="button" data-genre-type="ANIME">H-ANIME</button>
+      <button class="pill-tab" type="button" data-genre-type="MANGA">H-MANHWA</button>
+    </div>
+    <div id="genre-browse-grid" class="available-grid"></div>
+    <button id="genre-load-more" class="load-more-btn hidden" type="button">Load more</button>
   </section>
 
   <!-- ===================== Profile view ===================== -->
@@ -185,6 +212,13 @@
         <h3 class="sheet-title">Set Join Link</h3>
         <input id="link-input" class="edit-link-input link-input-full" type="text"
                placeholder="Join URL" autocomplete="off" />
+        <div id="link-section-picker" class="status-tabs hidden" style="margin: 0 0 14px;">
+          <button type="button" class="status-tab active" data-library-section="ongoing">Ongoing</button>
+          <button type="button" class="status-tab" data-library-section="finished">Finished</button>
+        </div>
+        <p id="link-section-hint" class="empty-note hidden" style="padding:0 0 12px;text-align:left;font-size:12px;">
+          Choose which H-MANHWA section this title appears in.
+        </p>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>
           <button id="link-save" class="btn btn-primary">Save</button>
@@ -193,7 +227,33 @@
     </div>
   </div>
 
-  <!-- ===================== Notifications sheet ===================== -->
+  
+  <!-- ===================== Profile help links editor (admin) ===================== -->
+  <div id="help-edit-overlay" class="overlay hidden">
+    <div class="sheet">
+      <div class="sheet-body">
+        <h3 class="sheet-title">Edit profile links</h3>
+        <label class="empty-note" style="display:block;text-align:left;padding:0 0 4px">Title</label>
+        <input id="help-edit-title" class="edit-link-input link-input-full" type="text" placeholder="Need help?" />
+        <label class="empty-note" style="display:block;text-align:left;padding:8px 0 4px">Description</label>
+        <input id="help-edit-text" class="edit-link-input link-input-full" type="text" placeholder="Short help text" />
+        <label class="empty-note" style="display:block;text-align:left;padding:8px 0 4px">Support Chat URL</label>
+        <input id="help-edit-support" class="edit-link-input link-input-full" type="text" placeholder="https://t.me/your_support" />
+        <p class="empty-note" style="text-align:left;padding:12px 0 6px">Main links (name + URL)</p>
+        <div id="help-edit-links"></div>
+        <button id="help-edit-add" class="btn btn-secondary" type="button" style="width:100%;margin-bottom:12px">+ Add main link</button>
+        <p class="empty-note" style="text-align:left;padding:12px 0 6px">More Channels (shown after tapping MORE CHANNELS)</p>
+        <div id="help-edit-more-links"></div>
+        <button id="help-edit-add-more" class="btn btn-secondary" type="button" style="width:100%;margin-bottom:12px">+ Add more-channel link</button>
+        <div class="btn-row">
+          <button id="help-edit-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="help-edit-save" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- ===================== Notifications sheet ===================== -->
   <div id="notif-overlay" class="overlay hidden">
     <div class="sheet">
       <div class="sheet-body">
@@ -228,6 +288,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=28"></script>
 </body>
 </html>
