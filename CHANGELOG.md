@@ -72,3 +72,12 @@ Project layout matches the integrated **NEXUS-Kaya** layout:
   and merge those results first, so BL pornhwa is not buried under
   general hentai manga.
 - Search genre tiles include **Yaoi**.
+
+## Audit fixes
+
+- AniList L2 cache import fixed: `from helper import database` (was
+  broken `from database import database` copied from standalone EcchiDex).
+- Added `cache_get` / `cache_set` + `catalog_cache` collection so feed
+  caching works on NEXUS Mongo.
+- Rating display hardened with `Number(...)` so string scores from Mongo
+  do not crash `.toFixed`.
