@@ -2,64 +2,81 @@
 # support @BotifyX_Pro_Botz
 
 import os
-from aiohttp import web
-from plugins import web_server
 from threading import Thread
-from flask import Flask
 from pyrogram import Client
 from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
 from config import LOGGER, PORT, OWNER_ID, SHORT_URL, SHORT_API, SHORT_TUT
-from helper import MongoDB
+from helper import MongoDB, LinkShareDB
 
 version = "v2.0.0"
 
 # ──────────────────────────────
-# ✅ FLASK + THREAD (Render Support)
+# Flask = Anime Index mini app (Touka) + health endpoint
 # ──────────────────────────────
 
-# Unified Flask app: health + Anime Index mini-app (HTML/CSS/JS + JSON API)
-try:
-    from miniapp import app as flask_app
-    import miniapp as _miniapp_mod
-except Exception as _e:
-    # Fallback minimal health app if miniapp fails to import
-    flask_app = Flask(__name__)
-    _miniapp_mod = None
-    print(f"[warn] miniapp import failed: {_e}")
+from app import app as flask_app, set_bot_client
 
-    @flask_app.route("/", methods=["GET", "HEAD", "POST"])
-    def home():
-        return "Bot is running!", 200
 
-# Keep a simple health alias even when miniapp is loaded
-@flask_app.route("/health", methods=["GET", "HEAD"])
-def health_alias():
+@flask_app.route("/bot-health")
+def bot_health():
     return "Bot is running!", 200
-
-
-@flask_app.route("/webhook", methods=["GET", "POST"])
-@flask_app.route("/webhook/<path:subpath>", methods=["GET", "POST"])
-def webhook_stub(subpath=None):
-    return "ok", 200
 
 
 def run_flask():
     import logging
-    logging.getLogger("werkzeug").setLevel(logging.ERROR)
-    port = int(os.environ.get("PORT", 10000))
-    flask_app.run(
-        host="0.0.0.0",
-        port=port,
-        threaded=True,
-        use_reloader=False
-    )
+    import sys
+
+    class _Quiet(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            if "Serving Flask app" in msg or "Debug mode" in msg or "Running on" in msg:
+                return False
+            return True
+
+    for name in ("werkzeug", "flask", "flask.app"):
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.ERROR)
+        lg.addFilter(_Quiet())
+
+    # Also quiet the root handler that werkzeug attaches
+    logging.getLogger("werkzeug").disabled = True
+
+    port = int(os.environ.get("PORT", PORT or 10000))
+    # flask/werkzeug still write the banner via click to stderr in some versions
+    _real_stderr = sys.stderr
+
+    class _StderrFilter:
+        def __init__(self, real):
+            self._real = real
+        def write(self, s):
+            if not s:
+                return 0
+            if "Serving Flask app" in s or "Debug mode" in s or "Running on" in s or "Press CTRL" in s:
+                return len(s)
+            return self._real.write(s)
+        def flush(self):
+            return self._real.flush()
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    sys.stderr = _StderrFilter(_real_stderr)
+    try:
+        flask_app.run(
+            host="0.0.0.0",
+            port=port,
+            threaded=True,
+            use_reloader=False,
+        )
+    finally:
+        sys.stderr = _real_stderr
+
 
 #================================================
 
 class Bot(Client):
-    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn):
+    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn, linkshare_db_uri=None, linkshare_db_name=None):
         super().__init__(
             name=session,
             api_hash=api_hash,
@@ -78,33 +95,25 @@ class Bot(Client):
         self.fsub_dict = {}
         self.admins = admins + [OWNER_ID] if OWNER_ID not in admins else admins
         self.messages = messages
-        self.auto_del = auto_del
+        self.auto_del = int(auto_del or 0)
         self.protect = protect
         self.req_fsub = {}
         self.disable_btn = disable_btn
         self.reply_text = messages.get('REPLY', 'ғᴜᴄᴋ ᴏғғ ʙɪᴛᴄʜ !!!')
         self.mongodb = MongoDB(db_uri, db_name)
+        self.linkshare_db = LinkShareDB(linkshare_db_uri or db_uri, linkshare_db_name or "linkshare")
         self.req_channels = []
         self.db_channels = {}
         self.primary_db_channel = db
 
     async def start(self):
         await super().start()
-        # Wire Pyrogram client into mini-app + init anime catalog indexes
+        # Colored buttons need Kurigram; ask/listen without external pyromod
         try:
-            import miniapp as _mm
-            _mm.pyro_bot = self
+            from helper.pyro_listen import install_listen
+            install_listen(self)
         except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"miniapp wire: {e}")
-        try:
-            from helper import catalog_db
-            catalog_db.init_db()
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"catalog_db init: {e}")
-
-        usr_bot_me = await self.get_me()
-        self.uptime = datetime.now()
-
+            self.LOGGER(__name__, self.name).warning(f"install_listen: {e}")
         try:
             import pyrogram
             from pyrogram.enums import ButtonStyle as _BS
@@ -115,12 +124,8 @@ class Bot(Client):
             self.LOGGER(__name__, self.name).warning(
                 f"ButtonStyle NOT available — buttons will be uncolored: {e}"
             )
-
-        try:
-            from helper.pyro_listen import install_listen
-            install_listen(self)
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"install_listen: {e}")
+        usr_bot_me = await self.get_me()
+        self.uptime = datetime.now()
 
         if len(self.fsub) > 0:
             for channel in self.fsub:
@@ -215,6 +220,17 @@ class Bot(Client):
                 f"Error loading DB channels: {e}"
             )
 
+        # Load persisted message settings. Custom file captions are stored in MongoDB,
+        # so they are not required in config.py.
+        try:
+            persisted_messages = await self.mongodb.get_messages_settings()
+            if persisted_messages:
+                self.messages.update(persisted_messages)
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(
+                f"Error loading persisted message settings: {e}"
+            )
+
         try:
             shortner_settings = await self.mongodb.get_shortner_settings()
 
@@ -275,33 +291,29 @@ class Bot(Client):
                 text=restart_message
             )
 
-            self.LOGGER(__name__, self.name).info(
-                f"Restart notification sent to owner: {self.owner}"
-            )
-
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(
-                f"Failed to send restart notification to owner: {e}"
-            )
+        except Exception:
+            pass
 
         self.username = usr_bot_me.username
 
-        # Polling mode: clear any leftover webhook so Telegram stops POSTing to /.
+        # Polling mode: clear leftover webhook (silent)
         try:
             import requests as _req
             from config import TOKEN as _tok
-            r = _req.get(
-                f"https://api.telegram.org/bot{_tok}/deleteWebhook",
-                params={"drop_pending_updates": "true"},
-                timeout=15,
-            )
-            data = r.json() if r.ok else {}
-            if data.get("ok"):
-                self.LOGGER(__name__, self.name).info("Webhook cleared (polling mode)")
-            else:
-                self.LOGGER(__name__, self.name).warning(f"deleteWebhook: {data}")
+            if _tok:
+                _req.get(
+                    f"https://api.telegram.org/bot{_tok}/deleteWebhook",
+                    params={"drop_pending_updates": "true"},
+                    timeout=15,
+                )
+        except Exception:
+            pass
+
+        # Share Pyrogram client with the mini-app (invite links / logs)
+        try:
+            set_bot_client(self)
         except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"deleteWebhook: {e}")
+            self.LOGGER(__name__, self.name).warning(f"set_bot_client: {e}")
 
     async def stop(self, *args):
         await super().stop()
@@ -313,5 +325,4 @@ class Bot(Client):
 # ============================================
 
 async def web_app():
-    print("Flask already running, aiohttp disabled")
     return

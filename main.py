@@ -1,26 +1,38 @@
 import asyncio
+from threading import Thread
+
 asyncio.set_event_loop(asyncio.new_event_loop())
+
 
 from bot import Bot, run_flask
 from pyrogram import compose
-from config import *
-from threading import Thread
+from config import (
+    SESSION, WORKERS, DB_CHANNEL, FSUBS, TOKEN, ADMINS, MESSAGES,
+    AUTO_DEL, DB_URI, DB_NAME, API_ID, API_HASH, PROTECT, DISABLE_BTN,
+    LINKSHARE_DB_URI, LINKSHARE_DB_NAME,
+)
 
 
+# Clear any leftover Telegram webhook ASAP (polling mode).
 def _clear_webhook_early():
     try:
         import requests
         from config import TOKEN as tok
         if not tok:
             return
-        r = requests.get(
+        requests.get(
             f"https://api.telegram.org/bot{tok}/deleteWebhook",
             params={"drop_pending_updates": "true"},
             timeout=15,
         )
-        print("deleteWebhook:", r.json() if r.ok else r.status_code)
-    except Exception as e:
-        print("deleteWebhook error:", e)
+    except Exception:
+        pass
+
+
+_clear_webhook_early()
+
+# Flask (Anime Index mini app + health) — required for Render/Koyeb health checks
+Thread(target=run_flask, daemon=True).start()
 
 
 async def main():
@@ -40,17 +52,11 @@ async def main():
             API_HASH,
             PROTECT,
             DISABLE_BTN,
+            LINKSHARE_DB_URI,
+            LINKSHARE_DB_NAME,
         )
     ]
     await compose(apps)
 
 
-def run():
-    _clear_webhook_early()
-    # Flask only — health checks on Koyeb/Render (avoids port conflict with aiohttp)
-    Thread(target=run_flask, daemon=True).start()
-    asyncio.run(main())
-
-
-if __name__ == "__main__":
-    run()
+asyncio.run(main())
