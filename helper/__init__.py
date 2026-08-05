@@ -1,1 +1,1 @@
-from .database import MongoDB
+from helper import database, catalog_db  # noqa
