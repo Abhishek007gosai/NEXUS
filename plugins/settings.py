@@ -24,6 +24,8 @@ async def settings(client, query):
 @Client.on_callback_query(filters.regex("^settings_page_2$"))
 async def settings_page_2(client, query):
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
+›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
+›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
     """
     reply_markup = InlineKeyboardMarkup([
         [styled_button('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', style="primary", callback_data='protect'), styled_button('ᴘʜᴏᴛᴏs', style="primary", callback_data='photos')],
