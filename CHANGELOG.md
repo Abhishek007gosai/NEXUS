@@ -65,3 +65,10 @@ Project layout matches the integrated **NEXUS-Kaya** layout:
 
 - Removed HOT / NEW EP / POPULAR badges from discovery poster cards.
 - Rating is shown as a ★ overlay on the poster (top-left) instead.
+
+## BL / Yaoi pornhwa in H-MANHWA feeds
+
+- AniList adult manga feeds now also query genre **Yaoi** (and KR Yaoi)
+  and merge those results first, so BL pornhwa is not buried under
+  general hentai manga.
+- Search genre tiles include **Yaoi**.
