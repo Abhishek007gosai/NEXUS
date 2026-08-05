@@ -561,6 +561,53 @@ def api_profile():
     return jsonify(profile)
 
 
+def _resolve_support_chat_url(mongo_url: str | None = None) -> str:
+    """Env SUPPORT_CHAT_URL wins when set; otherwise use the value saved in Mongo."""
+    env_url = (getattr(Config, "SUPPORT_CHAT_URL", None) or "").strip()
+    if env_url:
+        return env_url
+    return (mongo_url or "").strip()
+
+
+@app.get("/api/profile/help")
+def api_profile_help():
+    """Need-help card: title, text, link buttons, more-channels, and support chat."""
+    data = db.get_profile_help()
+    data["support_chat_url"] = _resolve_support_chat_url(data.get("support_chat_url"))
+    return jsonify(data)
+
+
+@app.put("/api/profile/help")
+def api_profile_help_update():
+    """Admin: update help card title/text and/or the lists of links."""
+    user = current_user()
+    if not is_admin(user):
+        abort(403)
+    payload = request.get_json(force=True, silent=True) or {}
+    help_kwargs = {}
+    if "title" in payload:
+        help_kwargs["title"] = payload.get("title")
+    if "text" in payload:
+        help_kwargs["text"] = payload.get("text")
+    if "support_chat_url" in payload:
+        help_kwargs["support_chat_url"] = payload.get("support_chat_url")
+    if help_kwargs:
+        db.set_profile_help(**help_kwargs)
+    if "links" in payload:
+        links = payload.get("links")
+        if not isinstance(links, list):
+            return jsonify(error="links must be a list"), 400
+        db.set_profile_links(links)
+    if "more_links" in payload:
+        more_links = payload.get("more_links")
+        if not isinstance(more_links, list):
+            return jsonify(error="more_links must be a list"), 400
+        db.set_more_channel_links(more_links)
+    data = db.get_profile_help()
+    data["support_chat_url"] = _resolve_support_chat_url(data.get("support_chat_url"))
+    return jsonify(data)
+
+
 @app.patch("/api/anime/<int:anime_id>/link")
 def api_edit_link(anime_id):
     user = current_user()

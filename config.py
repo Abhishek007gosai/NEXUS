@@ -40,6 +40,7 @@ BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
 BANNER_IMAGE_URL = os.getenv("BANNER_IMAGE_URL", "")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
+SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
 ANILIST_ENDPOINT = "https://graphql.anilist.co"
@@ -97,6 +98,7 @@ class Config:
     BOT_TOKEN = TOKEN
     WEBAPP_URL = WEBAPP_URL
     LOG_CHANNEL_ID = LOG_CHANNEL_ID
+    SUPPORT_CHAT_URL = SUPPORT_CHAT_URL
     ADMIN_IDS = ADMINS
     API_ID = API_ID
     API_HASH = API_HASH
