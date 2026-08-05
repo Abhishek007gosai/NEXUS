@@ -57,7 +57,7 @@ SHORT_TUT = os.getenv("SHORT_TUT", "")
 # Channels / Force Sub / Bot settings
 # ──────────────────────────────────────────────
 DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1002497924209"))
-FSUBS = [[-1002369123167, True, 5]]
+FSUBS = [[-1001457313028, True, 5]]
 AUTO_DEL = os.getenv("AUTO_DEL", "300")
 DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
 PROTECT = os.getenv("PROTECT", "False").lower() == "true"
