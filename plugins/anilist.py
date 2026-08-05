@@ -212,6 +212,86 @@ query ($search: String, $page: Int) {
 }
 """
 
+# Explicit BL / Yaoi adult manga+manhwa — general adult feeds are dominated by
+# hetero hentai, so Yaoi titles rarely surface in the top page without a
+# dedicated query. Genre "Yaoi" is AniList's adult BL label.
+BL_DISCOVER_QUERY = """
+query ($sort: [MediaSort], $page: Int) {
+  Page(page: $page, perPage: 12) {
+    pageInfo { hasNextPage }
+    media(
+      type: MANGA
+      isAdult: true
+      genre: "Yaoi"
+      format_in: [MANGA, ONE_SHOT, NOVEL]
+      sort: $sort
+    ) {
+      id
+      title { romaji english }
+      coverImage { extraLarge large }
+      averageScore
+      genres
+      chapters
+      format
+      countryOfOrigin
+      description(asHtml: false)
+    }
+  }
+}
+"""
+
+BL_AIRING_QUERY = """
+query ($sort: [MediaSort], $page: Int) {
+  Page(page: $page, perPage: 12) {
+    pageInfo { hasNextPage }
+    media(
+      type: MANGA
+      isAdult: true
+      genre: "Yaoi"
+      status: RELEASING
+      format_in: [MANGA, ONE_SHOT, NOVEL]
+      sort: $sort
+    ) {
+      id
+      title { romaji english }
+      coverImage { extraLarge large }
+      averageScore
+      genres
+      chapters
+      format
+      countryOfOrigin
+      description(asHtml: false)
+    }
+  }
+}
+"""
+
+BL_MANHWA_QUERY = """
+query ($sort: [MediaSort], $page: Int) {
+  Page(page: $page, perPage: 12) {
+    pageInfo { hasNextPage }
+    media(
+      type: MANGA
+      isAdult: true
+      genre: "Yaoi"
+      countryOfOrigin: KR
+      format_in: [MANGA, ONE_SHOT]
+      sort: $sort
+    ) {
+      id
+      title { romaji english }
+      coverImage { extraLarge large }
+      averageScore
+      genres
+      chapters
+      format
+      countryOfOrigin
+      description(asHtml: false)
+    }
+  }
+}
+"""
+
 
 def _clean_description(html: str | None) -> str:
     if not html:
@@ -481,7 +561,7 @@ class AniListSource(AnimeSource):
         return {"results": out, "has_next": has_next}
 
     def get_trending_manga(self, page: int = 1) -> dict:
-        """Trending adult manga + manhwa + doujinshi (UI label stays Manga / Manhwa)."""
+        """Trending adult manga + manhwa + doujinshi + BL/Yaoi pornhwa."""
         def fetch():
             general = self._discover_manga(
                 "TRENDING_DESC", page, query=MANGA_DISCOVER_QUERY,
@@ -491,20 +571,38 @@ class AniListSource(AnimeSource):
                 "TRENDING_DESC", page, query=MANHWA_DISCOVER_QUERY,
                 cache_prefix="m-trend-kr-v3:", ttl=CATALOG_CACHE_TTL,
             )
-            return self._merge_manga_pages(manhwa, general)
+            bl = self._discover_manga(
+                "TRENDING_DESC", page, query=BL_DISCOVER_QUERY,
+                cache_prefix="m-trend-bl-v1:", ttl=CATALOG_CACHE_TTL,
+            )
+            bl_kr = self._discover_manga(
+                "TRENDING_DESC", page, query=BL_MANHWA_QUERY,
+                cache_prefix="m-trend-bl-kr-v1:", ttl=CATALOG_CACHE_TTL,
+            )
+            # BL first so Yaoi/pornhwa is visible, then KR manhwa, then general
+            return self._merge_manga_pages(bl_kr, bl, manhwa, general)
         return self._cached(
-            f"manga-trend-merged-v3:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-trend-merged-v4:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     def get_airing_manga(self, page: int = 1) -> dict:
-        """Ongoing adult manga / manhwa / doujin — Top Airing row."""
-        return self._discover_manga(
-            "POPULARITY_DESC", page, query=MANGA_AIRING_QUERY,
-            cache_prefix="m-air-v3:", ttl=CATALOG_CACHE_TTL,
+        """Ongoing adult manga / manhwa / doujin / BL — Top Airing row."""
+        def fetch():
+            general = self._discover_manga(
+                "POPULARITY_DESC", page, query=MANGA_AIRING_QUERY,
+                cache_prefix="m-air-v3:", ttl=CATALOG_CACHE_TTL,
+            )
+            bl = self._discover_manga(
+                "POPULARITY_DESC", page, query=BL_AIRING_QUERY,
+                cache_prefix="m-air-bl-v1:", ttl=CATALOG_CACHE_TTL,
+            )
+            return self._merge_manga_pages(bl, general)
+        return self._cached(
+            f"manga-air-merged-v4:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     def get_popular_manga(self, page: int = 1) -> dict:
-        """Popular adult manga + manhwa + doujinshi."""
+        """Popular adult manga + manhwa + doujinshi + BL/Yaoi pornhwa."""
         def fetch():
             general = self._discover_manga(
                 "POPULARITY_DESC", page, query=MANGA_DISCOVER_QUERY,
@@ -514,9 +612,17 @@ class AniListSource(AnimeSource):
                 "POPULARITY_DESC", page, query=MANHWA_DISCOVER_QUERY,
                 cache_prefix="m-pop-kr-v3:", ttl=CATALOG_CACHE_TTL,
             )
-            return self._merge_manga_pages(manhwa, general)
+            bl = self._discover_manga(
+                "POPULARITY_DESC", page, query=BL_DISCOVER_QUERY,
+                cache_prefix="m-pop-bl-v1:", ttl=CATALOG_CACHE_TTL,
+            )
+            bl_kr = self._discover_manga(
+                "POPULARITY_DESC", page, query=BL_MANHWA_QUERY,
+                cache_prefix="m-pop-bl-kr-v1:", ttl=CATALOG_CACHE_TTL,
+            )
+            return self._merge_manga_pages(bl_kr, bl, manhwa, general)
         return self._cached(
-            f"manga-pop-merged-v3:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-pop-merged-v4:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     # Back-compat aliases used by older routes
