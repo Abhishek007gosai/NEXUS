@@ -345,6 +345,12 @@
     img.src = item.poster_url || "";
     img.alt = item.title;
     art.appendChild(img);
+    if (item.rating) {
+      const badge = document.createElement("span");
+      badge.className = "poster-rating";
+      badge.textContent = "\u2605 " + Number(item.rating).toFixed(1);
+      art.appendChild(badge);
+    }
     card.appendChild(art);
 
     const meta = document.createElement("div");
@@ -353,12 +359,6 @@
     title.className = "poster-title";
     title.textContent = item.title;
     meta.appendChild(title);
-    if (item.rating) {
-      const rating = document.createElement("p");
-      rating.className = "poster-rating-line";
-      rating.textContent = "\u2605 " + item.rating.toFixed(1);
-      meta.appendChild(rating);
-    }
     card.appendChild(meta);
 
     card.addEventListener("click", onOpen);
@@ -404,12 +404,6 @@
     title.className = "poster-title";
     title.textContent = item.title;
     meta.appendChild(title);
-    if (item.rating) {
-      const rating = document.createElement("p");
-      rating.className = "poster-rating-line";
-      rating.textContent = "\u2605 " + item.rating.toFixed(1);
-      meta.appendChild(rating);
-    }
     if (item.genres && item.genres.length) {
       const genres = document.createElement("p");
       genres.className = "poster-genres";
@@ -886,7 +880,7 @@
     if (anime.format) addMetaPill(anime.format);
     if (anime.year) addMetaPill(String(anime.year));
     if (anime.duration) addMetaPill(`${anime.duration}m`);
-    if (anime.rating) addMetaPill(`\u2605 ${anime.rating.toFixed(1)}`, true);
+    if (anime.rating) addMetaPill(`\u2605 ${Number(anime.rating).toFixed(1)}`, true);
 
     detailGenres.innerHTML = "";
     (anime.genres || []).forEach((g) => {
@@ -1468,7 +1462,7 @@
     if (item.rating) {
       const rating = document.createElement("span");
       rating.className = "search-result-rating";
-      rating.textContent = "\u2605 " + item.rating.toFixed(1);
+      rating.textContent = "\u2605 " + Number(item.rating).toFixed(1);
       meta.appendChild(rating);
     }
     body.appendChild(meta);
