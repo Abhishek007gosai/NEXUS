@@ -193,8 +193,8 @@ async def on_text_search(client: Client, message: Message):
     text = (message.text or "").strip()
     if len(text) < 2 or len(text) > 80:
         return
-    # Skip file-store / link-share deep-link style payloads
-    if text.startswith(("yu3elk", "ls_")):
+    # Skip file-store deep-link style payloads (shortener / batch tokens)
+    if text.startswith("yu3elk"):
         return
     # Don't treat URLs, pure IDs, or command-like text as anime titles
     # (avoids clashing with admin settings input / channel IDs)
