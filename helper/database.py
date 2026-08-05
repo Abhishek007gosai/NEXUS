@@ -1449,3 +1449,97 @@ def get_popular_searches(limit: int = 6) -> list[dict]:
 def clear_popular_searches() -> None:
     searches_col.delete_many({})
 
+
+
+# ---------------------------------------------------------------------------
+# App settings (profile help card, links, support chat)
+# ---------------------------------------------------------------------------
+
+def _clean_link_list(items) -> list[dict]:
+    clean = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("name") or "").strip()
+        url = (item.get("url") or "").strip()
+        if name and url:
+            clean.append({"name": name, "url": url})
+    return clean
+
+
+def get_profile_links() -> list[dict]:
+    """Primary profile help-card links — only from Mongo (edited in the mini app)."""
+    doc = counters_col.find_one({"_id": "profile_links"})
+    if not doc or not isinstance(doc.get("links"), list):
+        return []
+    return _clean_link_list(doc["links"])
+
+
+def set_profile_links(links: list[dict]) -> list[dict]:
+    clean = _clean_link_list(links)
+    counters_col.update_one(
+        {"_id": "profile_links"},
+        {"$set": {"links": clean, "updated_at": time.time()}},
+        upsert=True,
+    )
+    return clean
+
+
+def get_more_channel_links() -> list[dict]:
+    """Extra channel links shown when the user taps MORE CHANNELS."""
+    doc = counters_col.find_one({"_id": "profile_more_links"})
+    if not doc or not isinstance(doc.get("links"), list):
+        return []
+    return _clean_link_list(doc["links"])
+
+
+def set_more_channel_links(links: list[dict]) -> list[dict]:
+    clean = _clean_link_list(links)
+    counters_col.update_one(
+        {"_id": "profile_more_links"},
+        {"$set": {"links": clean, "updated_at": time.time()}},
+        upsert=True,
+    )
+    return clean
+
+
+def get_profile_help() -> dict:
+    """Title/text/links for Profile help cards. All editable in mini app."""
+    doc = counters_col.find_one({"_id": "profile_help"}) or {}
+    title = (doc.get("title") or "").strip() or "ANIME NEXUS NETWORK"
+    text = (doc.get("text") or "").strip() or (
+        "WELCOME TO ANIME NEXUS NETWORK ANIME NEXUS "
+        "NETWORK IS YOUR GATEWAY TO ENDLESS ADVENTURES "
+        "AND SHARED FANDOM.WHERE THE MAGIC OF ANIME "
+        "COMES TO LIFE GET READY TO IMMERSE YOURSELF IN A "
+        "WORLD OF ANIME LIKE NEVER BEFORE JOIN OUR "
+        "COMMUNITY OF FELLOW ANIME ENTHUSIASTS AS WE "
+        "EXPLORE THE BOUNDLESS REALMS OF IMAGINATION "
+        "TOGETHER. LET THE JOURNEY BEGIN!"
+    )
+    support = (doc.get("support_chat_url") or "").strip()
+    return {
+        "title": title,
+        "text": text,
+        "links": get_profile_links(),
+        "more_links": get_more_channel_links(),
+        "support_chat_url": support,
+    }
+
+
+def set_profile_help(
+    title: str | None = None,
+    text: str | None = None,
+    support_chat_url: str | None = None,
+) -> dict:
+    fields = {}
+    if title is not None:
+        fields["title"] = (title or "").strip() or None
+    if text is not None:
+        fields["text"] = (text or "").strip() or None
+    if support_chat_url is not None:
+        fields["support_chat_url"] = (support_chat_url or "").strip() or None
+    if fields:
+        fields["updated_at"] = time.time()
+        counters_col.update_one({"_id": "profile_help"}, {"$set": fields}, upsert=True)
+    return get_profile_help()
