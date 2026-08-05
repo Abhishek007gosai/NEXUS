@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import time
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
-from config import Config
+from config import WEB_DB_URI, WEB_DB_NAME
 
 class MongoDB:
     _instances = {}
@@ -863,9 +863,9 @@ def _ensure():
     global _client, _db
     if _client is not None:
         return
-    uri = Config.MONGODB_URL or "mongodb://localhost:27017"
+    uri = WEB_DB_URI or "mongodb://localhost:27017"
     _client = MongoClient(uri, serverSelectionTimeoutMS=8000)
-    _db = _client[Config.MONGODB_NAME]
+    _db = _client[WEB_DB_NAME]
 
 
 anime_col = _LazyCol("anime")

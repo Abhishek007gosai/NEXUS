@@ -4,7 +4,16 @@ import asyncio
 from pyrogram import filters, Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ChatMemberStatus
-from pyrogram.errors import UserNotParticipant, Forbidden, PeerIdInvalid, ChatAdminRequired, FloodWait
+from pyrogram.errors import (
+    UserNotParticipant,
+    Forbidden,
+    PeerIdInvalid,
+    ChatAdminRequired,
+    FloodWait,
+    MessageNotModified,
+    MessageIdInvalid,
+    MessageEmpty,
+)
 from datetime import datetime, timedelta
 from pyrogram import errors
 
@@ -28,6 +37,9 @@ if ButtonStyle is not None:
     }
     if hasattr(ButtonStyle, "DEFAULT"):
         _STYLE_MAP[ButtonStyle.DEFAULT] = ButtonStyle.DEFAULT
+
+# Errors that are safe to ignore when editing messages (same content / gone / empty).
+_SAFE_EDIT_ERRORS = (MessageNotModified, MessageIdInvalid, MessageEmpty)
 
 #===============================================================#
 
@@ -68,6 +80,53 @@ def styled_button(text, style=None, **kwargs):
     return btn
 
 #===============================================================#
+
+async def safe_edit_text(message, text, **kwargs):
+    """edit_text that silently ignores MESSAGE_NOT_MODIFIED and similar."""
+    try:
+        return await message.edit_text(text, **kwargs)
+    except _SAFE_EDIT_ERRORS:
+        return message
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        try:
+            return await message.edit_text(text, **kwargs)
+        except _SAFE_EDIT_ERRORS:
+            return message
+
+async def safe_edit_caption(message, caption, **kwargs):
+    """edit_caption that silently ignores MESSAGE_NOT_MODIFIED and similar."""
+    try:
+        return await message.edit_caption(caption, **kwargs)
+    except _SAFE_EDIT_ERRORS:
+        return message
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        try:
+            return await message.edit_caption(caption, **kwargs)
+        except _SAFE_EDIT_ERRORS:
+            return message
+
+async def safe_edit_reply_markup(message, reply_markup=None):
+    """edit_reply_markup that silently ignores MESSAGE_NOT_MODIFIED and similar."""
+    try:
+        return await message.edit_reply_markup(reply_markup)
+    except _SAFE_EDIT_ERRORS:
+        return message
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        try:
+            return await message.edit_reply_markup(reply_markup)
+        except _SAFE_EDIT_ERRORS:
+            return message
+
+async def answer_and_edit(query, text, **kwargs):
+    """Answer callback (ignore if already answered) then safe-edit the message."""
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    return await safe_edit_text(query.message, text, **kwargs)
 
 #===============================================================#
 
