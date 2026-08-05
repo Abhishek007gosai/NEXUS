@@ -1319,15 +1319,49 @@
     return (name || "?").trim().charAt(0).toUpperCase();
   }
 
+  function openExternalLink(url) {
+    if (!url) return;
+    if (tg && tg.openTelegramLink && /t\.me\//i.test(url)) tg.openTelegramLink(url);
+    else if (tg && tg.openLink) tg.openLink(url);
+    else window.open(url, "_blank");
+  }
+
+  function makeHelpLinkCard(name, url) {
+    const card = document.createElement("div");
+    card.className = "help-card help-card--link";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "help-link-btn";
+    btn.textContent = name;
+    btn.addEventListener("click", () => openExternalLink(url));
+    card.appendChild(btn);
+    return card;
+  }
+
   async function openProfile() {
     profileCard.innerHTML = `<p class="profile-hint">Loading profile\u2026</p>`;
     try {
       profile = await api("/api/profile");
+      let help = {
+        title: "ANIME NEXUS NETWORK",
+        text: "",
+        links: [],
+        more_links: [],
+        support_chat_url: "",
+      };
+      try {
+        help = await api("/api/profile/help");
+      } catch (e) { /* use defaults */ }
+
       const displayName = profile.first_name || profile.username || "User";
       const photoUrl = tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.photo_url;
       const avatarHtml = photoUrl
         ? `<img class="profile-avatar profile-avatar-img" src="${escapeHtml(photoUrl)}" alt="${escapeHtml(displayName)}" onerror="this.replaceWith(Object.assign(document.createElement('div'), {className: 'profile-avatar', textContent: '${initials(displayName)}'}))" />`
         : `<div class="profile-avatar">${initials(displayName)}</div>`;
+      const links = Array.isArray(help.links) ? help.links : [];
+      const moreLinks = Array.isArray(help.more_links) ? help.more_links : [];
+      const supportUrl = (help.support_chat_url || "").trim();
+
       profileCard.innerHTML = `
         <div class="profile-header">
           ${avatarHtml}
@@ -1339,12 +1373,183 @@
         <div class="profile-row"><span class="label">Telegram ID</span><span class="value">${profile.telegram_id}</span></div>
         <div class="profile-row"><span class="label">Registered in bot</span><span class="value">yes</span></div>
         <div class="profile-row"><span class="label">Role</span><span class="value">${escapeHtml(profile.role)}</span></div>
-        <div class="profile-row"><span class="label">Access</span><span class="value">${escapeHtml(profile.access)}</span></div>
+        <div class="profile-row"><span class="label">Access</span><span class="value">${escapeHtml(profile.access || "active")}</span></div>
       `;
+
+      // Support Chat button always under Access
+      {
+        const supportWrap = document.createElement("div");
+        supportWrap.className = "profile-support-wrap";
+        const supportBtn = document.createElement("button");
+        supportBtn.type = "button";
+        supportBtn.className = "profile-support-btn";
+        supportBtn.textContent = "Support Chat";
+        supportBtn.addEventListener("click", () => {
+          if (supportUrl) {
+            openExternalLink(supportUrl);
+          } else if (profile && profile.role === "admin") {
+            showToast("Set Support Chat URL in Edit links first");
+            openHelpEdit(help);
+          } else {
+            showToast("Support chat is not available yet");
+          }
+        });
+        supportWrap.appendChild(supportBtn);
+        profileCard.appendChild(supportWrap);
+      }
+
+      // Remove previous help stack
+      const parent = profileCard.parentElement;
+      if (parent) {
+        parent.querySelectorAll(".help-stack, .help-card").forEach((n) => n.remove());
+      }
+
+      const stack = document.createElement("div");
+      stack.className = "help-stack";
+
+      // Intro card (title + description) — always shown
+      const intro = document.createElement("div");
+      intro.className = "help-card";
+      intro.innerHTML = `
+        <h3 class="help-card-title">${escapeHtml(help.title || "ANIME NEXUS NETWORK")}</h3>
+        <p class="help-card-text">${escapeHtml(help.text || "")}</p>
+      `;
+      stack.appendChild(intro);
+
+      // All channel links live behind MORE CHANNELS (not shown until tapped)
+      const allChannelLinks = []
+        .concat(links, moreLinks)
+        .filter((l) => (l.name || "").trim() && (l.url || "").trim());
+
+      if (allChannelLinks.length > 0) {
+        const moreCard = document.createElement("div");
+        moreCard.className = "help-card help-card--link";
+        const moreBtn = document.createElement("button");
+        moreBtn.type = "button";
+        moreBtn.className = "help-link-btn help-more-btn";
+        moreBtn.textContent = "MORE CHANNELS";
+        const morePanel = document.createElement("div");
+        morePanel.className = "more-channels-panel hidden";
+        allChannelLinks.forEach((l) => {
+          morePanel.appendChild(makeHelpLinkCard((l.name || "").trim(), (l.url || "").trim()));
+        });
+        moreBtn.addEventListener("click", () => {
+          const nowHidden = morePanel.classList.toggle("hidden");
+          moreBtn.textContent = nowHidden ? "MORE CHANNELS" : "HIDE CHANNELS";
+        });
+        moreCard.appendChild(moreBtn);
+        stack.appendChild(moreCard);
+        stack.appendChild(morePanel);
+      }
+
+      if (profile.role === "admin") {
+        const admin = document.createElement("div");
+        admin.className = "help-card-admin";
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "edit-links-btn";
+        editBtn.textContent = allChannelLinks.length ? "Edit links" : "Add links";
+        editBtn.addEventListener("click", () => openHelpEdit(help));
+        admin.appendChild(editBtn);
+        stack.appendChild(admin);
+      }
+
+      if (parent) parent.insertBefore(stack, profileCard.nextSibling);
+      else profileCard.appendChild(stack);
     } catch (err) {
       profileCard.innerHTML = `<p class="profile-hint">${escapeHtml(err.message || "Open this from inside Telegram to view your profile.")}</p>`;
     }
   }
+
+  function openHelpEdit(help) {
+    const overlay = el("help-edit-overlay");
+    if (!overlay) return;
+    el("help-edit-title").value = help.title || "";
+    el("help-edit-text").value = help.text || "";
+    const supportInput = el("help-edit-support");
+    if (supportInput) supportInput.value = help.support_chat_url || "";
+    const box = el("help-edit-links");
+    box.innerHTML = "";
+    const links = (help.links && help.links.length)
+      ? help.links
+      : [{ name: "", url: "" }, { name: "", url: "" }];
+    links.forEach((l) => box.appendChild(helpEditRow(l.name || "", l.url || "")));
+    const moreBox = el("help-edit-more-links");
+    if (moreBox) {
+      moreBox.innerHTML = "";
+      const moreLinks = (help.more_links && help.more_links.length)
+        ? help.more_links
+        : [{ name: "", url: "" }];
+      moreLinks.forEach((l) => moreBox.appendChild(helpEditRow(l.name || "", l.url || "")));
+    }
+    overlay.classList.remove("hidden");
+  }
+
+  function helpEditRow(name, url) {
+    const row = document.createElement("div");
+    row.className = "help-edit-row";
+    row.innerHTML = `
+      <input type="text" class="help-edit-name" placeholder="Button name" value="" />
+      <input type="text" class="help-edit-url" placeholder="https://t.me/..." value="" />
+      <div class="help-edit-actions"><button type="button" class="help-edit-remove">Remove</button></div>
+    `;
+    row.querySelector(".help-edit-name").value = name;
+    row.querySelector(".help-edit-url").value = url;
+    row.querySelector(".help-edit-remove").addEventListener("click", () => row.remove());
+    return row;
+  }
+
+  function closeHelpEdit() {
+    const overlay = el("help-edit-overlay");
+    if (overlay) overlay.classList.add("hidden");
+  }
+
+  function collectLinkRows(containerId) {
+    const out = [];
+    const box = el(containerId);
+    if (!box) return out;
+    box.querySelectorAll(".help-edit-row").forEach((row) => {
+      const name = row.querySelector(".help-edit-name").value.trim();
+      const url = row.querySelector(".help-edit-url").value.trim();
+      if (name && url) out.push({ name, url });
+    });
+    return out;
+  }
+
+  (function wireHelpEdit() {
+    const overlay = el("help-edit-overlay");
+    if (!overlay) return;
+    el("help-edit-cancel").addEventListener("click", closeHelpEdit);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeHelpEdit(); });
+    el("help-edit-add").addEventListener("click", () => {
+      el("help-edit-links").appendChild(helpEditRow("", ""));
+    });
+    const addMore = el("help-edit-add-more");
+    if (addMore) {
+      addMore.addEventListener("click", () => {
+        el("help-edit-more-links").appendChild(helpEditRow("", ""));
+      });
+    }
+    el("help-edit-save").addEventListener("click", async () => {
+      const title = el("help-edit-title").value.trim();
+      const text = el("help-edit-text").value.trim();
+      const supportInput = el("help-edit-support");
+      const support_chat_url = supportInput ? supportInput.value.trim() : "";
+      const links = collectLinkRows("help-edit-links");
+      const more_links = collectLinkRows("help-edit-more-links");
+      try {
+        await api("/api/profile/help", {
+          method: "PUT",
+          body: JSON.stringify({ title, text, support_chat_url, links, more_links }),
+        });
+        closeHelpEdit();
+        showToast("Profile links saved");
+        openProfile();
+      } catch (err) {
+        showToast(err.message || "Could not save");
+      }
+    });
+  })();
 
   // ---------------------------------------------------------------------
   // Notifications (request accepted/rejected) — the bell in the header
