@@ -1,10 +1,10 @@
 from helper.helper_func import *
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import humanize
-from config import OWNER_ID
+from config import OWNER_ID, WEBAPP_URL
 from plugins.shortner import get_short
-from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification
+from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification, styled_button
 import asyncio
 from datetime import datetime, timedelta
 from pyrogram.enums import ParseMode
@@ -332,7 +332,13 @@ async def start_command(client: Client, message: Message):
 
     # 9. Normal start message
     else:
-        buttons = [[styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data='close')]]
+        buttons = []
+        if WEBAPP_URL:
+            if WEBAPP_URL.startswith("https://"):
+                buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=WEBAPP_URL))])
+            else:
+                buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=WEBAPP_URL)])
+        buttons.append([styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data='close')])
         if user_id in client.admins:
             buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
 

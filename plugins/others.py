@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
-from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup
-from config import MSG_EFFECT, OWNER_ID
+from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, WebAppInfo
+from config import MSG_EFFECT, OWNER_ID, WEBAPP_URL
 from helper.pyro_listen import ListenerTimeout
 from helper.helper_func import styled_button, safe_edit_text
 
@@ -287,7 +287,13 @@ async def home(client: Client, query: CallbackQuery):
         await query.answer()
     except Exception:
         pass
-    buttons = [[styled_button("Help", style="danger", callback_data="about"), styled_button("Close", style="danger", callback_data="close")]]
+    buttons = []
+    if WEBAPP_URL:
+        if WEBAPP_URL.startswith("https://"):
+            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=WEBAPP_URL))])
+        else:
+            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=WEBAPP_URL)])
+    buttons.append([styled_button("Help", style="danger", callback_data="about"), styled_button("Close", style="danger", callback_data="close")])
     if query.from_user.id in client.admins:
         buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
     text = client.messages.get('START', 'No Start Message').format(
