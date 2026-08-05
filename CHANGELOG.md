@@ -60,3 +60,8 @@ Project layout matches the integrated **NEXUS-Kaya** layout:
 - Deleted `plugins/link_share.py` entirely (admin Link Share menu + token
   deep-links). It was not wired into settings and had no matching
   `linkshare_db` methods in `helper/database.py`.
+
+## Poster badges → ratings
+
+- Removed HOT / NEW EP / POPULAR badges from discovery poster cards.
+- Rating is shown as a ★ overlay on the poster (top-left) instead.
