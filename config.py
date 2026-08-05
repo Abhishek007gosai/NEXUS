@@ -79,7 +79,6 @@ MESSAGES = {
     "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", ""),
     "INDEX_PHOTO": os.getenv("INDEX_PHOTO", "") or os.getenv("BANNER_IMAGE_URL", ""),
 }
-BANNER_IMAGE_URL = MESSAGES.get("BANNER_IMAGE_URL") or MESSAGES.get("INDEX_PHOTO") or ""
 
 
 

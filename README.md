@@ -14,7 +14,7 @@ Unified **Telegram file-store bot** (Nexus) and **Anime Index Mini App** (Touka)
 Set `WEBAPP_URL` to your public HTTPS URL and `LOG_CHANNEL_ID` for request/report notifications.
 
 Commands of note:
-- `/start` — file-store start (deep links for files / link-share)
+- `/start` — file-store start (deep links for files)
 - `/anidex` — open Anime Index mini app
 - Plain text in private chat — searches the **Available** anime library
 
