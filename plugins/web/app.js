@@ -1291,7 +1291,7 @@
   // ---------------------------------------------------------------------
   // Search page
   // ---------------------------------------------------------------------
-  const GENRES = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Romance", "Sci-Fi", "Horror"];
+  const GENRES = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Romance", "Sci-Fi", "Horror", "Yaoi"];
 
   function renderSearchLanding() {
     searchViewInput.value = "";
@@ -1409,6 +1409,9 @@
     },
     "Horror": {
       svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V11a7 7 0 0 1 14 0v10l-2.5-2-2 2-2.5-2-2 2-2.5-2Z"/><path d="M9 11h.01"/><path d="M15 11h.01"/></svg>',
+    },
+    "Yaoi": {
+      svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-9.5-9C.9 7.6 3 4 6.5 4 9 4 11 6 12 7.5 13 6 15 4 17.5 4 21 4 23.1 7.6 21.5 11 19 15.6 12 20 12 20Z"/></svg>',
     },
   };
 
