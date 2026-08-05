@@ -10,6 +10,8 @@ import humanize
 @Client.on_callback_query(filters.regex("^settings$"))
 async def settings(client, query):
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
+›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
+›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
     """
     reply_markup = InlineKeyboardMarkup([
         [styled_button('ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='fsub'), styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='db_channels')],
