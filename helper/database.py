@@ -820,6 +820,8 @@ def _to_anime(doc) -> dict | None:
     d["id"] = d.pop("_id")
     d["genres"] = d.get("genres") or []
     d["available"] = bool(d.get("join_link"))
+    d["library_section"] = d.get("library_section")  # ongoing | finished | None
+    d["media_type"] = d.get("media_type") or "ANIME"
     return d
 
 
@@ -952,12 +954,17 @@ def upsert_anime(details: dict, added_by: int | None = None) -> int:
         "rating": details.get("rating"),
         "status": details.get("status"),
         "episodes": details.get("episodes"),
+        "chapters": details.get("chapters"),
         "format": details.get("format"),
         "duration": details.get("duration"),
+        "media_type": details.get("media_type") or "ANIME",
+        "countryOfOrigin": details.get("countryOfOrigin"),
         "related_ids": related_ids,
         "relations": details.get("relations", []),
         "updated_at": now,
     }
+    if details.get("library_section") in ("ongoing", "finished"):
+        fields["library_section"] = details["library_section"]
 
     if existing:
         anime_col.update_one({"_id": existing["_id"]}, {"$set": fields})
@@ -1045,10 +1052,13 @@ def search_local(query: str) -> list[dict]:
     return [_to_anime(d) for d in docs]
 
 
-def update_link(anime_id: int, link: str):
+def update_link(anime_id: int, link: str, library_section: str | None = None):
+    fields = {"join_link": link or None, "updated_at": time.time()}
+    if library_section in ("ongoing", "finished"):
+        fields["library_section"] = library_section
     anime_col.update_one(
         {"_id": anime_id},
-        {"$set": {"join_link": link or None, "updated_at": time.time()}},
+        {"$set": fields},
     )
 
 
@@ -1360,3 +1370,75 @@ def get_popular_searches(limit: int = 6) -> list[dict]:
 def clear_popular_searches() -> None:
     searches_col.delete_many({})
 
+
+# ---------------------------------------------------------------------------
+# App settings (profile links, etc.)
+# ---------------------------------------------------------------------------
+
+def _sanitize_profile_links(raw) -> list[dict]:
+    """Keep only {name, url} pairs with non-empty trimmed strings."""
+    out = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("name") or "").strip()
+        url = (item.get("url") or "").strip()
+        if name and url:
+            out.append({"name": name, "url": url})
+    return out
+
+
+def get_profile_help() -> dict:
+    """Title/text/links for Profile help cards. All editable in mini app."""
+    doc = counters_col.find_one({"_id": "profile_help"}) or {}
+    title = (doc.get("title") or "").strip() or "Need help?"
+    text = (doc.get("text") or "").strip() or (
+        "Notifications, requests, and channel links are all managed through the bot."
+    )
+    links = _sanitize_profile_links(doc.get("links"))
+    more_links = _sanitize_profile_links(doc.get("more_links"))
+    support_chat_url = (doc.get("support_chat_url") or "").strip()
+    return {
+        "title": title,
+        "text": text,
+        "links": links,
+        "more_links": more_links,
+        "support_chat_url": support_chat_url,
+    }
+
+
+def set_profile_help(
+    title: str | None = None,
+    text: str | None = None,
+    support_chat_url: str | None = None,
+) -> dict:
+    fields = {}
+    if title is not None:
+        fields["title"] = (title or "").strip()
+    if text is not None:
+        fields["text"] = (text or "").strip()
+    if support_chat_url is not None:
+        fields["support_chat_url"] = (support_chat_url or "").strip()
+    if fields:
+        counters_col.update_one({"_id": "profile_help"}, {"$set": fields}, upsert=True)
+    return get_profile_help()
+
+
+def set_profile_links(links) -> dict:
+    counters_col.update_one(
+        {"_id": "profile_help"},
+        {"$set": {"links": _sanitize_profile_links(links)}},
+        upsert=True,
+    )
+    return get_profile_help()
+
+
+def set_more_channel_links(links) -> dict:
+    counters_col.update_one(
+        {"_id": "profile_help"},
+        {"$set": {"more_links": _sanitize_profile_links(links)}},
+        upsert=True,
+    )
+    return get_profile_help()
