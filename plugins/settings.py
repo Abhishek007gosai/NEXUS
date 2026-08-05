@@ -18,18 +18,7 @@ async def settings(client, query):
     total_db_channels = len(getattr(client, 'db_channels', {}))
     primary_db = getattr(client, 'primary_db_channel', client.db)
     
-    msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
-›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
-›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
-›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
-›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
-›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('START_PHOTO') else "✗"}`
-›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('FSUB_PHOTO') else "✗"}`
-    """
+    msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>"""
     reply_markup = InlineKeyboardMarkup([
         [styled_button('ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='fsub'), styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='db_channels')],
         [styled_button('ᴀᴅᴍɪɴꜱ', style="primary", callback_data='admins'), styled_button('ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', style="primary", callback_data='auto_del')],
@@ -51,18 +40,7 @@ async def settings_page_2(client, query):
     total_db_channels = len(getattr(client, 'db_channels', {}))
     primary_db = getattr(client, 'primary_db_channel', client.db)
     
-    msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
-›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
-›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
-›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
-›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
-›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('START_PHOTO') else "✗"}`
-›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('FSUB_PHOTO') else "✗"}`
-    """
+    msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>"""
     reply_markup = InlineKeyboardMarkup([
         [styled_button('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', style="primary", callback_data='protect'), styled_button('ᴘʜᴏᴛᴏs', style="primary", callback_data='photos')],
         [styled_button('ᴛᴇxᴛs', style="primary", callback_data='texts'), styled_button('sʜᴏʀᴛɴᴇʀ', style="primary", callback_data='shortner')],
