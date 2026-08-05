@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: nexus-v2
-    env: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    branch: main
-    autoDeploy: true
-    healthCheckPath: /healthz
