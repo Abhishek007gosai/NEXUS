@@ -1,13 +1,12 @@
 import asyncio
 asyncio.set_event_loop(asyncio.new_event_loop())
 
-from bot import Bot, web_app, run_flask
+from bot import Bot, run_flask
 from pyrogram import compose
 from config import *
 from threading import Thread
 
 
-# Clear any leftover Telegram webhook ASAP (polling mode).
 def _clear_webhook_early():
     try:
         import requests
@@ -24,15 +23,8 @@ def _clear_webhook_early():
         print("deleteWebhook error:", e)
 
 
-_clear_webhook_early()
-
-# 🚀 Start Flask FIRST for Koyeb/Render health checks
-Thread(target=run_flask, daemon=True).start()
-
 async def main():
-    app = []
-
-    app.append(
+    apps = [
         Bot(
             SESSION,
             WORKERS,
@@ -47,16 +39,18 @@ async def main():
             API_ID,
             API_HASH,
             PROTECT,
-            DISABLE_BTN
+            DISABLE_BTN,
         )
-    )
+    ]
+    await compose(apps)
 
-    await compose(app)
 
-async def runner():
-    await asyncio.gather(
-        main(),
-        web_app()
-    )
+def run():
+    _clear_webhook_early()
+    # Flask only — health checks on Koyeb/Render (avoids port conflict with aiohttp)
+    Thread(target=run_flask, daemon=True).start()
+    asyncio.run(main())
 
-asyncio.run(runner())
+
+if __name__ == "__main__":
+    run()
