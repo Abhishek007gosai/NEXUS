@@ -20,7 +20,10 @@ import requests
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 from flask_compress import Compress
 
-from config import Config, TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE, CATALOG_CACHE_TTL, LOG_CHANNEL_ID
+from config import (
+    TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE,
+    CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY, SUPPORT_CHAT_URL,
+)
 from helper import database as db
 
 # AniList source
@@ -46,7 +49,7 @@ app = Flask(
     static_url_path="/static",
     template_folder=str(WEB_DIR),
 )
-app.config["SECRET_KEY"] = Config.SECRET_KEY
+app.config["SECRET_KEY"] = SECRET_KEY
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 app.config["COMPRESS_MIMETYPES"] = [
     "text/html", "text/css", "text/javascript", "application/javascript",
@@ -65,7 +68,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
 
 
 def verify_init_data(init_data: str) -> dict | None:
-    if not init_data or not Config.BOT_TOKEN:
+    if not init_data or not TOKEN:
         return None
     try:
         parsed = dict(parse_qsl(init_data, strict_parsing=True))
@@ -77,7 +80,7 @@ def verify_init_data(init_data: str) -> dict | None:
         return None
 
     check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
-    secret_key = hmac.new(b"WebAppData", Config.BOT_TOKEN.encode(), hashlib.sha256).digest()
+    secret_key = hmac.new(b"WebAppData", TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(computed_hash, received_hash):
         return None
@@ -96,7 +99,7 @@ def current_user():
 
 
 def is_admin(user: dict | None) -> bool:
-    return bool(user) and user.get("id") in Config.ADMIN_IDS
+    return bool(user) and user.get("id") in ADMINS
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +190,7 @@ def _telegram_user_label(user: dict | None) -> str:
 
 
 def _bot_api(method: str, payload: dict):
-    token = Config.BOT_TOKEN or TOKEN
+    token = TOKEN or TOKEN
     if not token:
         return
     try:
@@ -197,7 +200,7 @@ def _bot_api(method: str, payload: dict):
 
 
 def notify_new_report(title: str, reason: str, details: str, reporter_name: str):
-    if not Config.LOG_CHANNEL_ID:
+    if not LOG_CHANNEL_ID:
         return
     text = (
         f"\U0001f6a9 New Report\n"
@@ -206,11 +209,11 @@ def notify_new_report(title: str, reason: str, details: str, reporter_name: str)
         + (f"Details: {details}\n" if details else "")
         + f"By: {reporter_name}"
     )
-    _bot_api("sendMessage", {"chat_id": Config.LOG_CHANNEL_ID, "text": text})
+    _bot_api("sendMessage", {"chat_id": LOG_CHANNEL_ID, "text": text})
 
 
 def notify_new_request(request_id: int, title: str, requester_name: str, poster_url: str | None):
-    if not Config.LOG_CHANNEL_ID:
+    if not LOG_CHANNEL_ID:
         return
     text = (
         f"\U0001f4dd New Request\n"
@@ -224,7 +227,7 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
         ]]
     }
     _bot_api("sendMessage", {
-        "chat_id": Config.LOG_CHANNEL_ID,
+        "chat_id": LOG_CHANNEL_ID,
         "text": text,
         "reply_markup": keyboard,
     })
@@ -246,7 +249,7 @@ def normalize_join_link(raw: str) -> str:
     if raw.startswith("t.me/") or raw.startswith("telegram.me/"):
         return "https://" + raw
     if re.fullmatch(r"-?\d+", raw):
-        token = Config.BOT_TOKEN or TOKEN
+        token = TOKEN or TOKEN
         if not token:
             raise ValueError("Bot isn't connected — can't generate an invite link for a channel ID.")
         try:
@@ -311,7 +314,7 @@ def index():
     # We run Pyrogram in polling mode, so ignore POSTs with 200 to stop retry spam.
     if request.method == "POST":
         return "", 200
-    return render_template("index.html", brand_name=Config.BRAND_NAME, brand_handle=Config.BRAND_HANDLE)
+    return render_template("index.html", brand_name=BRAND_NAME, brand_handle=BRAND_HANDLE)
 
 
 @app.get("/favicon.ico")
@@ -347,7 +350,7 @@ def api_trending():
         resp = jsonify(SOURCES["anilist"].get_trending(page))
     except requests.RequestException:
         return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={Config.CATALOG_CACHE_TTL}"
+    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
     return resp
 
 
@@ -358,7 +361,7 @@ def api_popular():
         resp = jsonify(SOURCES["anilist"].get_popular(page))
     except requests.RequestException:
         return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={Config.CATALOG_CACHE_TTL}"
+    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
     return resp
 
 
@@ -369,7 +372,7 @@ def api_most_popular():
         resp = jsonify(SOURCES["anilist"].get_most_popular(page))
     except requests.RequestException:
         return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={Config.CATALOG_CACHE_TTL}"
+    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
     return resp
 
 
@@ -563,7 +566,7 @@ def api_profile():
 
 def _resolve_support_chat_url(mongo_url: str | None = None) -> str:
     """Env SUPPORT_CHAT_URL wins when set; otherwise use the value saved in Mongo."""
-    env_url = (getattr(Config, "SUPPORT_CHAT_URL", None) or "").strip()
+    env_url = (SUPPORT_CHAT_URL or "").strip()
     if env_url:
         return env_url
     return (mongo_url or "").strip()

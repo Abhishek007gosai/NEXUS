@@ -37,13 +37,13 @@ WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
 # ──────────────────────────────────────────────
 BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
 BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
-BANNER_IMAGE_URL = os.getenv("BANNER_IMAGE_URL", "")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
 SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
 ANILIST_ENDPOINT = "https://graphql.anilist.co"
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # ──────────────────────────────────────────────
 # Shortener
@@ -75,40 +75,9 @@ MESSAGES = {
     "FSUB_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
-    "SEARCH_PHOTO": "",
+    "SEARCH_PHOTO": os.getenv("SEARCH_PHOTO", "").strip(),
+    "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", "").strip(),
 }
-
-# Aliases for /anidex
-INDEX_MSG = MESSAGES["INDEX"]
-START_MSG = INDEX_MSG
-
-_search_photo_env = os.getenv("SEARCH_PHOTO", "").strip()
-if _search_photo_env:
-    MESSAGES["SEARCH_PHOTO"] = _search_photo_env
-
-# ──────────────────────────────────────────────
-# Compat namespace for Anime Index mini-app / DB layer
-# ──────────────────────────────────────────────
-class Config:
-    BRAND_NAME = BRAND_NAME
-    BRAND_HANDLE = BRAND_HANDLE
-    BANNER_IMAGE_URL = BANNER_IMAGE_URL
-    START_MSG = MESSAGES["INDEX"]
-    INDEX_MSG = MESSAGES["INDEX"]
-    BOT_TOKEN = TOKEN
-    WEBAPP_URL = WEBAPP_URL
-    LOG_CHANNEL_ID = LOG_CHANNEL_ID
-    SUPPORT_CHAT_URL = SUPPORT_CHAT_URL
-    ADMIN_IDS = ADMINS
-    API_ID = API_ID
-    API_HASH = API_HASH
-    SECRET_KEY = SECRET_KEY
-    PORT = PORT
-    DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-    MONGODB_URL = WEB_DB_URI
-    MONGODB_NAME = WEB_DB_NAME
-    ANILIST_ENDPOINT = ANILIST_ENDPOINT
-    CATALOG_CACHE_TTL = CATALOG_CACHE_TTL
 
 
 def LOGGER(name: str, client_name: str = ""):
