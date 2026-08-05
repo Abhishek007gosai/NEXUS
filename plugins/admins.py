@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from helper.helper_func import styled_button
+from helper.helper_func import styled_button, safe_edit_text, safe_edit_caption, safe_edit_reply_markup
 import time
 
 import psutil
@@ -20,7 +20,7 @@ __Use the appropriate button below to add or remove an admin based on your needs
         [styled_button('ᴀᴅᴅ ᴀᴅᴍɪɴ', style="primary", callback_data='add_admin'), styled_button('ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ', style="primary", callback_data='rm_admin')],
         [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
     )
-    await query.message.edit_text(msg, reply_markup=reply_markup)
+    await safe_edit_text(query.message, msg, reply_markup=reply_markup)
     return
 
 #===============================================================#

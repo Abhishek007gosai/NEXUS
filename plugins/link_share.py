@@ -5,7 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ChatMemberStatus
 from pyrogram.errors import RPCError, UserNotParticipant
-from helper.helper_func import encode, styled_button
+from helper.helper_func import encode, styled_button, safe_edit_text, safe_edit_caption, safe_edit_reply_markup
 from config import OWNER_ID
 
 LINK_SHARE_PREFIX = "ls_"
@@ -21,8 +21,8 @@ def is_admin(client, user_id):
 async def _edit_query_message(query, text, **kwargs):
     """Edit either a normal text message or the photo-based Link Share screen."""
     if query.message.photo:
-        return await query.message.edit_caption(text, **kwargs)
-    return await query.message.edit_text(text, **kwargs)
+        return await safe_edit_caption(query.message, text, **kwargs)
+    return await safe_edit_text(query.message, text, **kwargs)
 
 async def _show_link_share_home(client, query):
     """Render the Link Share home screen in the Kafka-style layout."""
@@ -42,7 +42,7 @@ async def _show_link_share_home(client, query):
     photo = getattr(client, "messages", {}).get("START_PHOTO")
     try:
         if query.message.photo:
-            await query.message.edit_caption(caption, reply_markup=markup)
+            await safe_edit_caption(query.message, caption, reply_markup=markup)
         elif photo:
             await query.message.delete()
             await client.send_photo(
