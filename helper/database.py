@@ -785,6 +785,7 @@ reports_col = _LazyCol("reports")
 requests_col = _LazyCol("requests")
 searches_col = _LazyCol("searches")
 counters_col = _LazyCol("counters")
+cache_col = _LazyCol("catalog_cache")
 
 
 def init_db():
@@ -797,6 +798,11 @@ def init_db():
     requests_col.create_index([("requested_by", ASCENDING), ("seen", ASCENDING)])
     requests_col.create_index([("requested_by", ASCENDING), ("responded_at", ASCENDING)])
     searches_col.create_index([("count", ASCENDING)])
+    try:
+        cache_col.create_index([("key", ASCENDING)], unique=True)
+        cache_col.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+    except Exception:
+        pass
 
 
 def _next_id(counter_name: str) -> int:
@@ -1370,6 +1376,51 @@ def get_popular_searches(limit: int = 6) -> list[dict]:
 def clear_popular_searches() -> None:
     searches_col.delete_many({})
 
+
+
+
+# ---------------------------------------------------------------------------
+# Catalog response cache (MongoDB L2 for AniList feeds)
+# ---------------------------------------------------------------------------
+
+def cache_get(key: str):
+    """Return cached payload or None if missing/expired."""
+    from datetime import timezone
+    try:
+        doc = cache_col.find_one({"key": key})
+    except Exception:
+        return None
+    if not doc:
+        return None
+    exp = doc.get("expires_at")
+    if exp is not None:
+        try:
+            ts = exp.timestamp() if hasattr(exp, "timestamp") else float(exp)
+            if hasattr(exp, "tzinfo") and exp.tzinfo is None:
+                ts = exp.replace(tzinfo=timezone.utc).timestamp()
+            if ts < time.time():
+                return None
+        except Exception:
+            return None
+    return doc.get("value")
+
+
+def cache_set(key: str, value, ttl_seconds: int | None = None):
+    from datetime import datetime, timezone, timedelta
+    try:
+        from config import CATALOG_CACHE_TTL
+        ttl = ttl_seconds if ttl_seconds is not None else CATALOG_CACHE_TTL
+    except Exception:
+        ttl = ttl_seconds if ttl_seconds is not None else 600
+    expires = datetime.now(timezone.utc) + timedelta(seconds=max(30, int(ttl)))
+    try:
+        cache_col.update_one(
+            {"key": key},
+            {"$set": {"key": key, "value": value, "expires_at": expires}},
+            upsert=True,
+        )
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # App settings (profile links, etc.)
