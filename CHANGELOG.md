@@ -41,3 +41,22 @@ Project layout matches the integrated **NEXUS-Kaya** layout:
 - Root `app.py` moved into **`plugins/index.py`** (Flask Mini App + Pyrogram handlers together).
 
 - Split: **app.py** = Flask Mini App; **plugins/index.py** = Pyrogram handlers (index_bot).
+
+## EcchiDex mini app integration
+
+- Replaced `plugins/web/` (index.html, app.js, style.css) with the full
+  **EcchiDex** mini app: ALL / H-ANIME / H-MANHWA home tabs, dual
+  Trending / Top Airing / Popular feeds, Ongoing/Finished manhwa library,
+  genre H-ANIME|H-MANHWA toggle, profile help links + Support Chat editor.
+- **Search left as NEXUS behavior** — private-chat bot search and mini-app
+  library search still query adult anime only (`/api/search/anime`), not
+  the dual anime+manga search from EcchiDex.
+- Backend: manga catalog endpoints, `/api/search/manga`, genre `type`
+  param, `/api/img` cover proxy, profile `/api/profile/help`,
+  `library_section` on link APIs, AniList adult manga methods.
+
+## Remove link_share
+
+- Deleted `plugins/link_share.py` entirely (admin Link Share menu + token
+  deep-links). It was not wired into settings and had no matching
+  `linkshare_db` methods in `helper/database.py`.

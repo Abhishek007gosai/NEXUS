@@ -39,6 +39,7 @@ MONGODB_NAME = WEB_DB_NAME
 # ──────────────────────────────────────────────
 BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
 BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
+SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
