@@ -9,26 +9,7 @@ import humanize
 
 @Client.on_callback_query(filters.regex("^settings$"))
 async def settings(client, query):
-    # Count active force subscription channels by type
-    total_fsub = len(client.fsub_dict)
-    request_enabled = sum(1 for data in client.fsub_dict.values() if data[2])
-    timer_enabled = sum(1 for data in client.fsub_dict.values() if data[3] > 0)
-    
-    # Count DB channels
-    total_db_channels = len(getattr(client, 'db_channels', {}))
-    primary_db = getattr(client, 'primary_db_channel', client.db)
-    
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
-›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
-›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
-›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
-›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
-›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('START_PHOTO') else "✗"}`
-›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('FSUB_PHOTO') else "✗"}`
     """
     reply_markup = InlineKeyboardMarkup([
         [styled_button('ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='fsub'), styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟꜱ', style="primary", callback_data='db_channels')],
@@ -42,26 +23,7 @@ async def settings(client, query):
 
 @Client.on_callback_query(filters.regex("^settings_page_2$"))
 async def settings_page_2(client, query):
-    # Count active force subscription channels by type
-    total_fsub = len(client.fsub_dict)
-    request_enabled = sum(1 for data in client.fsub_dict.values() if data[2])
-    timer_enabled = sum(1 for data in client.fsub_dict.values() if data[3] > 0)
-    
-    # Count DB channels
-    total_db_channels = len(getattr(client, 'db_channels', {}))
-    primary_db = getattr(client, 'primary_db_channel', client.db)
-    
     msg = f"""<blockquote>✦ sᴇᴛᴛɪɴɢs ᴏғ @{client.username}</blockquote>
-›› **ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟs:** `{total_fsub}` (ʀᴇǫᴜᴇsᴛ: {request_enabled}, ᴛɪᴍᴇʀ: {timer_enabled})
-›› **ᴅʙ ᴄʜᴀɴɴᴇʟs:** `{total_db_channels}` (ᴘʀɪᴍᴀʀʏ: `{primary_db}`)
-›› **ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ:** `{client.auto_del}`
-›› **ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ:** `{"✓ ᴛʀᴜᴇ" if client.protect else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"✓ ᴛʀᴜᴇ" if client.disable_btn else "✗ ꜰᴀʟsᴇ"}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`
-›› **sʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{getattr(client, 'short_url', 'ɴᴏᴛ sᴇᴛ')}`
-›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{getattr(client, 'tutorial_link', 'ɴᴏᴛ sᴇᴛ')}`
-›› **sᴛᴀʀᴛ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('START_PHOTO') else "✗"}`
-›› **ꜰᴏʀᴄᴇ sᴜʙ ɪᴍᴀɢᴇ:** `{"✓" if client.messages.get('FSUB_PHOTO') else "✗"}`
     """
     reply_markup = InlineKeyboardMarkup([
         [styled_button('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', style="primary", callback_data='protect'), styled_button('ᴘʜᴏᴛᴏs', style="primary", callback_data='photos')],
