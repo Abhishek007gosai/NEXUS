@@ -14,7 +14,7 @@ async def settings(client, query):
 ›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}`
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ', style="primary", callback_data='link_share'), styled_button('ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='fsub')],
+        [styled_button('ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='fsub')],
         [styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='db_channels'), styled_button('ᴄᴀᴘᴛɪᴏɴ', style="primary", callback_data='custom_caption')],
         [styled_button('ᴀᴅᴍɪɴꜱ', style="primary", callback_data='admins'), styled_button('ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', style="primary", callback_data='auto_del')],
         [styled_button('ʜᴏᴍᴇ', style="primary", callback_data='home'), styled_button('›› ɴᴇxᴛ', style="primary", callback_data='settings_page_2')]

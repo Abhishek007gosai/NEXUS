@@ -27,12 +27,10 @@ from pyrogram.types import (
 )
 
 from config import (
-    Config,
     TOKEN,
+    BOT_TOKEN,
     BRAND_NAME,
     WEBAPP_URL,
-    BANNER_IMAGE_URL,
-    INDEX_MSG,
     ADMINS,
     MESSAGES,
 )
@@ -134,7 +132,7 @@ async def _send_anime_result(
 def _delete_message_later(chat_id: int, message_id: int, delay: float = 120) -> None:
     def _do() -> None:
         try:
-            token = TOKEN or getattr(Config, "BOT_TOKEN", "")
+            token = TOKEN or BOT_TOKEN
             if not token:
                 return
             requests.post(
@@ -161,7 +159,7 @@ def _display_name(user) -> str:
 @Client.on_message(filters.command("anidex") & filters.private)
 async def cmd_anidex(client: Client, message: Message):
     msgs = getattr(client, "messages", None) or {}
-    raw = msgs.get("INDEX") or INDEX_MSG
+    raw = msgs.get("INDEX") or MESSAGES.get("INDEX", "")
     try:
         text = raw.format(
             first_name=(message.from_user.first_name if message.from_user else None) or "there",
@@ -170,7 +168,7 @@ async def cmd_anidex(client: Client, message: Message):
     except (KeyError, IndexError, ValueError):
         text = raw
     kb = InlineKeyboardMarkup([[_webapp_button()]])
-    photo = (msgs.get("INDEX_PHOTO") or BANNER_IMAGE_URL or "").strip()
+    photo = (msgs.get("INDEX_PHOTO") or msgs.get("BANNER_IMAGE_URL") or MESSAGES.get("INDEX_PHOTO") or MESSAGES.get("BANNER_IMAGE_URL") or "").strip()
     if photo:
         sent = await message.reply_photo(
             photo, caption=text, reply_markup=kb, protect_content=True,

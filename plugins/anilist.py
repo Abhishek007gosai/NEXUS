@@ -7,7 +7,7 @@ import time
 
 import requests
 
-from config import Config
+from config import ANILIST_ENDPOINT, CATALOG_CACHE_TTL
 from plugins.base import AnimeSource
 
 SEARCH_QUERY = """
@@ -131,7 +131,7 @@ class AniListSource(AnimeSource):
         last_exc = None
         for attempt in range(3):
             resp = requests.post(
-                Config.ANILIST_ENDPOINT,
+                ANILIST_ENDPOINT,
                 json={"query": query, "variables": variables},
                 timeout=10,
             )
@@ -229,7 +229,7 @@ class AniListSource(AnimeSource):
     def _cached(self, key: str, fetch):
         now = time.time()
         cached = self._cache.get(key)
-        if cached and now - cached[0] < Config.CATALOG_CACHE_TTL:
+        if cached and now - cached[0] < CATALOG_CACHE_TTL:
             return cached[1]
         value = fetch()
         self._cache[key] = (now, value)
