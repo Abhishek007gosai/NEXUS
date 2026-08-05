@@ -13,6 +13,7 @@ PORT = int(os.getenv("PORT", "5010"))
 # ──────────────────────────────────────────────
 SESSION = os.getenv("SESSION", "Kaya")
 TOKEN = os.getenv("TOKEN", "") or os.getenv("BOT_TOKEN", "")
+BOT_TOKEN = TOKEN
 API_ID = int(os.getenv("API_ID", "29245477"))
 API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
 WORKERS = int(os.getenv("WORKERS", "5"))
@@ -21,23 +22,23 @@ MSG_EFFECT = 5046509860389126442
 
 
 ADMINS = [8771195193]
+ADMIN_IDS = ADMINS
 
 # ──────────────────────────────────────────────
 # MongoDB — File Store
 # ──────────────────────────────────────────────
 DB_URI = os.getenv("DB_URI", "")
 DB_NAME = os.getenv("DB_NAME", "cluster0")
-LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
-LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "cluster0")
 WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
 WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
+MONGODB_URL = WEB_DB_URI
+MONGODB_NAME = WEB_DB_NAME
 
 # ──────────────────────────────────────────────
 # Anime Index branding
 # ──────────────────────────────────────────────
 BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
 BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
-BANNER_IMAGE_URL = os.getenv("BANNER_IMAGE_URL", "")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
@@ -75,38 +76,11 @@ MESSAGES = {
     "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SEARCH_PHOTO": "",
+    "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", ""),
+    "INDEX_PHOTO": os.getenv("INDEX_PHOTO", "") or os.getenv("BANNER_IMAGE_URL", ""),
 }
+BANNER_IMAGE_URL = MESSAGES.get("BANNER_IMAGE_URL") or MESSAGES.get("INDEX_PHOTO") or ""
 
-# Aliases for /anidex
-INDEX_MSG = MESSAGES["INDEX"]
-START_MSG = INDEX_MSG
-
-_search_photo_env = os.getenv("SEARCH_PHOTO", "").strip()
-if _search_photo_env:
-    MESSAGES["SEARCH_PHOTO"] = _search_photo_env
-
-# ──────────────────────────────────────────────
-# Compat namespace for Anime Index mini-app / DB layer
-# ──────────────────────────────────────────────
-class Config:
-    BRAND_NAME = BRAND_NAME
-    BRAND_HANDLE = BRAND_HANDLE
-    BANNER_IMAGE_URL = BANNER_IMAGE_URL
-    START_MSG = MESSAGES["INDEX"]
-    INDEX_MSG = MESSAGES["INDEX"]
-    BOT_TOKEN = TOKEN
-    WEBAPP_URL = WEBAPP_URL
-    LOG_CHANNEL_ID = LOG_CHANNEL_ID
-    ADMIN_IDS = ADMINS
-    API_ID = API_ID
-    API_HASH = API_HASH
-    SECRET_KEY = SECRET_KEY
-    PORT = PORT
-    DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-    MONGODB_URL = WEB_DB_URI
-    MONGODB_NAME = WEB_DB_NAME
-    ANILIST_ENDPOINT = ANILIST_ENDPOINT
-    CATALOG_CACHE_TTL = CATALOG_CACHE_TTL
 
 
 def LOGGER(name: str, client_name: str = ""):
