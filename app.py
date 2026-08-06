@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 """
 Anime Index Mini App — Flask JSON API + static/HTML for the Telegram WebApp.
 
-Bot commands (/anidex, library search, request Accept/Reject) live in
+Telegram bot commands (/anidex, library search, request Accept/Reject) live in
 plugins/index.py (Pyrogram). This module only serves HTTP.
 """
 
@@ -24,7 +22,7 @@ from flask_compress import Compress
 
 from config import (
     TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE,
-    CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY,
+    CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY, SUPPORT_CHAT_URL,
 )
 from helper import database as db
 
@@ -166,26 +164,8 @@ def _flood_guard():
     the stricter per-action limits above. Generous enough that normal use
     (Home's several parallel loads, fast tab-switching, typing a search)
     never comes close, but it stops a runaway client loop or a scripted
-    abuser from hammering the server.
-
-    Also records website / mini-app visits for /stats.
-    """
-    path = request.path or "/"
-    # Skip static assets from visit counts
-    if not (
-        path.startswith("/static")
-        or path.startswith("/favicon")
-        or path.endswith((".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".ico", ".svg", ".map"))
-    ):
-        try:
-            is_page = (not path.startswith("/api/")) and request.method == "GET"
-            is_api = path.startswith("/api/")
-            if is_page or is_api:
-                db.record_web_visit(path=path, is_page=is_page)
-        except Exception:
-            pass
-
-    if not path.startswith("/api/"):
+    abuser from hammering the server."""
+    if not request.path.startswith("/api/"):
         return None
     user = current_user()
     if is_admin(user):
@@ -210,7 +190,7 @@ def _telegram_user_label(user: dict | None) -> str:
 
 
 def _bot_api(method: str, payload: dict):
-    token = TOKEN
+    token = TOKEN or TOKEN
     if not token:
         return
     try:
@@ -269,7 +249,7 @@ def normalize_join_link(raw: str) -> str:
     if raw.startswith("t.me/") or raw.startswith("telegram.me/"):
         return "https://" + raw
     if re.fullmatch(r"-?\d+", raw):
-        token = TOKEN
+        token = TOKEN or TOKEN
         if not token:
             raise ValueError("Bot isn't connected — can't generate an invite link for a channel ID.")
         try:
@@ -358,9 +338,6 @@ def healthz():
         SOURCES["anilist"].get_trending()
         SOURCES["anilist"].get_popular()
         SOURCES["anilist"].get_most_popular()
-        SOURCES["anilist"].get_trending_manga()
-        SOURCES["anilist"].get_airing_manga()
-        SOURCES["anilist"].get_popular_manga()
     except Exception:
         pass
     return jsonify(status="ok")
@@ -399,94 +376,6 @@ def api_most_popular():
     return resp
 
 
-
-def _catalog_json(payload, max_age: int):
-    resp = jsonify(payload)
-    resp.headers["Cache-Control"] = f"public, max-age={max_age}"
-    return resp
-
-
-@app.get("/api/catalog/manga/trending")
-def api_manga_trending():
-    page = request.args.get("page", 1, type=int)
-    try:
-        data = SOURCES["anilist"].get_trending_manga(page)
-    except requests.RequestException:
-        data = {"results": [], "has_next": False}
-    return _catalog_json(data, CATALOG_CACHE_TTL)
-
-
-@app.get("/api/catalog/manga/airing")
-def api_manga_airing():
-    page = request.args.get("page", 1, type=int)
-    try:
-        data = SOURCES["anilist"].get_airing_manga(page)
-    except requests.RequestException:
-        data = {"results": [], "has_next": False}
-    return _catalog_json(data, CATALOG_CACHE_TTL)
-
-
-@app.get("/api/catalog/manga/popular")
-def api_manga_popular():
-    page = request.args.get("page", 1, type=int)
-    try:
-        data = SOURCES["anilist"].get_popular_manga(page)
-    except requests.RequestException:
-        data = {"results": [], "has_next": False}
-    return _catalog_json(data, CATALOG_CACHE_TTL)
-
-
-# Back-compat aliases
-@app.get("/api/catalog/manhwa/trending")
-def api_manhwa_trending():
-    return api_manga_trending()
-
-
-@app.get("/api/catalog/manhwa/popular")
-def api_manhwa_popular():
-    return api_manga_airing()
-
-
-@app.get("/api/img")
-def api_proxy_image():
-    """Proxy remote cover images so the Telegram WebView can display them.
-    Only allowlisted hosts are fetched."""
-    from urllib.parse import urlparse, unquote
-    from flask import Response
-
-    raw = request.args.get("u") or ""
-    url = unquote(raw).strip()
-    if not url.startswith("https://"):
-        abort(400)
-    host = (urlparse(url).hostname or "").lower()
-    allowed = {
-        "s4.anilist.co",
-        "s3.anilist.co",
-        "cdn.myanimelist.net",
-    }
-    if host not in allowed:
-        abort(403)
-    try:
-        upstream = requests.get(
-            url,
-            timeout=12,
-            headers={
-                "User-Agent": "HIndexBot/1.0 (cover-proxy)",
-                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-            },
-        )
-        if upstream.status_code != 200:
-            abort(upstream.status_code if upstream.status_code in (403, 404) else 502)
-        ct = upstream.headers.get("Content-Type") or "image/jpeg"
-        if not ct.startswith("image/"):
-            abort(502)
-        resp = Response(upstream.content, mimetype=ct)
-        resp.headers["Cache-Control"] = "public, max-age=86400"
-        return resp
-    except requests.RequestException:
-        abort(502)
-
-
 @app.post("/api/search/track")
 def api_search_track():
     payload = request.get_json(force=True, silent=True) or {}
@@ -513,7 +402,6 @@ def api_search_clear():
 
 @app.get("/api/search/anime")
 def api_search_anime():
-    """Search adult anime (hentai). Path kept for backwards compatibility."""
     q = (request.args.get("q") or "").strip()
     page = request.args.get("page", 1, type=int)
     if not q:
@@ -524,33 +412,12 @@ def api_search_anime():
         return jsonify({"results": [], "has_next": False})
 
 
-@app.get("/api/search/manga")
-def api_search_manga():
-    """Search adult manga / manhwa (pornhwa)."""
-    q = (request.args.get("q") or "").strip()
-    page = request.args.get("page", 1, type=int)
-    if not q:
-        return jsonify({"results": [], "has_next": False})
-    try:
-        return jsonify(SOURCES["anilist"].search_manga(q, page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-
-
 @app.get("/api/genres/<genre>")
 def api_genre_browse(genre):
     page = request.args.get("page", 1, type=int)
-    media_type = (request.args.get("type") or "ANIME").upper()
-    if media_type not in ("ANIME", "MANGA"):
-        media_type = "ANIME"
     try:
-        data = SOURCES["anilist"].browse_genre(genre, page, media_type=media_type)
-        return jsonify(data if isinstance(data, dict) else {"results": [], "has_next": False})
-    except Exception as e:
-        try:
-            app.logger.warning("genre browse failed genre=%s type=%s: %s", genre, media_type, e)
-        except Exception:
-            pass
+        return jsonify(SOURCES["anilist"].browse_genre(genre, page))
+    except requests.RequestException:
         return jsonify({"results": [], "has_next": False})
 
 
@@ -699,11 +566,7 @@ def api_profile():
 
 def _resolve_support_chat_url(mongo_url: str | None = None) -> str:
     """Env SUPPORT_CHAT_URL wins when set; otherwise use the value saved in Mongo."""
-    try:
-        from config import SUPPORT_CHAT_URL as _sc
-        env_url = (_sc or "").strip()
-    except ImportError:
-        env_url = ""
+    env_url = (SUPPORT_CHAT_URL or "").strip()
     if env_url:
         return env_url
     return (mongo_url or "").strip()
@@ -748,7 +611,6 @@ def api_profile_help_update():
     return jsonify(data)
 
 
-
 @app.patch("/api/anime/<int:anime_id>/link")
 def api_edit_link(anime_id):
     user = current_user()
@@ -756,9 +618,6 @@ def api_edit_link(anime_id):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
     raw_link = (payload.get("link") or "").strip()
-    library_section = (payload.get("library_section") or "").strip().lower() or None
-    if library_section not in (None, "ongoing", "finished"):
-        library_section = None
     if not db.get_anime(anime_id):
         abort(404)
     try:
@@ -769,35 +628,38 @@ def api_edit_link(anime_id):
         # Setting a link is also the natural moment to refresh this post's
         # cached AniList metadata (poster, genres, episode count, and
         # critically its relations list) — not just the join_link field.
+        # Without this, a post created before the relations field existed
+        # (or one whose franchise has grown since it was posted) would be
+        # permanently stuck with stale/missing data and never show
+        # Prequel/Sequel cards, since nothing else ever re-fetches it.
         anime = db.get_anime(anime_id)
         try:
             details = SOURCES[anime["source"]].get_details(anime["source_id"], use_cache=False)
             db.upsert_anime(details)
         except requests.RequestException:
-            pass
-        db.update_link(anime_id, link, library_section=library_section)
+            pass  # AniList unreachable — keep whatever's cached, still set the link below
+        db.update_link(anime_id, link)
         propagated = propagate_link_full_franchise(anime_id, link)
         db.accept_requests_for_title(anime["title"])
         return jsonify(status="updated", link=link, propagated=propagated)
     # No link = not a real post anymore — delete it (and the rest of its
-    # franchise) from MongoDB entirely.
+    # franchise, which just lost the link via propagation) from MongoDB
+    # entirely, rather than leaving an unlinked, unjoinable entry behind.
     propagated = db.delete_anime_family(anime_id)
     return jsonify(status="deleted", link="", propagated=propagated)
-
 
 
 @app.post("/api/anime/link-anilist/<int:anilist_id>")
 def api_set_link_from_anilist(anilist_id):
     """Set a join link for a title that's only been browsed from AniList
-    (Discover/Genre) and doesn't have a local library entry yet."""
+    (Discover/Genre) and doesn't have a local library entry yet. Creates
+    that entry on the fly — from this point on it's a normal posted anime
+    and shows up in the Available tab, same as one added via /addpost."""
     user = current_user()
     if not is_admin(user):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
     raw_link = (payload.get("link") or "").strip()
-    library_section = (payload.get("library_section") or "").strip().lower() or None
-    if library_section not in (None, "ongoing", "finished"):
-        library_section = None
     if not raw_link:
         return jsonify(error="A join link is required."), 400
     try:
@@ -808,50 +670,10 @@ def api_set_link_from_anilist(anilist_id):
         details = SOURCES["anilist"].get_details(anilist_id)
     except requests.RequestException:
         return jsonify(error="Couldn't fetch details from AniList right now."), 502
-    if library_section:
-        details["library_section"] = library_section
     anime_id = db.upsert_anime(details, added_by=user["id"])
-    db.update_link(anime_id, link, library_section=library_section)
+    db.update_link(anime_id, link)
     propagated = propagate_link_full_franchise(anime_id, link)
     db.accept_requests_for_title(details["title"])
     return jsonify(status="updated", anime=db.get_anime(anime_id), propagated=propagated)
-
-
-@app.post("/api/anime/link-source/<source>/<path:source_id>")
-def api_set_link_from_source(source, source_id):
-    """Admin: create/update a post from any source and set its join link."""
-    user = current_user()
-    if not is_admin(user):
-        abort(403)
-    src = SOURCES.get(source)
-    if not src:
-        abort(404)
-    payload = request.get_json(force=True, silent=True) or {}
-    raw_link = (payload.get("link") or "").strip()
-    library_section = (payload.get("library_section") or "").strip().lower() or None
-    if library_section not in (None, "ongoing", "finished"):
-        library_section = None
-    try:
-        link = normalize_join_link(raw_link)
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    try:
-        sid = int(source_id) if source == "anilist" else source_id
-        details = src.get_details(sid)
-    except (requests.RequestException, ValueError, KeyError):
-        return jsonify(error="Could not fetch title metadata"), 502
-    if library_section:
-        details["library_section"] = library_section
-    anime_id = db.upsert_anime(details, added_by=user["id"])
-    if link:
-        db.update_link(anime_id, link, library_section=library_section)
-        try:
-            propagate_link_full_franchise(anime_id, link)
-        except Exception:
-            pass
-        db.accept_requests_for_title(details["title"])
-        return jsonify(status="updated", anime=db.get_anime(anime_id), propagated=0)
-    db.delete_anime_family(anime_id)
-    return jsonify(status="deleted", anime=None)
 
 

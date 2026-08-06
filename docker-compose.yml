@@ -12,10 +12,10 @@ services:
       - .env
     environment:
       - PORT=5010
-      # Single DB for bot + web. Multiple URIs supported, e.g.:
-      # DB_URI=mongodb://mongo:27017,mongodb+srv://backup/...
       - DB_URI=mongodb://mongo:27017
-      - DB_NAME=cluster0
+      - WEB_DB_URI=mongodb://mongo:27017
+      - DB_NAME=file_store
+      - WEB_DB_NAME=anime_index
     volumes:
       - ./sessions:/app/sessions
       - ./bot.log:/app/bot.log

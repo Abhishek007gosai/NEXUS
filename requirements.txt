@@ -4,7 +4,6 @@ kurigram>=2.2.24
 humanize
 psutil
 motor
-markdown
 asyncio
 TgCrypto
 flask==3.0.3
