@@ -2,24 +2,145 @@ import motor.motor_asyncio
 from datetime import datetime, timedelta
 import time
 from pymongo import ASCENDING, MongoClient, ReturnDocument
-from pymongo.errors import DuplicateKeyError
-from config import MONGODB_URL, MONGODB_NAME
+from pymongo.errors import DuplicateKeyError, PyMongoError
+from config import MONGODB_URL, MONGODB_NAME, MONGODB_URIS, DB_URIS, DB_NAME as CONFIG_DB_NAME
+
+# Storage / quota related error substrings (free Atlas, etc.)
+_QUOTA_MARKERS = (
+    "quota",
+    "storage",
+    "size limit",
+    "disk",
+    "exceeded",
+    "too large",
+    "space",
+    "atlaserror",
+    "out of space",
+)
+
+
+def _is_quota_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(m in msg for m in _QUOTA_MARKERS)
+
+
+def _uri_list(uri: str | None = None) -> list[str]:
+    """Prefer the multi-URI list from config; fall back to a single uri."""
+    uris = list(MONGODB_URIS or DB_URIS or [])
+    if not uris and uri:
+        uris = [uri]
+    if not uris and MONGODB_URL:
+        uris = [MONGODB_URL]
+    # de-dupe, preserve order
+    seen = set()
+    out = []
+    for u in uris:
+        u = (u or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
 
 class MongoDB:
+    """Async MongoDB helper with multi-URI failover.
+
+    Pass a single uri (legacy) or rely on config.DB_URIS / MONGODB_URIS.
+    When the active cluster is full / unreachable, the next URI is tried.
+    """
     _instances = {}
 
     def __new__(cls, uri: str, db_name: str):
-        if (uri, db_name) not in cls._instances:
+        key = (tuple(_uri_list(uri)), db_name)
+        if key not in cls._instances:
             instance = super().__new__(cls)
-            instance.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
-            instance.db = instance.client[db_name]
-            instance.user_data = instance.db["users"]
-            instance.channel_data = instance.db["channels"]
-            instance.premium_users = instance.db['pros']
-            instance.fsub_status = instance.db['fsub_status']  # New collection for fsub status tracking
-            instance.request_sub = instance.db['request_sub']  # New collection for join request tracking
-            cls._instances[(uri, db_name)] = instance
-        return cls._instances[(uri, db_name)]
+            instance._uris = _uri_list(uri)
+            instance._db_name = db_name
+            instance._clients = []          # list[(uri, AsyncIOMotorClient)]
+            instance._active_idx = 0
+            instance.client = None
+            instance.db = None
+            instance.user_data = None
+            instance.channel_data = None
+            instance.premium_users = None
+            instance.fsub_status = None
+            instance.request_sub = None
+            instance._connect_first()
+            cls._instances[key] = instance
+        return cls._instances[key]
+
+    def _bind_collections(self):
+        self.db = self.client[self._db_name]
+        self.user_data = self.db["users"]
+        self.channel_data = self.db["channels"]
+        self.premium_users = self.db["pros"]
+        self.fsub_status = self.db["fsub_status"]
+        self.request_sub = self.db["request_sub"]
+
+    def _connect_first(self):
+        """Connect to the first reachable URI."""
+        if not self._uris:
+            raise RuntimeError("No MongoDB URI configured. Set DB_URI in the environment.")
+        last_err = None
+        for idx, u in enumerate(self._uris):
+            try:
+                client = motor.motor_asyncio.AsyncIOMotorClient(
+                    u, serverSelectionTimeoutMS=8000
+                )
+                # lazy; actual ping happens on first op — still record client
+                self._clients.append((u, client))
+                if self.client is None:
+                    self.client = client
+                    self._active_idx = idx
+                    self._bind_collections()
+            except Exception as e:
+                last_err = e
+                continue
+        if self.client is None:
+            raise RuntimeError(f"Could not connect to any MongoDB URI: {last_err}")
+
+    def _ensure_all_clients(self):
+        """Lazily open clients for any URIs not yet connected."""
+        known = {u for u, _ in self._clients}
+        for u in self._uris:
+            if u in known:
+                continue
+            try:
+                client = motor.motor_asyncio.AsyncIOMotorClient(
+                    u, serverSelectionTimeoutMS=8000
+                )
+                self._clients.append((u, client))
+            except Exception:
+                continue
+
+    def failover(self) -> bool:
+        """Switch to the next configured URI. Returns True if switched."""
+        self._ensure_all_clients()
+        if len(self._clients) <= 1:
+            return False
+        next_idx = (self._active_idx + 1) % len(self._clients)
+        if next_idx == self._active_idx:
+            return False
+        uri, client = self._clients[next_idx]
+        self.client = client
+        self._active_idx = next_idx
+        self._bind_collections()
+        print(f"[MongoDB] Failover → URI #{next_idx + 1}: {uri[:48]}...")
+        return True
+
+    async def with_failover(self, coro_factory):
+        """Run an async operation; on quota/storage errors, failover and retry once per URI."""
+        attempts = max(1, len(self._uris))
+        last_err = None
+        for _ in range(attempts):
+            try:
+                return await coro_factory()
+            except Exception as e:
+                last_err = e
+                if _is_quota_error(e) and self.failover():
+                    continue
+                raise
+        raise last_err
 
     async def set_channels(self, channels: list[int]):
         await self.user_data.update_one(
@@ -750,11 +871,14 @@ class MongoDB:
 
 
 # =============================================================================
-# Anime Index / Mini App (sync pymongo — separate WEB_DB_URI / WEB_DB_NAME)
+# Anime Index / Mini App (sync pymongo — SAME DB as bot: DB_URI / DB_NAME)
+# Supports multiple MongoDB URLs; fails over when a cluster is full/unreachable.
 # =============================================================================
 
 _client = None
 _db = None
+_sync_clients = []       # list[(uri, MongoClient)]
+_sync_active_idx = 0
 
 
 class _LazyCol:
@@ -770,13 +894,57 @@ class _LazyCol:
         return self._col()[item]
 
 
+def _sync_failover() -> bool:
+    """Switch the sync client to the next URI. Returns True if switched."""
+    global _client, _db, _sync_active_idx
+    if len(_sync_clients) <= 1:
+        return False
+    next_idx = (_sync_active_idx + 1) % len(_sync_clients)
+    if next_idx == _sync_active_idx:
+        return False
+    uri, client = _sync_clients[next_idx]
+    _client = client
+    _db = client[MONGODB_NAME or CONFIG_DB_NAME]
+    _sync_active_idx = next_idx
+    print(f"[MongoDB/sync] Failover → URI #{next_idx + 1}: {uri[:48]}...")
+    return True
+
+
 def _ensure():
-    global _client, _db
+    """Connect using the shared DB_URI list (same DB as the bot — no WEB_DB)."""
+    global _client, _db, _sync_clients, _sync_active_idx
     if _client is not None:
         return
-    uri = MONGODB_URL or "mongodb://localhost:27017"
-    _client = MongoClient(uri, serverSelectionTimeoutMS=8000)
-    _db = _client[MONGODB_NAME]
+    uris = _uri_list()
+    if not uris:
+        uris = [MONGODB_URL or "mongodb://localhost:27017"]
+    db_name = MONGODB_NAME or CONFIG_DB_NAME
+    last_err = None
+    for idx, u in enumerate(uris):
+        try:
+            client = MongoClient(u, serverSelectionTimeoutMS=8000)
+            # Force a quick server selection so we know it's reachable
+            client.admin.command("ping")
+            _sync_clients.append((u, client))
+            if _client is None:
+                _client = client
+                _db = client[db_name]
+                _sync_active_idx = idx
+        except Exception as e:
+            last_err = e
+            # still keep the client for later failover attempts if ping failed
+            try:
+                client = MongoClient(u, serverSelectionTimeoutMS=8000)
+                _sync_clients.append((u, client))
+                if _client is None:
+                    _client = client
+                    _db = client[db_name]
+                    _sync_active_idx = idx
+            except Exception as e2:
+                last_err = e2
+                continue
+    if _client is None:
+        raise RuntimeError(f"Could not connect to any MongoDB URI: {last_err}")
 
 
 anime_col = _LazyCol("anime")
