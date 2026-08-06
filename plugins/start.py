@@ -4,10 +4,112 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 import humanize
 from config import OWNER_ID, WEBAPP_URL
 from plugins.shortner import get_short
-from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification, styled_button
+from helper.helper_func import (
+    get_messages,
+    force_sub,
+    decode,
+    batch_auto_del_notification,
+    retry_on_flood,
+    paced_copy,
+)
 import asyncio
 from datetime import datetime, timedelta
 from pyrogram.enums import ParseMode
+from pyrogram.errors import FloodWait
+
+#===============================================================#
+
+# Markers that identify anime info-card posts (title / synopsis / season buttons)
+# Match both ASCII hyphen and common unicode dashes
+_INFO_CARD_MARKERS = (
+    "SYNOPSIS",
+    "EPISODE",
+    "SEASON",
+    "SCORE",
+    "AUDIO",
+)
+
+_FILE_MEDIA_ATTRS = (
+    "video",
+    "document",
+    "audio",
+    "animation",
+    "voice",
+    "video_note",
+)
+
+
+def _is_info_card(msg) -> bool:
+    """True for text/photo info cards (anime synopsis + season buttons).
+
+    These posts skip the shortener so anyone can open them directly.
+    Actual downloadable files (video / document / audio / animation) still
+    go through the shortener for non-pro users.
+    """
+    if msg is None or getattr(msg, "empty", False):
+        return False
+
+    # 1) Caption / text markers (SYNOPSIS, EPISODE, SEASON, SCORE, AUDIO)
+    text = (msg.caption or msg.text or "") or ""
+    upper = text.upper()
+    if any(m in upper for m in _INFO_CARD_MARKERS):
+        return True
+
+    # 2) Season-style navigation: 2+ URL buttons (S1/4, MOVIES, etc.)
+    markup = getattr(msg, "reply_markup", None)
+    if markup and getattr(markup, "inline_keyboard", None):
+        url_btns = 0
+        for row in markup.inline_keyboard:
+            for btn in row:
+                if getattr(btn, "url", None):
+                    url_btns += 1
+        if url_btns >= 2:
+            # URL-button grid + no file media → info card
+            has_file = any(getattr(msg, attr, None) for attr in _FILE_MEDIA_ATTRS)
+            if not has_file:
+                return True
+
+    # 3) No downloadable media at all → text or photo only = info card
+    for attr in _FILE_MEDIA_ATTRS:
+        if getattr(msg, attr, None):
+            return False
+    return True
+
+
+async def _send_shortener_gate(client: Client, message: Message, base64_string: str):
+    """Send the ads-token / shortener verification message and stop."""
+    try:
+        short_link = get_short(
+            f"https://t.me/{client.username}?start=yu3elk{base64_string}7",
+            client,
+        )
+    except Exception as e:
+        client.LOGGER(__name__, client.name).warning(f"Shortener failed: {e}")
+        return await message.reply("Couldn't generate short link.")
+
+    short_photo = client.messages.get("SHORT_PIC", "")
+    short_caption = client.messages.get("SHORT_MSG", "")
+    tutorial_link = getattr(client, "tutorial_link", "https://t.me/+wekKcN1tjbAxY2U1")
+
+    await client.send_photo(
+        chat_id=message.chat.id,
+        photo=short_photo,
+        caption=short_caption,
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [styled_button("»ᴄʟɪᴄᴋ ʜᴇʀᴇ«", style="primary", url=short_link)],
+                [
+                    styled_button(
+                        "»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«",
+                        style="primary",
+                        url=tutorial_link,
+                    )
+                ],
+            ]
+        ),
+        protect_content=True,
+    )
+
 
 #===============================================================#
 
@@ -43,108 +145,11 @@ async def start_command(client: Client, message: Message):
         except IndexError:
             return await message.reply("Invalid command format.")
 
-        # Link Share Menu deep links. Tokens are generated manually from the
-        # Link Share Menu and remain valid until removed from the database.
-        if base64_string.startswith("ls_"):
-            try:
-                token = base64_string[3:]
-                token_data = await client.linkshare_db.get_link_share_token(token)
-                if not token_data:
-                    return await message.reply_text(
-                        "<b>Invalid or expired invite link.</b>",
-                        parse_mode=ParseMode.HTML
-                    )
-
-                channel_id = int(token_data["channel_id"])
-                is_request_link = bool(token_data.get("is_request", False))
-
-                # The permanent ?start=ls_xxx token stays valid in MongoDB,
-                # but the actual Telegram channel invite generated for the
-                # user expires after 5 minutes, matching KafkaLinkBot.
-                invite = await client.create_chat_invite_link(
-                    chat_id=channel_id,
-                    expire_date=datetime.now() + timedelta(minutes=5),
-                    creates_join_request=is_request_link
-                )
-                invite_link = invite.invite_link
-                button = InlineKeyboardMarkup([
-                    [styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="primary", url=invite_link)]
-                ])
-
-                link_msg = await message.reply_text(
-                    "<b><blockquote>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
-                    reply_markup=button,
-                    parse_mode=ParseMode.HTML,
-                    protect_content=True
-                )
-                note_msg = await message.reply_text(
-                    "<blockquote><b>ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ ɪɴ 5 ᴍɪɴᴜᴛᴇs. ᴛʜᴇ ʟɪɴᴋ ʀᴇᴍᴀɪɴs ᴠᴀʟɪᴅ.</b></blockquote>",
-                    parse_mode=ParseMode.HTML
-                )
-
-                async def cleanup_link_share():
-                    await asyncio.sleep(300)
-                    for msg in (note_msg, link_msg):
-                        try:
-                            await msg.delete()
-                        except Exception:
-                            pass
-                    # Revoke the generated invite at the same 5-minute mark.
-                    # This is only the temporary Telegram invite; the
-                    # permanent ?start=ls_xxx Link Share token is untouched.
-                    try:
-                        await client.revoke_chat_invite_link(channel_id, invite_link)
-                    except Exception as revoke_error:
-                        client.LOGGER(__name__, client.name).warning(
-                            f"Failed to revoke Link Share invite: {revoke_error}"
-                        )
-
-                asyncio.create_task(cleanup_link_share())
-                return
-            except Exception as e:
-                client.LOGGER(__name__, client.name).warning(
-                    f"Link Share deep link error: {e}"
-                )
-                return await message.reply_text(
-                    "<b>Invalid or expired invite link.</b>",
-                    parse_mode=ParseMode.HTML
-                )
-
-        # 3. Check premium status
+        # 3. Check premium status (used later for shortener gate)
         is_user_pro = await client.mongodb.is_pro(user_id)
-        
-        # 4. Check if shortner is enabled
-        shortner_enabled = getattr(client, 'shortner_enabled', True)
+        shortner_enabled = getattr(client, "shortner_enabled", True)
 
-        # 5. If user is not premium AND shortner is enabled, send short URL and return
-        if not is_user_pro and user_id != OWNER_ID and not is_short_link and shortner_enabled:
-            try:
-                short_link = get_short(f"https://t.me/{client.username}?start=yu3elk{base64_string}7", client)
-            except Exception as e:
-                client.LOGGER(__name__, client.name).warning(f"Shortener failed: {e}")
-                return await message.reply("Couldn't generate short link.")
-
-            short_photo = client.messages.get("SHORT_PIC", "")
-            short_caption = client.messages.get("SHORT_MSG", "")
-            tutorial_link = getattr(client, 'tutorial_link', "https://t.me/+wekKcN1tjbAxY2U1")
-
-            await client.send_photo(
-                chat_id=message.chat.id,
-                photo=short_photo,
-                caption=short_caption,
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        styled_button("»ᴄʟɪᴄᴋ ʜᴇʀᴇ«", style="primary", url=short_link)
-                    ],
-                    [
-                        styled_button("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", style="primary", url=tutorial_link)
-                    ]
-                ]),
-                protect_content=True
-            )
-            return  # prevent sending actual files
-
-        # 6. Decode and prepare file IDs
+        # 4. Decode and prepare file IDs
         try:
             string = await decode(base64_string)
             argument = string.split("-")
@@ -232,81 +237,156 @@ async def start_command(client: Client, message: Message):
         # 7. Get messages from the specific source channel first
         temp_msg = await message.reply("Wait A Sec..")
         messages = []
+        log = client.LOGGER(__name__, client.name)
 
         try:
             # Try to get messages from the identified source channel first
             if source_channel_id:
-                client.LOGGER(__name__, client.name).info(f"Trying to get messages from source channel: {source_channel_id}")
+                log.info(f"Trying to get messages from source channel: {source_channel_id}")
                 try:
-                    msgs = await client.get_messages(
-                        chat_id=source_channel_id,
-                        message_ids=list(ids)
+                    msgs = await retry_on_flood(
+                        lambda: client.get_messages(
+                            chat_id=source_channel_id,
+                            message_ids=list(ids),
+                        ),
+                        max_retries=5,
+                        logger=log,
+                        label=f"get_messages src:{source_channel_id}",
                     )
-                    # Filter out None messages (deleted/not found)
-                    valid_msgs = [msg for msg in msgs if msg is not None]
+                    # Pyrogram may return a single Message or a list
+                    if msgs is None:
+                        msgs = []
+                    elif not isinstance(msgs, (list, tuple)):
+                        msgs = [msgs]
+                    # Filter out None / empty messages (deleted/not found)
+                    valid_msgs = [
+                        msg for msg in msgs
+                        if msg is not None and not getattr(msg, "empty", False)
+                    ]
                     messages.extend(valid_msgs)
-                    client.LOGGER(__name__, client.name).info(f"Found {len(valid_msgs)} messages from source channel {source_channel_id}")
-                    
-                    # If we didn't get all messages, try the fallback system
+                    log.info(f"Found {len(valid_msgs)} messages from source channel {source_channel_id}")
+
                     if len(valid_msgs) < len(list(ids)):
                         missing_ids = [mid for mid in ids if mid not in {msg.id for msg in valid_msgs}]
                         if missing_ids:
-                            client.LOGGER(__name__, client.name).info(f"Missing {len(missing_ids)} messages, trying fallback system")
-                            # Use the fallback system for missing messages
+                            log.info(f"Missing {len(missing_ids)} messages, trying fallback system")
                             additional_messages = await get_messages(client, missing_ids)
-                            messages.extend(additional_messages)
-                            client.LOGGER(__name__, client.name).info(f"Found {len(additional_messages)} additional messages from fallback")
+                            messages.extend(
+                                m for m in additional_messages
+                                if m is not None and not getattr(m, "empty", False)
+                            )
+                            log.info(f"Found {len(additional_messages)} additional messages from fallback")
                 except Exception as e:
-                    client.LOGGER(__name__, client.name).warning(f"Error getting messages from source channel {source_channel_id}: {e}")
-                    # Fallback to the multi-channel system
+                    log.warning(f"Error getting messages from source channel {source_channel_id}: {e}")
                     messages = await get_messages(client, ids)
             else:
-                client.LOGGER(__name__, client.name).info("No specific source channel identified, using multi-channel fallback")
-                # Use the multi-channel fallback system
+                log.info("No specific source channel identified, using multi-channel fallback")
                 messages = await get_messages(client, ids)
         except Exception as e:
             await temp_msg.edit_text("Something went wrong!")
-            client.LOGGER(__name__, client.name).warning(f"Error getting messages: {e}")
+            log.warning(f"Error getting messages: {e}")
             return
+
+        # Final filter: drop None / empty service messages
+        messages = [
+            m for m in messages
+            if m is not None and not getattr(m, "empty", False)
+        ]
 
         if not messages:
             return await temp_msg.edit("Couldn't find the files in the database.")
-        await temp_msg.delete()
+
+        # ── Shortener gate (skipped for info-card posts) ──────────────
+        # Info cards (synopsis + season buttons like the screenshot) are
+        # delivered to everyone without verification. Actual file posts
+        # still require the shortener for non-pro users.
+        all_info_cards = all(_is_info_card(m) for m in messages)
+        needs_shortener = (
+            not is_user_pro
+            and user_id != OWNER_ID
+            and not is_short_link
+            and shortner_enabled
+            and not all_info_cards
+        )
+        if needs_shortener:
+            try:
+                await temp_msg.delete()
+            except Exception:
+                pass
+            await _send_shortener_gate(client, message, base64_string)
+            return  # prevent sending actual files
+
+        try:
+            await temp_msg.delete()
+        except Exception:
+            pass
 
         yugen_msgs = []
+        # Channel to re-fetch from so caption/button edits are always current
+        live_chat = source_channel_id or getattr(client, "primary_db_channel", client.db)
+
         for msg in messages:
-            caption = (
-                client.messages.get('CAPTION', '').format(
-                    previouscaption=msg.caption.html if msg.caption else msg.document.file_name
-                ) if bool(client.messages.get('CAPTION', '')) and bool(msg.document)
-                else ("" if not msg.caption else msg.caption.html)
-            )
-            reply_markup = msg.reply_markup if not client.disable_btn else None
-            # Only posts that have a button get forced forward protection,
-            # regardless of the global PROTECT setting. Posts without a
-            # button keep using client.protect as before.
+            # Re-fetch THIS message right before send so any edit you made
+            # on the DB post (caption text OR "CLICK HERE" button) is used.
+            try:
+                fresh = await retry_on_flood(
+                    lambda mid=msg.id: client.get_messages(chat_id=live_chat, message_ids=mid),
+                    max_retries=3,
+                    logger=log,
+                    label=f"live_fetch:{msg.id}",
+                )
+                if fresh is not None and not getattr(fresh, "empty", False):
+                    msg = fresh
+            except Exception as e:
+                log.warning(f"Live re-fetch failed for {msg.id}, using cached: {e}")
+
+            # Caption: prefer live HTML caption from the DB post
+            if msg.caption:
+                try:
+                    live_caption = msg.caption.html
+                except Exception:
+                    live_caption = msg.caption
+            else:
+                live_caption = None
+
+            file_name = ""
+            if getattr(msg, "document", None) and msg.document:
+                file_name = msg.document.file_name or ""
+
+            caption_tpl = (client.messages.get("CAPTION") or "").strip()
+            if caption_tpl and "{previouscaption}" in caption_tpl and getattr(msg, "document", None):
+                try:
+                    caption = caption_tpl.format(previouscaption=live_caption or file_name or "")
+                except Exception:
+                    caption = live_caption or ""
+            else:
+                # No template override → send exactly what is on the DB post
+                caption = live_caption if live_caption is not None else ""
+
+            # Buttons: always from the live DB post (unless globally disabled)
+            reply_markup = None if client.disable_btn else msg.reply_markup
             protect_this = True if reply_markup else client.protect
 
             try:
-                copied_msg = await msg.copy(
-                    chat_id=message.from_user.id,
-                    caption=caption,
-                    reply_markup=reply_markup,
-                    protect_content=protect_this
-                )
-                yugen_msgs.append(copied_msg)
-            except FloodWait as e:
-                await asyncio.sleep(e.x)
-                copied_msg = await msg.copy(
-                    chat_id=message.from_user.id,
-                    caption=caption,
-                    reply_markup=reply_markup,
-                    protect_content=protect_this
-                )
-                yugen_msgs.append(copied_msg)
+                copy_kwargs = {
+                    "chat_id": message.from_user.id,
+                    "protect_content": protect_this,
+                    "caption": caption,
+                }
+                # Always pass reply_markup so button edits apply (or clear)
+                if not client.disable_btn:
+                    copy_kwargs["reply_markup"] = reply_markup
+
+                copied_msg = await paced_copy(msg, **copy_kwargs)
+                if copied_msg is not None:
+                    yugen_msgs.append(copied_msg)
             except Exception as e:
-                client.LOGGER(__name__, client.name).warning(f"Failed to send message: {e}")
-                pass
+                err = str(e).lower()
+                if "empty" in err:
+                    log.info(f"Skipping empty message {getattr(msg, 'id', '?')}")
+                else:
+                    log.warning(f"Failed to send message {getattr(msg, 'id', '?')}: {e}")
+                continue
 
         # 8. Auto delete timer
         try:
@@ -332,13 +412,28 @@ async def start_command(client: Client, message: Message):
 
     # 9. Normal start message
     else:
+        # Layout matches Touka-style start:
+        # [OPEN INDEX]  (green web-app, full width)
+        # [HELP] [CLOSE]
+        # (+ SETTINGS for admins)
         buttons = []
-        if WEBAPP_URL:
-            if WEBAPP_URL.startswith("https://"):
-                buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=WEBAPP_URL))])
-            else:
-                buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=WEBAPP_URL)])
-        buttons.append([styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data='close')])
+
+        # Web mini-app button (Anime Index)
+        webapp = (WEBAPP_URL or "").strip()
+        if webapp.startswith("https://"):
+            buttons.append([
+                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=webapp))
+            ])
+        elif webapp:
+            buttons.append([
+                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=webapp)
+            ])
+
+        buttons.append([
+            styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"),
+            styled_button("ᴄʟᴏsᴇ", style="danger", callback_data="close"),
+        ])
+
         if user_id in client.admins:
             buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
 
