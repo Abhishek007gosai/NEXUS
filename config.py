@@ -1,5 +1,4 @@
 import os
-import re
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -13,21 +12,14 @@ PORT = int(os.getenv("PORT", "5010"))
 # Telegram
 # ──────────────────────────────────────────────
 SESSION = os.getenv("SESSION", "ECCHI")
-TOKEN = os.getenv("TOKEN", "") or os.getenv("BOT_TOKEN", "")
+TOKEN = os.getenv("TOKEN", "")
 API_ID = int(os.getenv("API_ID", "0") or "0")
 API_HASH = os.getenv("API_HASH", "")
 WORKERS = int(os.getenv("WORKERS", "5"))
 OWNER_ID = int(os.getenv("OWNER_ID", "0") or "0")
 MSG_EFFECT = 5046509860389126442
 
-# For Multiple Id Use One Space Between Each
-# Example: ADMINS=8771195193 123456789
-id_pattern = re.compile(r"^\d+$")
-ADMINS = [
-    int(admin) if id_pattern.search(admin) else admin
-    for admin in os.getenv("ADMINS", "8771195193").split()
-    if admin.strip()
-]
+ADMINS = [8771195193]
 
 # ──────────────────────────────────────────────
 # MongoDB — single DB for everything (bot + web)
