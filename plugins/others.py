@@ -5,7 +5,7 @@ from config import MSG_EFFECT
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from helper.pyro_listen import ListenerTimeout
-from helper.helper_func import styled_button
+from helper.helper_func import styled_button, safe_edit_text
 
 #===============================================================#
 
@@ -105,7 +105,7 @@ async def db_details(client, query):
         [styled_button('‹ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ', style="primary", callback_data='back_to_db_management')]
     ])
     
-    await query.message.edit_text(msg, reply_markup=reply_markup)
+    await safe_edit_text(query.message, msg, reply_markup=reply_markup)
 
 #===============================================================#
 
@@ -153,7 +153,7 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
     ])
     
     
-    await query.message.edit_text(msg, reply_markup=reply_markup)
+    await safe_edit_text(query.message, msg, reply_markup=reply_markup)
 
 #===============================================================#
 
@@ -289,7 +289,7 @@ async def home(client: Client, query: CallbackQuery):
     buttons = [[styled_button("Help", style="danger", callback_data = "about"), styled_button("Close", style="danger", callback_data = "close")]]
     if query.from_user.id in client.admins:
         buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
-    await query.message.edit_text(
+    await safe_edit_text(query.message, 
         text=client.messages.get('START', 'No Start Message').format(
             first=query.from_user.first_name,
             last=query.from_user.last_name,
@@ -307,7 +307,7 @@ async def home(client: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex('^about$'))
 async def about(client: Client, query: CallbackQuery):
     buttons = [[styled_button("Back", style="danger", callback_data = "home"), styled_button("Close", style="danger", callback_data = "close")]]
-    await query.message.edit_text(
+    await safe_edit_text(query.message, 
         text=client.messages.get('ABOUT', 'No Start Message').format(
             owner_id=client.owner,
             bot_username=client.username,
