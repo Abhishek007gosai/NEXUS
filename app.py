@@ -23,7 +23,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_from_dir
 from flask_compress import Compress
 
 from config import (
-    TOKEN, BOT_TOKEN, ADMINS, ADMIN_IDS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE,
+    TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE,
     CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY,
 )
 from helper import database as db
@@ -70,7 +70,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
 
 
 def verify_init_data(init_data: str) -> dict | None:
-    if not init_data or not BOT_TOKEN:
+    if not init_data or not TOKEN:
         return None
     try:
         parsed = dict(parse_qsl(init_data, strict_parsing=True))
@@ -82,7 +82,7 @@ def verify_init_data(init_data: str) -> dict | None:
         return None
 
     check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
-    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    secret_key = hmac.new(b"WebAppData", TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(computed_hash, received_hash):
         return None
@@ -101,7 +101,7 @@ def current_user():
 
 
 def is_admin(user: dict | None) -> bool:
-    return bool(user) and user.get("id") in ADMIN_IDS
+    return bool(user) and user.get("id") in ADMINS
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +166,26 @@ def _flood_guard():
     the stricter per-action limits above. Generous enough that normal use
     (Home's several parallel loads, fast tab-switching, typing a search)
     never comes close, but it stops a runaway client loop or a scripted
-    abuser from hammering the server."""
-    if not request.path.startswith("/api/"):
+    abuser from hammering the server.
+
+    Also records website / mini-app visits for /stats.
+    """
+    path = request.path or "/"
+    # Skip static assets from visit counts
+    if not (
+        path.startswith("/static")
+        or path.startswith("/favicon")
+        or path.endswith((".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".ico", ".svg", ".map"))
+    ):
+        try:
+            is_page = (not path.startswith("/api/")) and request.method == "GET"
+            is_api = path.startswith("/api/")
+            if is_page or is_api:
+                db.record_web_visit(path=path, is_page=is_page)
+        except Exception:
+            pass
+
+    if not path.startswith("/api/"):
         return None
     user = current_user()
     if is_admin(user):
@@ -192,7 +210,7 @@ def _telegram_user_label(user: dict | None) -> str:
 
 
 def _bot_api(method: str, payload: dict):
-    token = BOT_TOKEN or TOKEN
+    token = TOKEN
     if not token:
         return
     try:
@@ -251,7 +269,7 @@ def normalize_join_link(raw: str) -> str:
     if raw.startswith("t.me/") or raw.startswith("telegram.me/"):
         return "https://" + raw
     if re.fullmatch(r"-?\d+", raw):
-        token = BOT_TOKEN or TOKEN
+        token = TOKEN
         if not token:
             raise ValueError("Bot isn't connected — can't generate an invite link for a channel ID.")
         try:

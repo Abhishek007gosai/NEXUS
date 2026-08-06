@@ -45,7 +45,7 @@ async def main():
             ADMINS,
             MESSAGES,
             AUTO_DEL,
-            DB_URI,
+            (DB_URI[0] if DB_URI else ""),
             DB_NAME,
             API_ID,
             API_HASH,
