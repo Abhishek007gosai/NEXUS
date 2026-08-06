@@ -1,8 +1,11 @@
 from pyrogram import Client, filters
-from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, WebAppInfo
-from config import MSG_EFFECT, OWNER_ID, WEBAPP_URL
+from pyrogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from config import MSG_EFFECT
+
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from helper.pyro_listen import ListenerTimeout
-from helper.helper_func import styled_button, safe_edit_text
+from helper.helper_func import styled_button
 
 #===============================================================#
 
@@ -102,7 +105,7 @@ async def db_details(client, query):
         [styled_button('‹ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ', style="primary", callback_data='back_to_db_management')]
     ])
     
-    await safe_edit_text(query.message, msg, reply_markup=reply_markup)
+    await query.message.edit_text(msg, reply_markup=reply_markup)
 
 #===============================================================#
 
@@ -150,7 +153,7 @@ __ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏ
     ])
     
     
-    await safe_edit_text(query.message, msg, reply_markup=reply_markup)
+    await query.message.edit_text(msg, reply_markup=reply_markup)
 
 #===============================================================#
 
@@ -283,60 +286,50 @@ async def quick_remove_db(client: Client, message: Message):
 
 @Client.on_callback_query(filters.regex('^home$'))
 async def home(client: Client, query: CallbackQuery):
-    try:
-        await query.answer()
-    except Exception:
-        pass
-    buttons = []
-    if WEBAPP_URL:
-        if WEBAPP_URL.startswith("https://"):
-            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=WEBAPP_URL))])
-        else:
-            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=WEBAPP_URL)])
-    buttons.append([styled_button("Help", style="danger", callback_data="about"), styled_button("Close", style="danger", callback_data="close")])
+    buttons = [[styled_button("Help", style="danger", callback_data = "about"), styled_button("Close", style="danger", callback_data = "close")]]
     if query.from_user.id in client.admins:
         buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
-    text = client.messages.get('START', 'No Start Message').format(
-        first=query.from_user.first_name,
-        last=query.from_user.last_name,
-        username=None if not query.from_user.username else '@' + query.from_user.username,
-        mention=query.from_user.mention,
-        id=query.from_user.id,
+    await query.message.edit_text(
+        text=client.messages.get('START', 'No Start Message').format(
+            first=query.from_user.first_name,
+            last=query.from_user.last_name,
+            username=None if not query.from_user.username else '@' + query.from_user.username,
+            mention=query.from_user.mention,
+            id=query.from_user.id
+                
+        ),
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
-    await safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(buttons))
+    return
+
+#==========================================================================#        
 
 @Client.on_callback_query(filters.regex('^about$'))
 async def about(client: Client, query: CallbackQuery):
-    try:
-        await query.answer()
-    except Exception:
-        pass
-    buttons = [[styled_button("Back", style="danger", callback_data="home"), styled_button("Close", style="danger", callback_data="close")]]
-    text = client.messages.get('ABOUT', 'No Start Message').format(
-        owner_id=client.owner,
-        bot_username=client.username,
-        first=query.from_user.first_name,
-        last=query.from_user.last_name,
-        username=None if not query.from_user.username else '@' + query.from_user.username,
-        mention=query.from_user.mention,
-        id=query.from_user.id,
+    buttons = [[styled_button("Back", style="danger", callback_data = "home"), styled_button("Close", style="danger", callback_data = "close")]]
+    await query.message.edit_text(
+        text=client.messages.get('ABOUT', 'No Start Message').format(
+            owner_id=client.owner,
+            bot_username=client.username,
+            first=query.from_user.first_name,
+            last=query.from_user.last_name,
+            username=None if not query.from_user.username else '@' + query.from_user.username,
+            mention=query.from_user.mention,
+            id=query.from_user.id
+                
+        ),
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
-    await safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(buttons))
+    return
+
+#==========================================================================#        
 
 @Client.on_callback_query(filters.regex('^close$'))
 async def close(client: Client, query: CallbackQuery):
+    await query.message.delete()
     try:
-        await query.answer()
-    except Exception:
-        pass
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
-    try:
-        if query.message.reply_to_message:
-            await query.message.reply_to_message.delete()
-    except Exception:
+        await query.message.reply_to_message.delete()
+    except:
         pass
 
 #==========================================================================#        
@@ -392,11 +385,13 @@ async def unban(client: Client, message: Message):
 # ---------------------------------------------------------------------------
 # /commands — owner only: list every bot command
 # ---------------------------------------------------------------------------
+from config import OWNER_ID as _CMD_OWNER_ID
+
 
 @Client.on_message(filters.command("commands") & filters.private)
 async def list_all_commands(client: Client, message: Message):
     uid = message.from_user.id if message.from_user else 0
-    if uid != OWNER_ID:
+    if uid != _CMD_OWNER_ID:
         return
     text = """<b>📋 Bot Commands</b>
 
