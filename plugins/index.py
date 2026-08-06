@@ -1,13 +1,14 @@
 """
-Anime Index bot handlers (Pyrogram).
+Anime Index bot handlers (Touka integrated into NexusV2).
 
-Commands:
+Same bot token as the file-store. Commands:
   /anidex              — welcome + Open Mini App button
   plain text (private) — search Available library
 Callbacks:
   searchpick / cancel
   reqaccept / reqreject / reqreason / reqback
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +35,7 @@ from config import (
     MESSAGES,
 )
 from helper import database as db
-from helper.helper_func import styled_button
+from helper.helper_func import styled_button, safe_edit_text, safe_edit_caption, safe_edit_reply_markup
 
 SESSIONS: dict[str, dict] = {}
 SESSION_TTL = 15 * 60
@@ -158,7 +159,7 @@ def _display_name(user) -> str:
 @Client.on_message(filters.command("anidex") & filters.private)
 async def cmd_anidex(client: Client, message: Message):
     msgs = getattr(client, "messages", None) or {}
-    raw = msgs.get("INDEX") or MESSAGES.get("INDEX", "")
+    raw = msgs.get("INDEX") or ""
     try:
         text = raw.format(
             first_name=(message.from_user.first_name if message.from_user else None) or "there",
@@ -167,7 +168,7 @@ async def cmd_anidex(client: Client, message: Message):
     except (KeyError, IndexError, ValueError):
         text = raw
     kb = InlineKeyboardMarkup([[_webapp_button()]])
-    photo = (msgs.get("INDEX_PHOTO") or msgs.get("BANNER_IMAGE_URL") or MESSAGES.get("INDEX_PHOTO") or MESSAGES.get("BANNER_IMAGE_URL") or "").strip()
+    photo = (msgs.get("INDEX_PHOTO") or msgs.get("BANNER_IMAGE_URL") or "").strip()
     if photo:
         sent = await message.reply_photo(
             photo, caption=text, reply_markup=kb, protect_content=True,
@@ -192,8 +193,8 @@ async def on_text_search(client: Client, message: Message):
     text = (message.text or "").strip()
     if len(text) < 2 or len(text) > 80:
         return
-    # Skip file-store deep-link style payloads (shortener / batch tokens)
-    if text.startswith("yu3elk"):
+    # Skip file-store / link-share deep-link style payloads
+    if text.startswith(("yu3elk", "ls_")):
         return
     # Don't treat URLs, pure IDs, or command-like text as anime titles
     # (avoids clashing with admin settings input / channel IDs)
@@ -271,7 +272,7 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         SESSIONS.pop(sid, None)
         await q.answer("Cancelled")
         try:
-            await q.message.edit_text("Cancelled.")
+            await safe_edit_text(q.message, "Cancelled.")
         except Exception:
             pass
         return
@@ -337,9 +338,9 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         label = f"\n\n\u2705 Accepted by {_display_name(q.from_user)}"
         try:
             if q.message.caption is not None:
-                await q.message.edit_caption((q.message.caption or "") + label)
+                await safe_edit_caption(q.message, (q.message.caption or "") + label)
             else:
-                await q.message.edit_text((q.message.text or "") + label)
+                await safe_edit_text(q.message, (q.message.text or "") + label)
         except Exception:
             pass
         return
@@ -355,7 +356,7 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
             [styled_button("\u2190 Back", style="danger", callback_data=f"reqback:{rid}")],
         ]
         try:
-            await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
+            await safe_edit_reply_markup(q.message, InlineKeyboardMarkup(rows))
         except Exception:
             pass
         return
@@ -368,7 +369,7 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
             styled_button("\u274c Reject", style="danger", callback_data=f"reqreject:{rid}"),
         ]]
         try:
-            await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
+            await safe_edit_reply_markup(q.message, InlineKeyboardMarkup(rows))
         except Exception:
             pass
         return
@@ -391,9 +392,9 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         label = f"\n\n\u274c Rejected by {_display_name(q.from_user)} \u2014 {note}"
         try:
             if q.message.caption is not None:
-                await q.message.edit_caption((q.message.caption or "") + label)
+                await safe_edit_caption(q.message, (q.message.caption or "") + label)
             else:
-                await q.message.edit_text((q.message.text or "") + label)
+                await safe_edit_text(q.message, (q.message.text or "") + label)
         except Exception:
             pass
         return

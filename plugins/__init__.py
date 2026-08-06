@@ -1,1 +1,1 @@
-# plugins package — handlers auto-loaded by Pyrogram
+# Plugin package for Pyrogram handlers (auto-loaded from plugins/).

@@ -1,21 +1,13 @@
 from helper.helper_func import *
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import humanize
-from config import OWNER_ID
+from config import OWNER_ID, WEBAPP_URL
 from plugins.shortner import get_short
-from helper.helper_func import (
-    get_messages,
-    force_sub,
-    decode,
-    batch_auto_del_notification,
-    retry_on_flood,
-    paced_copy,
-)
+from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification, styled_button
 import asyncio
 from datetime import datetime, timedelta
 from pyrogram.enums import ParseMode
-from pyrogram.errors import FloodWait
 
 #===============================================================#
 
@@ -51,6 +43,72 @@ async def start_command(client: Client, message: Message):
         except IndexError:
             return await message.reply("Invalid command format.")
 
+        # Link Share Menu deep links. Tokens are generated manually from the
+        # Link Share Menu and remain valid until removed from the database.
+        if base64_string.startswith("ls_"):
+            try:
+                token = base64_string[3:]
+                token_data = await client.linkshare_db.get_link_share_token(token)
+                if not token_data:
+                    return await message.reply_text(
+                        "<b>Invalid or expired invite link.</b>",
+                        parse_mode=ParseMode.HTML
+                    )
+
+                channel_id = int(token_data["channel_id"])
+                is_request_link = bool(token_data.get("is_request", False))
+
+                # The permanent ?start=ls_xxx token stays valid in MongoDB,
+                # but the actual Telegram channel invite generated for the
+                # user expires after 5 minutes, matching KafkaLinkBot.
+                invite = await client.create_chat_invite_link(
+                    chat_id=channel_id,
+                    expire_date=datetime.now() + timedelta(minutes=5),
+                    creates_join_request=is_request_link
+                )
+                invite_link = invite.invite_link
+                button = InlineKeyboardMarkup([
+                    [styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="primary", url=invite_link)]
+                ])
+
+                link_msg = await message.reply_text(
+                    "<b><blockquote>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
+                    reply_markup=button,
+                    parse_mode=ParseMode.HTML,
+                    protect_content=True
+                )
+                note_msg = await message.reply_text(
+                    "<blockquote><b>ᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ ɪɴ 5 ᴍɪɴᴜᴛᴇs. ᴛʜᴇ ʟɪɴᴋ ʀᴇᴍᴀɪɴs ᴠᴀʟɪᴅ.</b></blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+
+                async def cleanup_link_share():
+                    await asyncio.sleep(300)
+                    for msg in (note_msg, link_msg):
+                        try:
+                            await msg.delete()
+                        except Exception:
+                            pass
+                    # Revoke the generated invite at the same 5-minute mark.
+                    # This is only the temporary Telegram invite; the
+                    # permanent ?start=ls_xxx Link Share token is untouched.
+                    try:
+                        await client.revoke_chat_invite_link(channel_id, invite_link)
+                    except Exception as revoke_error:
+                        client.LOGGER(__name__, client.name).warning(
+                            f"Failed to revoke Link Share invite: {revoke_error}"
+                        )
+
+                asyncio.create_task(cleanup_link_share())
+                return
+            except Exception as e:
+                client.LOGGER(__name__, client.name).warning(
+                    f"Link Share deep link error: {e}"
+                )
+                return await message.reply_text(
+                    "<b>Invalid or expired invite link.</b>",
+                    parse_mode=ParseMode.HTML
+                )
 
         # 3. Check premium status
         is_user_pro = await client.mongodb.is_pro(user_id)
@@ -174,71 +232,52 @@ async def start_command(client: Client, message: Message):
         # 7. Get messages from the specific source channel first
         temp_msg = await message.reply("Wait A Sec..")
         messages = []
-        log = client.LOGGER(__name__, client.name)
 
         try:
             # Try to get messages from the identified source channel first
             if source_channel_id:
-                log.info(f"Trying to get messages from source channel: {source_channel_id}")
+                client.LOGGER(__name__, client.name).info(f"Trying to get messages from source channel: {source_channel_id}")
                 try:
-                    msgs = await retry_on_flood(
-                        lambda: client.get_messages(
-                            chat_id=source_channel_id,
-                            message_ids=list(ids),
-                        ),
-                        max_retries=5,
-                        logger=log,
-                        label=f"get_messages src:{source_channel_id}",
+                    msgs = await client.get_messages(
+                        chat_id=source_channel_id,
+                        message_ids=list(ids)
                     )
-                    # Filter out None / empty messages (deleted/not found)
-                    valid_msgs = [
-                        msg for msg in (msgs or [])
-                        if msg is not None and not getattr(msg, "empty", False)
-                    ]
+                    # Filter out None messages (deleted/not found)
+                    valid_msgs = [msg for msg in msgs if msg is not None]
                     messages.extend(valid_msgs)
-                    log.info(f"Found {len(valid_msgs)} messages from source channel {source_channel_id}")
-
+                    client.LOGGER(__name__, client.name).info(f"Found {len(valid_msgs)} messages from source channel {source_channel_id}")
+                    
+                    # If we didn't get all messages, try the fallback system
                     if len(valid_msgs) < len(list(ids)):
                         missing_ids = [mid for mid in ids if mid not in {msg.id for msg in valid_msgs}]
                         if missing_ids:
-                            log.info(f"Missing {len(missing_ids)} messages, trying fallback system")
+                            client.LOGGER(__name__, client.name).info(f"Missing {len(missing_ids)} messages, trying fallback system")
+                            # Use the fallback system for missing messages
                             additional_messages = await get_messages(client, missing_ids)
-                            messages.extend(
-                                m for m in additional_messages
-                                if m is not None and not getattr(m, "empty", False)
-                            )
-                            log.info(f"Found {len(additional_messages)} additional messages from fallback")
+                            messages.extend(additional_messages)
+                            client.LOGGER(__name__, client.name).info(f"Found {len(additional_messages)} additional messages from fallback")
                 except Exception as e:
-                    log.warning(f"Error getting messages from source channel {source_channel_id}: {e}")
+                    client.LOGGER(__name__, client.name).warning(f"Error getting messages from source channel {source_channel_id}: {e}")
+                    # Fallback to the multi-channel system
                     messages = await get_messages(client, ids)
             else:
-                log.info("No specific source channel identified, using multi-channel fallback")
+                client.LOGGER(__name__, client.name).info("No specific source channel identified, using multi-channel fallback")
+                # Use the multi-channel fallback system
                 messages = await get_messages(client, ids)
         except Exception as e:
             await temp_msg.edit_text("Something went wrong!")
-            log.warning(f"Error getting messages: {e}")
+            client.LOGGER(__name__, client.name).warning(f"Error getting messages: {e}")
             return
-
-        # Final filter: drop None / empty service messages
-        messages = [
-            m for m in messages
-            if m is not None and not getattr(m, "empty", False)
-        ]
 
         if not messages:
             return await temp_msg.edit("Couldn't find the files in the database.")
-        try:
-            await temp_msg.delete()
-        except Exception:
-            pass
+        await temp_msg.delete()
 
         yugen_msgs = []
         for msg in messages:
             caption = (
                 client.messages.get('CAPTION', '').format(
-                    previouscaption=msg.caption.html if msg.caption else (
-                        msg.document.file_name if msg.document else ""
-                    )
+                    previouscaption=msg.caption.html if msg.caption else msg.document.file_name
                 ) if bool(client.messages.get('CAPTION', '')) and bool(msg.document)
                 else ("" if not msg.caption else msg.caption.html)
             )
@@ -249,23 +288,25 @@ async def start_command(client: Client, message: Message):
             protect_this = True if reply_markup else client.protect
 
             try:
-                copied_msg = await paced_copy(
-                    msg,
+                copied_msg = await msg.copy(
                     chat_id=message.from_user.id,
                     caption=caption,
                     reply_markup=reply_markup,
-                    protect_content=protect_this,
+                    protect_content=protect_this
                 )
-                if copied_msg is not None:
-                    yugen_msgs.append(copied_msg)
+                yugen_msgs.append(copied_msg)
+            except FloodWait as e:
+                await asyncio.sleep(e.x)
+                copied_msg = await msg.copy(
+                    chat_id=message.from_user.id,
+                    caption=caption,
+                    reply_markup=reply_markup,
+                    protect_content=protect_this
+                )
+                yugen_msgs.append(copied_msg)
             except Exception as e:
-                # Empty messages, forbidden, etc. — skip and continue batch
-                err = str(e).lower()
-                if "empty" in err:
-                    log.info(f"Skipping empty message {getattr(msg, 'id', '?')}")
-                else:
-                    log.warning(f"Failed to send message {getattr(msg, 'id', '?')}: {e}")
-                continue
+                client.LOGGER(__name__, client.name).warning(f"Failed to send message: {e}")
+                pass
 
         # 8. Auto delete timer
         try:
@@ -291,7 +332,13 @@ async def start_command(client: Client, message: Message):
 
     # 9. Normal start message
     else:
-        buttons = [[styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data='close')]]
+        buttons = []
+        if WEBAPP_URL:
+            if WEBAPP_URL.startswith("https://"):
+                buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=WEBAPP_URL))])
+            else:
+                buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=WEBAPP_URL)])
+        buttons.append([styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data='close')])
         if user_id in client.admins:
             buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
 
