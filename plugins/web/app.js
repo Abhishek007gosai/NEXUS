@@ -1811,16 +1811,8 @@
     box.innerHTML = "";
     const links = (help.links && help.links.length)
       ? help.links
-      : [{ name: "", url: "" }, { name: "", url: "" }];
+      : [{ name: "", url: "" }];
     links.forEach((l) => box.appendChild(helpEditRow(l.name || "", l.url || "")));
-    const moreBox = el("help-edit-more-links");
-    if (moreBox) {
-      moreBox.innerHTML = "";
-      const moreLinks = (help.more_links && help.more_links.length)
-        ? help.more_links
-        : [{ name: "", url: "" }];
-      moreLinks.forEach((l) => moreBox.appendChild(helpEditRow(l.name || "", l.url || "")));
-    }
     overlay.classList.remove("hidden");
   }
 
@@ -1863,19 +1855,14 @@
     el("help-edit-add").addEventListener("click", () => {
       el("help-edit-links").appendChild(helpEditRow("", ""));
     });
-    const addMore = el("help-edit-add-more");
-    if (addMore) {
-      addMore.addEventListener("click", () => {
-        el("help-edit-more-links").appendChild(helpEditRow("", ""));
-      });
-    }
+    // more-channel add button removed
     el("help-edit-save").addEventListener("click", async () => {
       const title = el("help-edit-title").value.trim();
       const text = el("help-edit-text").value.trim();
       const supportInput = el("help-edit-support");
       const support_chat_url = supportInput ? supportInput.value.trim() : "";
       const links = collectLinkRows("help-edit-links");
-      const more_links = collectLinkRows("help-edit-more-links");
+      const more_links = [];
       try {
         await api("/api/profile/help", {
           method: "PUT",
