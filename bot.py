@@ -8,7 +8,7 @@ from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
 from config import LOGGER, PORT, OWNER_ID, SHORT_URL, SHORT_API, SHORT_TUT
-from helper import MongoDB, LinkShareDB
+from helper import MongoDB
 
 version = "v2.0.0"
 
@@ -26,19 +26,57 @@ def bot_health():
 
 def run_flask():
     import logging
-    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    import sys
+
+    class _Quiet(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            if "Serving Flask app" in msg or "Debug mode" in msg or "Running on" in msg:
+                return False
+            return True
+
+    for name in ("werkzeug", "flask", "flask.app"):
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.ERROR)
+        lg.addFilter(_Quiet())
+
+    # Also quiet the root handler that werkzeug attaches
+    logging.getLogger("werkzeug").disabled = True
+
     port = int(os.environ.get("PORT", PORT or 10000))
-    flask_app.run(
-        host="0.0.0.0",
-        port=port,
-        threaded=True,
-        use_reloader=False,
-    )
+    # flask/werkzeug still write the banner via click to stderr in some versions
+    _real_stderr = sys.stderr
+
+    class _StderrFilter:
+        def __init__(self, real):
+            self._real = real
+        def write(self, s):
+            if not s:
+                return 0
+            if "Serving Flask app" in s or "Debug mode" in s or "Running on" in s or "Press CTRL" in s:
+                return len(s)
+            return self._real.write(s)
+        def flush(self):
+            return self._real.flush()
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    sys.stderr = _StderrFilter(_real_stderr)
+    try:
+        flask_app.run(
+            host="0.0.0.0",
+            port=port,
+            threaded=True,
+            use_reloader=False,
+        )
+    finally:
+        sys.stderr = _real_stderr
+
 
 #================================================
 
 class Bot(Client):
-    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn, linkshare_db_uri=None, linkshare_db_name=None):
+    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn):
         super().__init__(
             name=session,
             api_hash=api_hash,
@@ -63,7 +101,6 @@ class Bot(Client):
         self.disable_btn = disable_btn
         self.reply_text = messages.get('REPLY', 'ғᴜᴄᴋ ᴏғғ ʙɪᴛᴄʜ !!!')
         self.mongodb = MongoDB(db_uri, db_name)
-        self.linkshare_db = LinkShareDB(linkshare_db_uri or db_uri, linkshare_db_name or "linkshare")
         self.req_channels = []
         self.db_channels = {}
         self.primary_db_channel = db
@@ -253,34 +290,23 @@ class Bot(Client):
                 text=restart_message
             )
 
-            self.LOGGER(__name__, self.name).info(
-                f"Restart notification sent to owner: {self.owner}"
-            )
-
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(
-                f"Failed to send restart notification to owner: {e}"
-            )
+        except Exception:
+            pass
 
         self.username = usr_bot_me.username
 
-        # Polling mode: clear any leftover webhook so Telegram stops POSTing to /.
-        # Use Bot API HTTP — pyrofork Client may not expose delete_webhook().
+        # Polling mode: clear leftover webhook (silent)
         try:
             import requests as _req
             from config import TOKEN as _tok
-            r = _req.get(
-                f"https://api.telegram.org/bot{_tok}/deleteWebhook",
-                params={"drop_pending_updates": "true"},
-                timeout=15,
-            )
-            data = r.json() if r.ok else {}
-            if data.get("ok"):
-                self.LOGGER(__name__, self.name).info("Webhook cleared (polling mode)")
-            else:
-                self.LOGGER(__name__, self.name).warning(f"deleteWebhook: {data}")
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(f"deleteWebhook: {e}")
+            if _tok:
+                _req.get(
+                    f"https://api.telegram.org/bot{_tok}/deleteWebhook",
+                    params={"drop_pending_updates": "true"},
+                    timeout=15,
+                )
+        except Exception:
+            pass
 
         # Share Pyrogram client with the mini-app (invite links / logs)
         try:
