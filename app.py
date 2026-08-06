@@ -511,15 +511,16 @@ def api_search_clear():
     return jsonify(status="cleared")
 
 
+@app.get("/api/search")
 @app.get("/api/search/anime")
-def api_search_anime():
-    """Search adult anime (hentai). Path kept for backwards compatibility."""
+def api_search_all():
+    """Search adult anime (hentai) + manga/manhwa/doujin (pornhwa) together."""
     q = (request.args.get("q") or "").strip()
     page = request.args.get("page", 1, type=int)
     if not q:
         return jsonify({"results": [], "has_next": False})
     try:
-        return jsonify(SOURCES["anilist"].search(q, page))
+        return jsonify(SOURCES["anilist"].search_all(q, page))
     except requests.RequestException:
         return jsonify({"results": [], "has_next": False})
 
