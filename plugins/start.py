@@ -19,6 +19,100 @@ from pyrogram.errors import FloodWait
 
 #===============================================================#
 
+# Markers that identify anime info-card posts (title / synopsis / season buttons)
+# Match both ASCII hyphen and common unicode dashes
+_INFO_CARD_MARKERS = (
+    "SYNOPSIS",
+    "EPISODE",
+    "SEASON",
+    "SCORE",
+    "AUDIO",
+)
+
+_FILE_MEDIA_ATTRS = (
+    "video",
+    "document",
+    "audio",
+    "animation",
+    "voice",
+    "video_note",
+)
+
+
+def _is_info_card(msg) -> bool:
+    """True for text/photo info cards (anime synopsis + season buttons).
+
+    These posts skip the shortener so anyone can open them directly.
+    Actual downloadable files (video / document / audio / animation) still
+    go through the shortener for non-pro users.
+    """
+    if msg is None or getattr(msg, "empty", False):
+        return False
+
+    # 1) Caption / text markers (SYNOPSIS, EPISODE, SEASON, SCORE, AUDIO)
+    text = (msg.caption or msg.text or "") or ""
+    upper = text.upper()
+    if any(m in upper for m in _INFO_CARD_MARKERS):
+        return True
+
+    # 2) Season-style navigation: 2+ URL buttons (S1/4, MOVIES, etc.)
+    markup = getattr(msg, "reply_markup", None)
+    if markup and getattr(markup, "inline_keyboard", None):
+        url_btns = 0
+        for row in markup.inline_keyboard:
+            for btn in row:
+                if getattr(btn, "url", None):
+                    url_btns += 1
+        if url_btns >= 2:
+            # URL-button grid + no file media → info card
+            has_file = any(getattr(msg, attr, None) for attr in _FILE_MEDIA_ATTRS)
+            if not has_file:
+                return True
+
+    # 3) No downloadable media at all → text or photo only = info card
+    for attr in _FILE_MEDIA_ATTRS:
+        if getattr(msg, attr, None):
+            return False
+    return True
+
+
+async def _send_shortener_gate(client: Client, message: Message, base64_string: str):
+    """Send the ads-token / shortener verification message and stop."""
+    try:
+        short_link = get_short(
+            f"https://t.me/{client.username}?start=yu3elk{base64_string}7",
+            client,
+        )
+    except Exception as e:
+        client.LOGGER(__name__, client.name).warning(f"Shortener failed: {e}")
+        return await message.reply("Couldn't generate short link.")
+
+    short_photo = client.messages.get("SHORT_PIC", "")
+    short_caption = client.messages.get("SHORT_MSG", "")
+    tutorial_link = getattr(client, "tutorial_link", "https://t.me/+wekKcN1tjbAxY2U1")
+
+    await client.send_photo(
+        chat_id=message.chat.id,
+        photo=short_photo,
+        caption=short_caption,
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [styled_button("»ᴄʟɪᴄᴋ ʜᴇʀᴇ«", style="primary", url=short_link)],
+                [
+                    styled_button(
+                        "»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«",
+                        style="primary",
+                        url=tutorial_link,
+                    )
+                ],
+            ]
+        ),
+        protect_content=True,
+    )
+
+
+#===============================================================#
+
 @Client.on_message(filters.command('start') & filters.private)
 @force_sub
 async def start_command(client: Client, message: Message):
@@ -51,42 +145,11 @@ async def start_command(client: Client, message: Message):
         except IndexError:
             return await message.reply("Invalid command format.")
 
-
-        # 3. Check premium status
+        # 3. Check premium status (used later for shortener gate)
         is_user_pro = await client.mongodb.is_pro(user_id)
-        
-        # 4. Check if shortner is enabled
-        shortner_enabled = getattr(client, 'shortner_enabled', True)
+        shortner_enabled = getattr(client, "shortner_enabled", True)
 
-        # 5. If user is not premium AND shortner is enabled, send short URL and return
-        if not is_user_pro and user_id != OWNER_ID and not is_short_link and shortner_enabled:
-            try:
-                short_link = get_short(f"https://t.me/{client.username}?start=yu3elk{base64_string}7", client)
-            except Exception as e:
-                client.LOGGER(__name__, client.name).warning(f"Shortener failed: {e}")
-                return await message.reply("Couldn't generate short link.")
-
-            short_photo = client.messages.get("SHORT_PIC", "")
-            short_caption = client.messages.get("SHORT_MSG", "")
-            tutorial_link = getattr(client, 'tutorial_link', "https://t.me/+wekKcN1tjbAxY2U1")
-
-            await client.send_photo(
-                chat_id=message.chat.id,
-                photo=short_photo,
-                caption=short_caption,
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        styled_button("»ᴄʟɪᴄᴋ ʜᴇʀᴇ«", style="primary", url=short_link)
-                    ],
-                    [
-                        styled_button("»ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ ᴠɪᴅᴇᴏ ᴛᴜᴛᴏʀɪᴀʟ«", style="primary", url=tutorial_link)
-                    ]
-                ]),
-                protect_content=True
-            )
-            return  # prevent sending actual files
-
-        # 6. Decode and prepare file IDs
+        # 4. Decode and prepare file IDs
         try:
             string = await decode(base64_string)
             argument = string.split("-")
@@ -190,9 +253,14 @@ async def start_command(client: Client, message: Message):
                         logger=log,
                         label=f"get_messages src:{source_channel_id}",
                     )
+                    # Pyrogram may return a single Message or a list
+                    if msgs is None:
+                        msgs = []
+                    elif not isinstance(msgs, (list, tuple)):
+                        msgs = [msgs]
                     # Filter out None / empty messages (deleted/not found)
                     valid_msgs = [
-                        msg for msg in (msgs or [])
+                        msg for msg in msgs
                         if msg is not None and not getattr(msg, "empty", False)
                     ]
                     messages.extend(valid_msgs)
@@ -227,6 +295,27 @@ async def start_command(client: Client, message: Message):
 
         if not messages:
             return await temp_msg.edit("Couldn't find the files in the database.")
+
+        # ── Shortener gate (skipped for info-card posts) ──────────────
+        # Info cards (synopsis + season buttons like the screenshot) are
+        # delivered to everyone without verification. Actual file posts
+        # still require the shortener for non-pro users.
+        all_info_cards = all(_is_info_card(m) for m in messages)
+        needs_shortener = (
+            not is_user_pro
+            and user_id != OWNER_ID
+            and not is_short_link
+            and shortner_enabled
+            and not all_info_cards
+        )
+        if needs_shortener:
+            try:
+                await temp_msg.delete()
+            except Exception:
+                pass
+            await _send_shortener_gate(client, message, base64_string)
+            return  # prevent sending actual files
+
         try:
             await temp_msg.delete()
         except Exception:
