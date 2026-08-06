@@ -14,7 +14,7 @@ from plugins.base import AnimeSource
 
 SEARCH_QUERY = """
 query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 15) {
+  Page(page: $page, perPage: 25) {
     pageInfo { hasNextPage }
     media(search: $search, type: ANIME, isAdult: true, sort: SEARCH_MATCH) {
       id
@@ -189,7 +189,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 MANGA_SEARCH_QUERY = """
 query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 15) {
+  Page(page: $page, perPage: 25) {
     pageInfo { hasNextPage }
     media(
       search: $search
@@ -378,8 +378,27 @@ class AniListSource(AnimeSource):
                 "genres": (m.get("genres") or [])[:3],
                 "format": m.get("format"),
                 "episodes": m.get("episodes"),
+                "media_type": "ANIME",
             })
         return {"results": results, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
+
+    def search_all(self, query: str, page: int = 1) -> dict:
+        """Search adult anime (hentai) + adult manga/manhwa/doujin (pornhwa)."""
+        anime = self.search(query, page)
+        manga = self.search_manga(query, page)
+        # Dedupe by anilist id (rare overlap), anime first then manga
+        seen = set()
+        merged = []
+        for item in (anime.get("results") or []) + (manga.get("results") or []):
+            aid = item.get("anilist_id") or item.get("source_id")
+            if aid in seen:
+                continue
+            seen.add(aid)
+            merged.append(item)
+        return {
+            "results": merged,
+            "has_next": bool(anime.get("has_next") or manga.get("has_next")),
+        }
 
     def get_details(self, source_id, use_cache: bool = True) -> dict:
         if use_cache:
