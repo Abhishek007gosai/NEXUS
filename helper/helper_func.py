@@ -106,12 +106,12 @@ async def retry_on_flood(
 
 # Small delay between consecutive media copies to reduce flood pressure.
 # Tunable; 0 disables pacing.
-SEND_PACING_SECONDS = 0.35
+SEND_PACING_SECONDS = 0
 
 
 async def paced_copy(msg, **kwargs):
     """``msg.copy`` with FloodWait retries + optional inter-send pacing."""
-    result = await retry_on_flood(lambda: msg.copy(**kwargs), label="copy")
+    result = await retry_on_flood(lambda: msg.copy(**kwargs), max_retries=5, label="copy")
     if SEND_PACING_SECONDS > 0:
         await asyncio.sleep(SEND_PACING_SECONDS)
     return result

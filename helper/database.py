@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import time
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError, PyMongoError
-from config import MONGODB_URL, MONGODB_NAME, MONGODB_URIS, DB_URIS, DB_NAME as CONFIG_DB_NAME
+from config import DB_URI, DB_NAME as CONFIG_DB_NAME
 
 # Storage / quota related error substrings (free Atlas, etc.)
 _QUOTA_MARKERS = (
@@ -24,16 +24,18 @@ def _is_quota_error(exc: BaseException) -> bool:
     return any(m in msg for m in _QUOTA_MARKERS)
 
 
-def _uri_list(uri: str | None = None) -> list[str]:
-    """Prefer the multi-URI list from config; fall back to a single uri."""
-    uris = list(MONGODB_URIS or DB_URIS or [])
-    if not uris and uri:
-        uris = [uri]
-    if not uris and MONGODB_URL:
-        uris = [MONGODB_URL]
-    # de-dupe, preserve order
-    seen = set()
-    out = []
+def _uri_list(uri=None) -> list[str]:
+    """DB_URI is a list of MongoDB URLs (space-separated in env)."""
+    uris = []
+    if isinstance(uri, (list, tuple)):
+        uris.extend(uri)
+    elif isinstance(uri, str) and uri.strip():
+        uris.append(uri.strip())
+    if isinstance(DB_URI, (list, tuple)):
+        uris.extend(DB_URI)
+    elif isinstance(DB_URI, str) and DB_URI.strip():
+        uris.append(DB_URI.strip())
+    seen, out = set(), []
     for u in uris:
         u = (u or "").strip()
         if u and u not in seen:
@@ -45,7 +47,7 @@ def _uri_list(uri: str | None = None) -> list[str]:
 class MongoDB:
     """Async MongoDB helper with multi-URI failover.
 
-    Pass a single uri (legacy) or rely on config.DB_URIS / MONGODB_URIS.
+    Pass a single uri (legacy) or rely on config.DB_URI list.
     When the active cluster is full / unreachable, the next URI is tried.
     """
     _instances = {}
@@ -904,7 +906,7 @@ def _sync_failover() -> bool:
         return False
     uri, client = _sync_clients[next_idx]
     _client = client
-    _db = client[MONGODB_NAME or CONFIG_DB_NAME]
+    _db = client[CONFIG_DB_NAME]
     _sync_active_idx = next_idx
     print(f"[MongoDB/sync] Failover → URI #{next_idx + 1}: {uri[:48]}...")
     return True
@@ -917,8 +919,8 @@ def _ensure():
         return
     uris = _uri_list()
     if not uris:
-        uris = [MONGODB_URL or "mongodb://localhost:27017"]
-    db_name = MONGODB_NAME or CONFIG_DB_NAME
+        uris = ["mongodb://localhost:27017"]
+    db_name = CONFIG_DB_NAME
     last_err = None
     for idx, u in enumerate(uris):
         try:
@@ -1545,6 +1547,84 @@ def clear_popular_searches() -> None:
     searches_col.delete_many({})
 
 
+# ---------------------------------------------------------------------------
+# Mini web app — visits + storage summary (for /stats)
+# ---------------------------------------------------------------------------
+
+def record_web_visit(*, path: str = "", is_page: bool = False) -> None:
+    """Count a website / mini-app hit.
+
+    ``is_page=True`` for HTML page loads; API hits still bump total visits.
+    """
+    try:
+        _ensure()
+        fields = {"total": 1, "api": 0 if is_page else 1, "pages": 1 if is_page else 0}
+        counters_col.update_one(
+            {"_id": "web_visits"},
+            {
+                "$inc": fields,
+                "$set": {"last_visit": time.time(), "last_path": (path or "")[:120]},
+            },
+            upsert=True,
+        )
+    except Exception:
+        pass
+
+
+def get_web_visits() -> dict:
+    try:
+        _ensure()
+        doc = counters_col.find_one({"_id": "web_visits"}) or {}
+        return {
+            "total": int(doc.get("total") or 0),
+            "pages": int(doc.get("pages") or 0),
+            "api": int(doc.get("api") or 0),
+            "last_visit": doc.get("last_visit"),
+            "last_path": doc.get("last_path") or "",
+        }
+    except Exception:
+        return {"total": 0, "pages": 0, "api": 0, "last_visit": None, "last_path": ""}
+
+
+def get_web_app_stats() -> dict:
+    """Counts + storage for mini-app collections (sync pymongo)."""
+    out = {
+        "anime": 0,
+        "web_users": 0,
+        "searches": 0,
+        "search_hits": 0,
+        "requests": 0,
+        "reports": 0,
+        "cache": 0,
+        "storage_bytes": 0,
+        "visits": get_web_visits(),
+    }
+    try:
+        _ensure()
+        out["anime"] = anime_col.estimated_document_count()
+        out["web_users"] = users_col.estimated_document_count()
+        out["searches"] = searches_col.estimated_document_count()
+        out["requests"] = requests_col.estimated_document_count()
+        out["reports"] = reports_col.estimated_document_count()
+        out["cache"] = cache_col.estimated_document_count()
+        try:
+            pipeline = [{"$group": {"_id": None, "n": {"$sum": "$count"}}}]
+            agg = list(searches_col.aggregate(pipeline))
+            out["search_hits"] = int(agg[0]["n"]) if agg else 0
+        except Exception:
+            pass
+        # Storage used by web-related collections only
+        total = 0
+        for name in ("anime", "users", "searches", "requests", "reports", "catalog_cache", "counters"):
+            try:
+                st = _db.command("collStats", name)
+                total += int(st.get("storageSize") or 0) + int(st.get("totalIndexSize") or 0)
+            except Exception:
+                continue
+        out["storage_bytes"] = total
+    except Exception:
+        pass
+    return out
 
 
 # ---------------------------------------------------------------------------
