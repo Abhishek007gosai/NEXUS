@@ -196,6 +196,30 @@ async def safe_delete(msg):
         pass
 
 
+async def safe_edit_text(message, text, **kwargs):
+    """Edit message text; ignore MessageNotModified / missing message."""
+    if message is None:
+        return None
+    try:
+        from pyrogram.errors import MessageNotModified, MessageIdInvalid, FloodWait
+    except Exception:
+        MessageNotModified = MessageIdInvalid = FloodWait = Exception
+    try:
+        return await message.edit_text(text, **kwargs)
+    except MessageNotModified:
+        return message
+    except MessageIdInvalid:
+        return None
+    except FloodWait as e:
+        await sleep_on_flood(e)
+        try:
+            return await message.edit_text(text, **kwargs)
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
 async def safe_reply(message, text, **kwargs):
     """``message.reply`` without the deprecated ``quote`` argument."""
     kwargs.pop("quote", None)
