@@ -279,25 +279,45 @@ async def link_generator(client: Client, message: Message):
     except Exception:
         return
 
-    db_chat = getattr(client, 'primary_db_channel', client.db)
+    primary_db = getattr(client, 'primary_db_channel', client.db)
+    source_channel_id, source_msg_id = get_forward_info(channel_message)
 
-    # Forwarded from anywhere (DB channel or non-DB channel).
-    # Always copy the exact content the bot received so any caption /
-    # media changes the admin made on the forwarded post are kept.
-    try:
-        db_message_id = await _copy_forward_to_db(client, channel_message)
-    except Exception as e:
-        client.LOGGER(__name__, client.name).warning(f"Failed to store forwarded message in DB: {e}")
-        return await channel_message.reply(
-            "<blockquote>✗ ꜰᴀɪʟᴇᴅ ᴛᴏ sᴛᴏʀᴇ ᴛʜᴇ ꜰɪʟᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ.</blockquote>"
+    # Already in a DB channel → reuse that post ID.
+    # Edits you make later (caption / "CLICK HERE" button) are sent live.
+    if source_channel_id and source_msg_id and _is_db_channel(client, source_channel_id):
+        db_message_id = source_msg_id
+        db_chat = source_channel_id
+        note = (
+            "Linked to existing DB post.\n"
+            "Edit caption or buttons on that same post — users always get the latest."
         )
+    else:
+        # Non-DB forward → copy into primary DB (keeps any changes on the forward)
+        try:
+            db_message_id = await _copy_forward_to_db(client, channel_message)
+            db_chat = primary_db
+            note = (
+                f"Stored as new DB post (ID <code>{db_message_id}</code>).\n"
+                "Edit caption or buttons on that DB post — users always get the latest."
+            )
+        except Exception as e:
+            client.LOGGER(__name__, client.name).warning(f"Failed to store forwarded message in DB: {e}")
+            return await channel_message.reply(
+                "<blockquote>✗ Failed to store the file in the DB channel.</blockquote>"
+            )
 
     base64_string = await encode(f"get-{db_message_id * abs(db_chat)}")
     link = f"https://t.me/{client.username}?start={base64_string}"
-    reply_markup = InlineKeyboardMarkup([[styled_button("🔁 sʜᴀʀᴇ ᴜʀʟ", style="primary", url=f'https://telegram.me/share/url?url={link}')]])
+    reply_markup = InlineKeyboardMarkup(
+        [[styled_button("🔁 Share URL", style="primary", url=f"https://telegram.me/share/url?url={link}")]]
+    )
     await channel_message.reply_text(
-        f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
-        reply_markup=reply_markup
+        f"<blockquote>✓ Here is your link</blockquote>\n\n"
+        f"<code>{link}</code>\n\n"
+        f"DB channel: <code>{db_chat}</code>\n"
+        f"DB message ID: <code>{db_message_id}</code>\n"
+        f"<i>{note}</i>",
+        reply_markup=reply_markup,
     )
 
 #===============================================================#
