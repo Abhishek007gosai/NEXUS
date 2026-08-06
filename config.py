@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -25,14 +26,38 @@ ADMINS = [8771195193]
 ADMIN_IDS = ADMINS
 
 # ──────────────────────────────────────────────
-# MongoDB — File Store
+# MongoDB — single DB for everything (bot + web)
 # ──────────────────────────────────────────────
-DB_URI = os.getenv("DB_URI", "")
+# DB_URI supports multiple MongoDB URLs. When one cluster fills up (e.g. free
+# Atlas 512 MB limit), add another URL and the bot will fall over to it.
+#
+# Formats (any of these):
+#   DB_URI=mongodb+srv://user:pass@cluster1/...
+#   DB_URI=mongodb+srv://...cluster1/...,mongodb+srv://...cluster2/...
+#   DB_URI=uri1 | uri2 | uri3
+#   DB_URI=uri1
+#          uri2
+#
+# Separators: comma, pipe (|), semicolon, or newline — as long as the next
+# token starts with "mongodb". Query-string commas inside a single URI are
+# preserved.
+def _parse_db_uris(raw: str) -> list[str]:
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    parts = re.split(r"(?:[\s,|;]+|\n+)(?=mongodb[\+a-z]*://)", raw, flags=re.IGNORECASE)
+    return [p.strip().rstrip(",|;") for p in parts if p.strip()]
+
+
+_DB_URI_RAW = os.getenv("DB_URI", "")
+DB_URIS = _parse_db_uris(_DB_URI_RAW)
+DB_URI = DB_URIS[0] if DB_URIS else ""  # primary (first working URI)
 DB_NAME = os.getenv("DB_NAME", "cluster0")
-WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
-WEB_DB_NAME = os.getenv("WEB_DB_NAME", "nexus")
-MONGODB_URL = WEB_DB_URI
-MONGODB_NAME = WEB_DB_NAME
+
+# Aliases used by the anime-index / mini-app layer (same DB — no separate WEB_DB)
+MONGODB_URL = DB_URI
+MONGODB_NAME = DB_NAME
+MONGODB_URIS = DB_URIS  # full list for multi-cluster failover
 
 # ──────────────────────────────────────────────
 # Anime Index branding
