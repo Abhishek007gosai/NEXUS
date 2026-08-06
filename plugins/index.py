@@ -28,7 +28,6 @@ from pyrogram.types import (
 
 from config import (
     TOKEN,
-    BOT_TOKEN,
     BRAND_NAME,
     WEBAPP_URL,
     ADMINS,
@@ -132,7 +131,7 @@ async def _send_anime_result(
 def _delete_message_later(chat_id: int, message_id: int, delay: float = 120) -> None:
     def _do() -> None:
         try:
-            token = TOKEN or BOT_TOKEN
+            token = TOKEN
             if not token:
                 return
             requests.post(

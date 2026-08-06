@@ -100,11 +100,9 @@ async def _mongo_storage_section(client) -> str:
             if fs_total and fs_total > 0:
                 used_ref = float(fs_used or total_size)
                 limit_ref = float(fs_total)
-                limit_note = "server disk"
             else:
                 used_ref = total_size
                 limit_ref = float(ATLAS_M0_LIMIT)
-                limit_note = "free plan ~512 MB"
 
             percent = (used_ref / limit_ref * 100.0) if limit_ref else 0.0
             free_ref = max(0.0, limit_ref - used_ref)
@@ -114,14 +112,10 @@ async def _mongo_storage_section(client) -> str:
                 f"<blockquote><b>{label}</b> (<code>{name}</code>){host_line}\n"
                 f"Used: <b>{_fmt_bytes(total_size)}</b> / {_fmt_bytes(limit_ref)}\n"
                 f"{_progress_bar(percent)} <b>{percent:.0f}%</b>  {_status_emoji(percent)}\n"
-                f"Free left: {_fmt_bytes(free_ref)}  ·  Docs: {objects:,}\n"
-                f"<i>Limit: {limit_note}</i></blockquote>"
+                f"Free left: {_fmt_bytes(free_ref)}  ·  Docs: {objects:,}</blockquote>"
             )
         except Exception as e:
             lines.append(f"<blockquote><b>{label}</b>\nError: <code>{str(e)[:60]}</code></blockquote>")
-
-    if len(targets) > 1:
-        lines.append("<i>Several DBs set — bot switches if one fills up.</i>")
 
     return "\n".join(lines)
 
@@ -189,6 +183,31 @@ async def usage_cmd(client: Client, message: Message):
     except Exception as e:
         mongo_section = f"<b>🗄 Database (MongoDB)</b>\nError: <code>{str(e)[:60]}</code>"
 
+    # Mini web app storage + visits
+    try:
+        import asyncio
+        from helper import database as web_db
+
+        web = await asyncio.to_thread(web_db.get_web_app_stats)
+        visits = web.get("visits") or {}
+        web_section = (
+            f"<b>🌐 Mini Web App</b>\n"
+            f"<blockquote>"
+            f"Storage: <b>{_fmt_bytes(web.get('storage_bytes') or 0)}</b>\n"
+            f"Titles: <b>{web.get('anime') or 0:,}</b>  ·  "
+            f"Web users: <b>{web.get('web_users') or 0:,}</b>\n"
+            f"Searches: <b>{web.get('searches') or 0:,}</b> "
+            f"({web.get('search_hits') or 0:,} hits)  ·  "
+            f"Requests: <b>{web.get('requests') or 0:,}</b>\n"
+            f"Reports: <b>{web.get('reports') or 0:,}</b>  ·  "
+            f"Cache: <b>{web.get('cache') or 0:,}</b>\n"
+            f"Visits: <b>{visits.get('total') or 0:,}</b>  "
+            f"(pages {visits.get('pages') or 0:,} · api {visits.get('api') or 0:,})"
+            f"</blockquote>"
+        )
+    except Exception as e:
+        web_section = f"<b>🌐 Mini Web App</b>\n<blockquote>Error: <code>{str(e)[:60]}</code></blockquote>"
+
     msg = f"""<b>📊 Bot Stats</b>
 
 <b>🤖 Bot</b>
@@ -200,15 +219,15 @@ Bot RAM: {_fmt_bytes(bot_ram_mb * 1024 * 1024)}  ·  Bot CPU: {bot_cpu:.0f}%</bl
 
 {mongo_section}
 
+{web_section}
+
 <b>💻 Server</b>
 <blockquote>Disk: {_fmt_bytes(used)} / {_fmt_bytes(total)}  ({disk_pct:.0f}%)  {_status_emoji(disk_pct)}
 {_progress_bar(disk_pct)}
 RAM:  {_fmt_bytes(ram.used)} / {_fmt_bytes(ram.total)}  ({ram_pct:.0f}%)  {_status_emoji(ram_pct)}
 {_progress_bar(ram_pct)}
 CPU:  {cpu_pct:.0f}%  {_status_emoji(cpu_pct)}
-Net:  {net_line}</blockquote>
-
-<i>Tip: watch Database % — add another MongoDB URL in DB_URI when it gets high.</i>"""
+Net:  {net_line}</blockquote>"""
 
     await reply.edit_text(msg)
 #===============================================================#
