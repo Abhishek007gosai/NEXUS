@@ -25,113 +25,190 @@ __Use the appropriate button below to add or remove an admin based on your needs
 
 #===============================================================#
 
+def _fmt_bytes(n: float) -> str:
+    """Human-readable size."""
+    try:
+        n = float(n or 0)
+    except (TypeError, ValueError):
+        return "0 B"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024.0:
+            return f"{n:.2f} {unit}"
+        n /= 1024.0
+    return f"{n:.2f} PB"
+
+
+def _progress_bar(percent: float, width: int = 10) -> str:
+    """Simple text progress bar."""
+    try:
+        p = max(0.0, min(100.0, float(percent)))
+    except (TypeError, ValueError):
+        p = 0.0
+    filled = int(round(width * p / 100.0))
+    return "█" * filled + "░" * (width - filled)
+
+
+def _status_emoji(percent: float) -> str:
+    if percent < 70:
+        return "🟢 OK"
+    if percent < 90:
+        return "🟡 High"
+    return "🔴 Full"
+
+
+async def _mongo_storage_section(client) -> str:
+    """Simple MongoDB how-full section for /stats."""
+    ATLAS_M0_LIMIT = 512 * 1024 * 1024  # free Atlas reference
+
+    lines = ["<b>🗄 Database (MongoDB)</b>"]
+
+    mongo = getattr(client, "mongodb", None)
+    if mongo is None or getattr(mongo, "db", None) is None:
+        lines.append("Not connected")
+        return "\n".join(lines)
+
+    targets = []
+    clients = list(getattr(mongo, "_clients", None) or [])
+    db_name = getattr(mongo, "_db_name", None) or getattr(mongo.db, "name", "?")
+    active_idx = getattr(mongo, "_active_idx", 0)
+
+    if clients:
+        for i, (uri, mclient) in enumerate(clients):
+            label = f"DB #{i + 1}"
+            if i == active_idx:
+                label += " • active"
+            host_hint = ""
+            try:
+                after = uri.split("@", 1)[-1]
+                host_hint = after.split("/", 1)[0].split("?", 1)[0][:36]
+            except Exception:
+                pass
+            targets.append((label, host_hint, mclient, db_name))
+    else:
+        targets.append(("DB #1 • active", "", mongo.client, db_name))
+
+    for label, host_hint, mclient, name in targets:
+        try:
+            stats = await mclient[name].command("dbStats")
+            storage_size = float(stats.get("storageSize") or 0)
+            index_size = float(stats.get("indexSize") or 0)
+            total_size = float(stats.get("totalSize") or (storage_size + index_size))
+            objects = int(stats.get("objects") or 0)
+
+            fs_used = stats.get("fsUsedSize")
+            fs_total = stats.get("fsTotalSize")
+            if fs_total and fs_total > 0:
+                used_ref = float(fs_used or total_size)
+                limit_ref = float(fs_total)
+                limit_note = "server disk"
+            else:
+                used_ref = total_size
+                limit_ref = float(ATLAS_M0_LIMIT)
+                limit_note = "free plan ~512 MB"
+
+            percent = (used_ref / limit_ref * 100.0) if limit_ref else 0.0
+            free_ref = max(0.0, limit_ref - used_ref)
+
+            host_line = f"\nHost: <code>{host_hint}</code>" if host_hint else ""
+            lines.append(
+                f"<blockquote><b>{label}</b> (<code>{name}</code>){host_line}\n"
+                f"Used: <b>{_fmt_bytes(total_size)}</b> / {_fmt_bytes(limit_ref)}\n"
+                f"{_progress_bar(percent)} <b>{percent:.0f}%</b>  {_status_emoji(percent)}\n"
+                f"Free left: {_fmt_bytes(free_ref)}  ·  Docs: {objects:,}\n"
+                f"<i>Limit: {limit_note}</i></blockquote>"
+            )
+        except Exception as e:
+            lines.append(f"<blockquote><b>{label}</b>\nError: <code>{str(e)[:60]}</code></blockquote>")
+
+    if len(targets) > 1:
+        lines.append("<i>Several DBs set — bot switches if one fills up.</i>")
+
+    return "\n".join(lines)
+
+
 @Client.on_message(filters.command("stats"))
 async def usage_cmd(client: Client, message: Message):
-    if not message.from_user.id in client.admins:
-        return await message.reply("✗ ᴛʜɪs ᴄᴀɴ ᴏɴʟʏ ʙᴇ ᴜsᴇᴅ ʙʏ ᴀᴅᴍɪɴs!")
-    
-    reply = await message.reply("<blockquote>›› ᴇxᴛʀᴀᴄᴛɪɴɢ ᴜsᴀɢᴇ ᴅᴀᴛᴀ...</blockquote>")
+    if message.from_user.id not in client.admins:
+        return await message.reply("Admins only.")
 
-    # Get total users from database
+    reply = await message.reply("Loading stats...")
+
+    # Users
     try:
-        total_users_list = await client.mongodb.full_userbase()
-        total_users = len(total_users_list)
-    except Exception as e:
-        total_users = "ᴇʀʀᴏʀ"
-
-    # Bot uptime calculation
-    from datetime import datetime, timedelta
-    uptime_duration = datetime.now() - getattr(client, 'uptime', datetime.now())
-    days = uptime_duration.days
-    hours, remainder = divmod(uptime_duration.seconds, 3600)
-    minutes, _ = divmod(remainder, 60)
-    uptime_str = f"{days}ᴅ {hours}ʜ {minutes}ᴍ"
-
-    # System stats
-    total, used, free = shutil.disk_usage("/")
-    total_gb = total / (1024**3)
-    used_gb = used / (1024**3)
-    free_gb = free / (1024**3)
-    disk_percent = (used / total) * 100
-
-    ram = psutil.virtual_memory()
-    total_ram = ram.total / (1024**3)
-    used_ram = ram.used / (1024**3)
-    free_ram = ram.available / (1024**3)
-    ram_percent = ram.percent
-
-    swap = psutil.swap_memory()
-    total_swap = swap.total / (1024**3)
-    used_swap = swap.used / (1024**3)
-    free_swap = swap.free / (1024**3)
-    swap_percent = swap.percent
-
-    cpu_usage = psutil.cpu_percent(interval=1)
-
-    # Network stats with error handling
-    try:
-        net_io = psutil.net_io_counters()
-        bytes_sent = net_io.bytes_sent / (1024**2)
-        bytes_recv = net_io.bytes_recv / (1024**2)
-        network_status = "✓ ᴀᴠᴀɪʟᴀʙʟᴇ"
-        net_section = f"""<blockquote>›› **ᴜᴘʟᴏᴀᴅᴇᴅ:** `{bytes_sent:.2f} ᴍʙ`
-›› **ᴅᴏᴡɴʟᴏᴀᴅᴇᴅ:** `{bytes_recv:.2f} ᴍʙ`</blockquote>"""
-    except PermissionError:
-        network_status = "✗ ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ"
-        net_section = "<blockquote>›› **sᴛᴀᴛᴜs:** `ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ᴏɴ ᴘʀᴏᴏᴛ`</blockquote>"
-
-    # Bot process usage
-    try:
-        process = psutil.Process()
-        bot_cpu_usage = process.cpu_percent(interval=1)
-        bot_memory_usage = process.memory_info().rss / (1024**2)
-        bot_status = "✓ ʀᴜɴɴɪɴɢ"
+        total_users = len(await client.mongodb.full_userbase())
     except Exception:
-        bot_cpu_usage = 0.0
-        bot_memory_usage = 0.0
-        bot_status = "✗ ᴇʀʀᴏʀ"
+        total_users = "?"
 
-    # Status indicators based on usage levels
-    disk_status = "✓ ɴᴏʀᴍᴀʟ" if disk_percent < 80 else "✗ ʜɪɢʜ" if disk_percent < 95 else "✗ ᴄʀɪᴛɪᴄᴀʟ"
-    ram_status = "✓ ɴᴏʀᴍᴀʟ" if ram_percent < 80 else "✗ ʜɪɢʜ" if ram_percent < 95 else "✗ ᴄʀɪᴛɪᴄᴀʟ"
-    cpu_status = "✓ ɴᴏʀᴍᴀʟ" if cpu_usage < 80 else "✗ ʜɪɢʜ" if cpu_usage < 95 else "✗ ᴄʀɪᴛɪᴄᴀʟ"
+    # Uptime
+    from datetime import datetime
+    up = datetime.now() - getattr(client, "uptime", datetime.now())
+    d, rem = up.days, up.seconds
+    h, rem = divmod(rem, 3600)
+    m, _ = divmod(rem, 60)
+    if d:
+        uptime_str = f"{d}d {h}h {m}m"
+    elif h:
+        uptime_str = f"{h}h {m}m"
+    else:
+        uptime_str = f"{m}m"
 
-    # Final message construction with enhanced UI
-    msg = f"""<blockquote>✦ sʏsᴛᴇᴍ ᴜsᴀɢᴇ sᴛᴀᴛs</blockquote>
+    # Disk
+    total, used, free = shutil.disk_usage("/")
+    disk_pct = (used / total) * 100 if total else 0
 
-<blockquote><u>**≡ ʙᴏᴛ sᴛᴀᴛɪsᴛɪᴄs:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ ᴜsᴇʀs:** `{total_users}`
-›› **ʙᴏᴛ sᴛᴀᴛᴜs:** {bot_status}
-›› **ᴜᴘᴛɪᴍᴇ:** `{uptime_str}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`</blockquote>
+    # RAM
+    ram = psutil.virtual_memory()
+    ram_pct = ram.percent
 
-<blockquote><u>**≡ ᴅɪsᴋ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ:** `{total_gb:.2f} ɢʙ`
-›› **ᴜsᴇᴅ:** `{used_gb:.2f} ɢʙ` ({disk_percent:.1f}%)
-›› **ꜰʀᴇᴇ:** `{free_gb:.2f} ɢʙ`
-›› **sᴛᴀᴛᴜs:** {disk_status}</blockquote>
+    # CPU
+    cpu_pct = psutil.cpu_percent(interval=0.5)
 
-<blockquote><u>**≡ ʀᴀᴍ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ:** `{total_ram:.2f} ɢʙ`
-›› **ᴜsᴇᴅ:** `{used_ram:.2f} ɢʙ` ({ram_percent:.1f}%)
-›› **ꜰʀᴇᴇ:** `{free_ram:.2f} ɢʙ`
-›› **sᴛᴀᴛᴜs:** {ram_status}</blockquote>
+    # Bot process
+    try:
+        proc = psutil.Process()
+        bot_ram_mb = proc.memory_info().rss / (1024 ** 2)
+        bot_cpu = proc.cpu_percent(interval=0.3)
+        bot_ok = True
+    except Exception:
+        bot_ram_mb = 0.0
+        bot_cpu = 0.0
+        bot_ok = False
 
-<blockquote><u>**≡ sᴡᴀᴘ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ:** `{total_swap:.2f} ɢʙ`
-›› **ᴜsᴇᴅ:** `{used_swap:.2f} ɢʙ` ({swap_percent:.1f}%)
-›› **ꜰʀᴇᴇ:** `{free_swap:.2f} ɢʙ`</blockquote>
+    # Network (optional)
+    try:
+        net = psutil.net_io_counters()
+        up_mb = net.bytes_sent / (1024 ** 2)
+        down_mb = net.bytes_recv / (1024 ** 2)
+        net_line = f"Sent {_fmt_bytes(net.bytes_sent)}  ·  Recv {_fmt_bytes(net.bytes_recv)}"
+    except Exception:
+        net_line = "N/A"
 
-<blockquote><u>**≡ ᴄᴘᴜ & ɴᴇᴛᴡᴏʀᴋ:**</u></blockquote>
-<blockquote>›› **ᴄᴘᴜ ᴜsᴀɢᴇ:** `{cpu_usage:.2f}%` {cpu_status}
-›› **ɴᴇᴛᴡᴏʀᴋ:** {network_status}</blockquote>
-{net_section}
+    # MongoDB
+    try:
+        mongo_section = await _mongo_storage_section(client)
+    except Exception as e:
+        mongo_section = f"<b>🗄 Database (MongoDB)</b>\nError: <code>{str(e)[:60]}</code>"
 
-<blockquote><u>**≡ ʙᴏᴛ ʀᴇsᴏᴜʀᴄᴇ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴄᴘᴜ:** `{bot_cpu_usage:.2f}%`
-›› **ᴍᴇᴍᴏʀʏ:** `{bot_memory_usage:.2f} ᴍʙ`</blockquote>
+    msg = f"""<b>📊 Bot Stats</b>
 
-<blockquote>**• ᴜsᴇ ᴛʜɪs ɪɴꜰᴏʀᴍᴀᴛɪᴏɴ ᴛᴏ ᴍᴏɴɪᴛᴏʀ ʏᴏᴜʀ ʙᴏᴛ's ᴘᴇʀꜰᴏʀᴍᴀɴᴄᴇ!**</blockquote>"""
+<b>🤖 Bot</b>
+<blockquote>Status: {"🟢 Running" if bot_ok else "🔴 Error"}
+Users: <b>{total_users}</b>
+Uptime: <b>{uptime_str}</b>
+Admins: {len(client.admins)}
+Bot RAM: {_fmt_bytes(bot_ram_mb * 1024 * 1024)}  ·  Bot CPU: {bot_cpu:.0f}%</blockquote>
+
+{mongo_section}
+
+<b>💻 Server</b>
+<blockquote>Disk: {_fmt_bytes(used)} / {_fmt_bytes(total)}  ({disk_pct:.0f}%)  {_status_emoji(disk_pct)}
+{_progress_bar(disk_pct)}
+RAM:  {_fmt_bytes(ram.used)} / {_fmt_bytes(ram.total)}  ({ram_pct:.0f}%)  {_status_emoji(ram_pct)}
+{_progress_bar(ram_pct)}
+CPU:  {cpu_pct:.0f}%  {_status_emoji(cpu_pct)}
+Net:  {net_line}</blockquote>
+
+<i>Tip: watch Database % — add another MongoDB URL in DB_URI when it gets high.</i>"""
 
     await reply.edit_text(msg)
 #===============================================================#

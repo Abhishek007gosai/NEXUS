@@ -4,10 +4,18 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import humanize
 from config import OWNER_ID
 from plugins.shortner import get_short
-from helper.helper_func import get_messages, force_sub, decode, batch_auto_del_notification
+from helper.helper_func import (
+    get_messages,
+    force_sub,
+    decode,
+    batch_auto_del_notification,
+    retry_on_flood,
+    paced_copy,
+)
 import asyncio
 from datetime import datetime, timedelta
 from pyrogram.enums import ParseMode
+from pyrogram.errors import FloodWait
 
 #===============================================================#
 
@@ -166,52 +174,71 @@ async def start_command(client: Client, message: Message):
         # 7. Get messages from the specific source channel first
         temp_msg = await message.reply("Wait A Sec..")
         messages = []
+        log = client.LOGGER(__name__, client.name)
 
         try:
             # Try to get messages from the identified source channel first
             if source_channel_id:
-                client.LOGGER(__name__, client.name).info(f"Trying to get messages from source channel: {source_channel_id}")
+                log.info(f"Trying to get messages from source channel: {source_channel_id}")
                 try:
-                    msgs = await client.get_messages(
-                        chat_id=source_channel_id,
-                        message_ids=list(ids)
+                    msgs = await retry_on_flood(
+                        lambda: client.get_messages(
+                            chat_id=source_channel_id,
+                            message_ids=list(ids),
+                        ),
+                        max_retries=5,
+                        logger=log,
+                        label=f"get_messages src:{source_channel_id}",
                     )
-                    # Filter out None messages (deleted/not found)
-                    valid_msgs = [msg for msg in msgs if msg is not None]
+                    # Filter out None / empty messages (deleted/not found)
+                    valid_msgs = [
+                        msg for msg in (msgs or [])
+                        if msg is not None and not getattr(msg, "empty", False)
+                    ]
                     messages.extend(valid_msgs)
-                    client.LOGGER(__name__, client.name).info(f"Found {len(valid_msgs)} messages from source channel {source_channel_id}")
-                    
-                    # If we didn't get all messages, try the fallback system
+                    log.info(f"Found {len(valid_msgs)} messages from source channel {source_channel_id}")
+
                     if len(valid_msgs) < len(list(ids)):
                         missing_ids = [mid for mid in ids if mid not in {msg.id for msg in valid_msgs}]
                         if missing_ids:
-                            client.LOGGER(__name__, client.name).info(f"Missing {len(missing_ids)} messages, trying fallback system")
-                            # Use the fallback system for missing messages
+                            log.info(f"Missing {len(missing_ids)} messages, trying fallback system")
                             additional_messages = await get_messages(client, missing_ids)
-                            messages.extend(additional_messages)
-                            client.LOGGER(__name__, client.name).info(f"Found {len(additional_messages)} additional messages from fallback")
+                            messages.extend(
+                                m for m in additional_messages
+                                if m is not None and not getattr(m, "empty", False)
+                            )
+                            log.info(f"Found {len(additional_messages)} additional messages from fallback")
                 except Exception as e:
-                    client.LOGGER(__name__, client.name).warning(f"Error getting messages from source channel {source_channel_id}: {e}")
-                    # Fallback to the multi-channel system
+                    log.warning(f"Error getting messages from source channel {source_channel_id}: {e}")
                     messages = await get_messages(client, ids)
             else:
-                client.LOGGER(__name__, client.name).info("No specific source channel identified, using multi-channel fallback")
-                # Use the multi-channel fallback system
+                log.info("No specific source channel identified, using multi-channel fallback")
                 messages = await get_messages(client, ids)
         except Exception as e:
             await temp_msg.edit_text("Something went wrong!")
-            client.LOGGER(__name__, client.name).warning(f"Error getting messages: {e}")
+            log.warning(f"Error getting messages: {e}")
             return
+
+        # Final filter: drop None / empty service messages
+        messages = [
+            m for m in messages
+            if m is not None and not getattr(m, "empty", False)
+        ]
 
         if not messages:
             return await temp_msg.edit("Couldn't find the files in the database.")
-        await temp_msg.delete()
+        try:
+            await temp_msg.delete()
+        except Exception:
+            pass
 
         yugen_msgs = []
         for msg in messages:
             caption = (
                 client.messages.get('CAPTION', '').format(
-                    previouscaption=msg.caption.html if msg.caption else msg.document.file_name
+                    previouscaption=msg.caption.html if msg.caption else (
+                        msg.document.file_name if msg.document else ""
+                    )
                 ) if bool(client.messages.get('CAPTION', '')) and bool(msg.document)
                 else ("" if not msg.caption else msg.caption.html)
             )
@@ -222,25 +249,23 @@ async def start_command(client: Client, message: Message):
             protect_this = True if reply_markup else client.protect
 
             try:
-                copied_msg = await msg.copy(
+                copied_msg = await paced_copy(
+                    msg,
                     chat_id=message.from_user.id,
                     caption=caption,
                     reply_markup=reply_markup,
-                    protect_content=protect_this
+                    protect_content=protect_this,
                 )
-                yugen_msgs.append(copied_msg)
-            except FloodWait as e:
-                await asyncio.sleep(e.x)
-                copied_msg = await msg.copy(
-                    chat_id=message.from_user.id,
-                    caption=caption,
-                    reply_markup=reply_markup,
-                    protect_content=protect_this
-                )
-                yugen_msgs.append(copied_msg)
+                if copied_msg is not None:
+                    yugen_msgs.append(copied_msg)
             except Exception as e:
-                client.LOGGER(__name__, client.name).warning(f"Failed to send message: {e}")
-                pass
+                # Empty messages, forbidden, etc. — skip and continue batch
+                err = str(e).lower()
+                if "empty" in err:
+                    log.info(f"Skipping empty message {getattr(msg, 'id', '?')}")
+                else:
+                    log.warning(f"Failed to send message {getattr(msg, 'id', '?')}: {e}")
+                continue
 
         # 8. Auto delete timer
         try:

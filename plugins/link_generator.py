@@ -2,16 +2,20 @@ import asyncio
 import re
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from helper.helper_func import encode, get_message_id, styled_button
+from helper.helper_func import (
+    encode,
+    get_message_id,
+    styled_button,
+    get_forward_info,
+    is_hidden_forward,
+    safe_delete,
+)
 from config import LOGGER
 
 
 async def _delete_after(message, seconds):
     await asyncio.sleep(seconds)
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    await safe_delete(message)
 
 
 def _strip_share_button(reply_markup):
@@ -49,9 +53,10 @@ async def _strip_share_button_from_copy(client, chat_id, copied_message):
 async def _get_source_message(client, user_message):
     """Resolve an admin-provided forwarded message, a t.me message link, or
     a plain message ID that is already inside the primary DB channel."""
-    if user_message.forward_from_chat and user_message.forward_from_message_id:
-        return user_message.forward_from_chat.id, user_message.forward_from_message_id
-    if user_message.forward_sender_name:
+    fwd_chat_id, fwd_msg_id = get_forward_info(user_message)
+    if fwd_chat_id is not None and fwd_msg_id is not None:
+        return fwd_chat_id, fwd_msg_id
+    if is_hidden_forward(user_message):
         return None, None
     if user_message.text:
         text = user_message.text.strip()
@@ -209,12 +214,12 @@ async def batch(client: Client, message: Message):
                 "<blockquote>✗ ɴᴏᴛ ᴀ ᴅʙ ᴄʜᴀɴɴᴇʟ ᴘᴏsᴛ</blockquote>\n\n"
                 "/batch only works for files already stored in a DB channel. "
                 "Use /genlink first to store files from other channels.",
-                quote=True
+                
             )
             continue
         if source_channel_id and first_id:
             break
-        await first_message.reply("<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\nForward a valid channel post or send its t.me message link.", quote=True)
+        await first_message.reply("<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\nForward a valid channel post or send its t.me message link.")
 
     while True:
         try:
@@ -229,7 +234,7 @@ async def batch(client: Client, message: Message):
         second_source, last_id = await _get_source_message(client, second_message)
         if second_source == source_channel_id and last_id:
             break
-        await second_message.reply("<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\nThe first and last messages must be from the same source channel.", quote=True)
+        await second_message.reply("<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\nThe first and last messages must be from the same source channel.")
 
     # source_channel_id is guaranteed to already be a DB channel at this
     # point (enforced above), so we only ever reuse existing message IDs -
@@ -239,7 +244,7 @@ async def batch(client: Client, message: Message):
     multiplier_channel = source_channel_id
 
     if not copied_ids:
-        return await second_message.reply("<blockquote>✗ ɴᴏ ᴍᴇssᴀɢᴇs ᴄᴏᴜʟᴅ ʙᴇ sᴛᴏʀᴇᴅ.</blockquote>", quote=True)
+        return await second_message.reply("<blockquote>✗ ɴᴏ ᴍᴇssᴀɢᴇs ᴄᴏᴜʟᴅ ʙᴇ sᴛᴏʀᴇᴅ.</blockquote>")
 
     copied_start, copied_end = min(copied_ids), max(copied_ids)
     string = f"get-{copied_start * abs(multiplier_channel)}-{copied_end * abs(multiplier_channel)}"
@@ -248,7 +253,7 @@ async def batch(client: Client, message: Message):
     reply_markup = InlineKeyboardMarkup([[styled_button("🔁 sʜᴀʀᴇ ᴜʀʟ", style="primary", url=f'https://telegram.me/share/url?url={link}')]])
     await second_message.reply_text(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʙᴀᴛᴄʜ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
-        quote=True, reply_markup=reply_markup
+        reply_markup=reply_markup
     )
 
 
@@ -284,8 +289,7 @@ async def link_generator(client: Client, message: Message):
     except Exception as e:
         client.LOGGER(__name__, client.name).warning(f"Failed to store forwarded message in DB: {e}")
         return await channel_message.reply(
-            "<blockquote>✗ ꜰᴀɪʟᴇᴅ ᴛᴏ sᴛᴏʀᴇ ᴛʜᴇ ꜰɪʟᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ.</blockquote>",
-            quote=True
+            "<blockquote>✗ ꜰᴀɪʟᴇᴅ ᴛᴏ sᴛᴏʀᴇ ᴛʜᴇ ꜰɪʟᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ.</blockquote>"
         )
 
     base64_string = await encode(f"get-{db_message_id * abs(db_chat)}")
@@ -293,7 +297,7 @@ async def link_generator(client: Client, message: Message):
     reply_markup = InlineKeyboardMarkup([[styled_button("🔁 sʜᴀʀᴇ ᴜʀʟ", style="primary", url=f'https://telegram.me/share/url?url={link}')]])
     await channel_message.reply_text(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
-        quote=True, reply_markup=reply_markup
+        reply_markup=reply_markup
     )
 
 #===============================================================#

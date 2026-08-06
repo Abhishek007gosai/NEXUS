@@ -151,8 +151,7 @@ async def admin_list_command(client: Client, message: Message):
 
     if formatted_admins:
         await message.reply_text(
-            "<b>📊 Premium Users List:</b>\n\n" + "\n".join(formatted_admins),
-            disable_web_page_preview=True
+            "<b>📊 Premium Users List:</b>\n\n" + "\n".join(formatted_admins)
         )
     else:
         await message.reply_text("<b>No premium users found.</b>")
