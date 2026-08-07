@@ -418,10 +418,13 @@ html, body {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: cover;
+  object-position: center;
 }
 .sheet-media .generated-thumb {
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
 
 .hot-badge {

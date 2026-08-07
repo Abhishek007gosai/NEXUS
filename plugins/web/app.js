@@ -96,20 +96,130 @@
   }
 
   const PALETTES = [
-    ["#3a0ca3", "#f72585"], ["#7209b7", "#4361ee"], ["#ff6b35", "#9d0208"],
-    ["#0b132b", "#5bc0be"], ["#22223b", "#c9184a"], ["#231942", "#e0b1cb"],
-    ["#03045e", "#00b4d8"], ["#590d22", "#ff8fa3"], ["#1b4332", "#95d5b2"],
-    ["#3d0000", "#ff6d00"], ["#14213d", "#fca311"], ["#240046", "#5a189a"],
+    ["#3a0ca3", "#7209b7", "#f72585"], ["#240046", "#5a189a", "#c77dff"],
+    ["#0b132b", "#1c2541", "#5bc0be"], ["#03045e", "#0077b6", "#00b4d8"],
+    ["#1b4332", "#2d6a4f", "#95d5b2"], ["#3d0000", "#9d0208", "#ff6d00"],
+    ["#14213d", "#1d3557", "#fca311"], ["#590d22", "#a4133c", "#ff8fa3"],
+    ["#22223b", "#4a4e69", "#c9184a"], ["#231942", "#5e548e", "#e0b1cb"],
+    ["#ff6b35", "#c9184a", "#9d0208"], ["#4361ee", "#3a0ca3", "#7209b7"],
   ];
 
+  // High-quality canvas poster placeholder (2× retina) with title.
+  // Cached per title so list scroll doesn't re-rasterize the same card.
+  const _thumbCache = new Map();
   function generatedThumb(title) {
-    const h = hashStr(title);
-    const [c1, c2] = PALETTES[h % PALETTES.length];
-    const angle = 110 + (h % 140);
-    const div = document.createElement("div");
-    div.className = "generated-thumb";
-    div.style.background = `linear-gradient(${angle}deg, ${c1}, ${c2})`;
-    return div;
+    const label = (title || "Anime").trim() || "Anime";
+    const cached = _thumbCache.get(label);
+    if (cached) {
+      const img = document.createElement("img");
+      img.className = "generated-thumb";
+      img.src = cached;
+      img.alt = label;
+      img.decoding = "async";
+      return img;
+    }
+
+    const W = 300;
+    const H = 420;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    const h = hashStr(label);
+    const [c1, c2, c3] = PALETTES[h % PALETTES.length];
+
+    // Base multi-stop diagonal gradient
+    const ang = ((110 + (h % 140)) * Math.PI) / 180;
+    const gx = Math.cos(ang);
+    const gy = Math.sin(ang);
+    const grad = ctx.createLinearGradient(
+      W * 0.5 - gx * W * 0.7, H * 0.5 - gy * H * 0.7,
+      W * 0.5 + gx * W * 0.7, H * 0.5 + gy * H * 0.7
+    );
+    grad.addColorStop(0, c1);
+    grad.addColorStop(0.5, c2);
+    grad.addColorStop(1, c3);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Soft radial vignette
+    const vig = ctx.createRadialGradient(W * 0.5, H * 0.4, 20, W * 0.5, H * 0.5, H * 0.85);
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(0,0,0,0.45)");
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle geometric accent shapes
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.moveTo(0, H * 0.15);
+    ctx.lineTo(W * 0.55, 0);
+    ctx.lineTo(W, 0);
+    ctx.lineTo(W, H * 0.35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(W * 0.85, H * 0.78, W * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Title — word-wrapped, centered
+    const padX = 28;
+    const maxW = W - padX * 2;
+    const fontSize = label.length > 28 ? 22 : label.length > 16 ? 26 : 30;
+    ctx.font = `700 ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 2;
+
+    const words = label.split(/\s+/);
+    const lines = [];
+    let line = "";
+    for (const w of words) {
+      const test = line ? line + " " + w : w;
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    const shown = lines.slice(0, 4);
+    if (lines.length > 4) shown[3] = shown[3].replace(/.{0,3}$/, "…");
+
+    const lineH = fontSize * 1.25;
+    const blockH = shown.length * lineH;
+    let y = H * 0.5 - blockH / 2 + lineH / 2;
+    for (const ln of shown) {
+      ctx.fillText(ln, W / 2, y, maxW);
+      y += lineH;
+    }
+
+    // Thin top accent bar
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+    const bar = ctx.createLinearGradient(0, 0, W, 0);
+    bar.addColorStop(0, c3);
+    bar.addColorStop(1, c1);
+    ctx.fillStyle = bar;
+    ctx.fillRect(0, 0, W, 5);
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+    if (_thumbCache.size > 200) _thumbCache.clear();
+    _thumbCache.set(label, dataUrl);
+
+    const img = document.createElement("img");
+    img.className = "generated-thumb";
+    img.src = dataUrl;
+    img.alt = label;
+    img.decoding = "async";
+    return img;
   }
 
   function thumbImg(container, src, title) {
