@@ -399,39 +399,6 @@ def api_most_popular():
     return resp
 
 
-@app.get("/api/catalog/adult/trending")
-def api_adult_trending():
-    page = request.args.get("page", 1, type=int)
-    try:
-        resp = jsonify(SOURCES["anilist"].get_adult_trending(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
-
-
-@app.get("/api/catalog/adult/airing")
-def api_adult_airing():
-    page = request.args.get("page", 1, type=int)
-    try:
-        resp = jsonify(SOURCES["anilist"].get_adult_airing(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
-
-
-@app.get("/api/catalog/adult/popular")
-def api_adult_popular():
-    page = request.args.get("page", 1, type=int)
-    try:
-        resp = jsonify(SOURCES["anilist"].get_adult_popular(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
-
-
 def _catalog_json(payload, max_age: int):
     resp = jsonify(payload)
     resp.headers["Cache-Control"] = f"public, max-age={max_age}"
