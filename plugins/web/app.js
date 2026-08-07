@@ -658,10 +658,21 @@
   // ---------------------------------------------------------------------
   // HANIME / HMANHWA A–Z libraries (posted titles with join links)
   // ---------------------------------------------------------------------
+  function resolvedMediaType(item) {
+    // Anime → H-ANIME; Manga / Manhwa / Manhua / Novels → H-MANHWA
+    const t = (item.media_type || "").toUpperCase();
+    if (t === "ANIME") return "ANIME";
+    if (t === "MANGA") return "MANGA";
+    // Fallback by format when media_type is missing/wrong
+    const fmt = (item.format || "").toUpperCase();
+    if (["MANGA", "NOVEL", "ONE_SHOT", "MANHUA", "MANHWA"].includes(fmt)) return "MANGA";
+    if (["TV", "MOVIE", "OVA", "ONA", "SPECIAL", "TV_SHORT"].includes(fmt)) return "ANIME";
+    // Default: prefer ANIME only when nothing else is known
+    return t || "ANIME";
+  }
+
   function isMediaType(item, type) {
-    const t = (item.media_type || "ANIME").toUpperCase();
-    if (type === "ANIME") return t === "ANIME";
-    return t === "MANGA";
+    return resolvedMediaType(item) === type;
   }
 
   function matchesManhwaStatus(item) {
