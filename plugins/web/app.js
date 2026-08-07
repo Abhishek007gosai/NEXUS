@@ -160,7 +160,6 @@
   const navBtns = document.querySelectorAll(".nav-btn");
 
   const detailOverlay = el("detail-overlay");
-  const detailHeroBg = el("detail-hero-bg");
   const detailPoster = el("detail-poster");
   const detailTitle = el("detail-title");
   const detailSubtitle = el("detail-subtitle");
@@ -171,15 +170,6 @@
   const detailRelated = el("detail-related");
   const detailActionArea = el("detail-action-area");
   const reportOpenBtn = el("report-open-btn");
-
-  function hqImageUrl(url) {
-    // Prefer highest-quality AniList CDN variants when present
-    if (!url) return "";
-    return String(url)
-      .replace("/small/", "/extraLarge/")
-      .replace("/medium/", "/extraLarge/")
-      .replace("/large/", "/extraLarge/");
-  }
 
   const linkOverlay = el("link-overlay");
   const linkInput = el("link-input");
@@ -821,45 +811,54 @@
   let descriptionExpanded = false;
 
   function openDetailSheet(anime, context) {
-    const prevKey = currentDetail
-      ? `${currentDetail.banner_url || ""}|${currentDetail.poster_url || ""}`
-      : null;
+    const prevBannerSrc = currentDetail ? (currentDetail.banner_url || currentDetail.poster_url) : null;
     currentDetail = anime;
     currentContext = context;
     descriptionExpanded = false;
 
-    const posterSrc = hqImageUrl(anime.poster_url || "");
-    const bannerSrc = hqImageUrl(anime.banner_url || anime.poster_url || "");
-    const artKey = `${anime.banner_url || ""}|${anime.poster_url || ""}`;
+    const sheetMedia = detailPoster.parentElement;
+    const hasRealBanner = !!anime.banner_url;
+    const bannerSrc = anime.banner_url || anime.poster_url;
 
-    // Skip reloading art when the follow-up details fetch has the same images
-    if (artKey !== prevKey && detailHeroBg && detailPoster) {
-      const hasRealBanner = !!(anime.banner_url);
-      detailHeroBg.classList.toggle("is-poster-fallback", !hasRealBanner && !!bannerSrc);
-      if (bannerSrc) {
-        detailHeroBg.style.backgroundImage = `url("${bannerSrc}")`;
-      } else {
-        detailHeroBg.style.backgroundImage = "";
-      }
-
+    // openDiscoverDetail (and friends) call this twice per tap: once
+    // immediately with placeholder data, then again once the full AniList
+    // details resolve. When it's the same artwork both times, skip
+    // re-doing the poster/blurred-backdrop work below — reloading the
+    // image and re-rasterizing the blur filter on every follow-up call is
+    // what made back-to-back opens feel janky, since the browser did that
+    // heavy repaint work even though nothing visually needed to change.
+    if (bannerSrc !== prevBannerSrc) {
+      sheetMedia.querySelectorAll(".generated-thumb").forEach((n) => n.remove());
+      detailPoster.src = "";
       detailPoster.style.display = "";
-      if (posterSrc) {
-        detailPoster.src = posterSrc;
+      detailPoster.classList.toggle("poster-fallback", !hasRealBanner);
+      sheetMedia.classList.toggle("has-blur-bg", !hasRealBanner && !!bannerSrc);
+      if (!hasRealBanner && bannerSrc) {
+        sheetMedia.style.setProperty("--banner-img", `url("${bannerSrc}")`);
+      } else {
+        sheetMedia.style.removeProperty("--banner-img");
+      }
+      if (bannerSrc) {
+        detailPoster.src = bannerSrc;
         detailPoster.onerror = () => {
-          // Fall back to banner, then hide
-          if (bannerSrc && detailPoster.src !== bannerSrc) {
-            detailPoster.src = bannerSrc;
-          } else {
-            detailPoster.style.display = "none";
-          }
+          detailPoster.style.display = "none";
+          sheetMedia.classList.remove("has-blur-bg");
+          const gen = generatedThumb(anime.title);
+          gen.style.position = "absolute";
+          gen.style.inset = "0";
+          gen.style.zIndex = "1";
+          sheetMedia.insertBefore(gen, detailPoster);
         };
       } else {
-        detailPoster.removeAttribute("src");
         detailPoster.style.display = "none";
+        const gen = generatedThumb(anime.title);
+        gen.style.position = "absolute";
+        gen.style.inset = "0";
+        sheetMedia.insertBefore(gen, detailPoster);
       }
     }
 
-    detailTitle.textContent = anime.title || "";
+    detailTitle.textContent = anime.title;
     if (anime.alt_title) {
       detailSubtitle.textContent = anime.alt_title;
       detailSubtitle.classList.remove("hidden");

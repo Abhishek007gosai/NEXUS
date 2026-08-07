@@ -174,34 +174,33 @@
     </button>
   </nav>
 
-  <!-- ===================== Detail sheet — hero layout (banner + floating poster) ===================== -->
+  <!-- ===================== Detail bottom sheet (compact centered modal) ===================== -->
   <div id="detail-overlay" class="overlay hidden">
     <div class="sheet" id="detail-sheet">
-      <div class="detail-hero" id="detail-hero">
-        <div class="detail-hero-bg" id="detail-hero-bg"></div>
-        <div class="detail-hero-shade"></div>
-        <button id="detail-close" class="close-btn" type="button">&#10005;</button>
-        <div class="detail-hero-content">
-          <img id="detail-poster" class="detail-poster-card" src="" alt="" decoding="async" />
-          <div class="detail-hero-text">
+      <div class="sheet-media">
+        <img id="detail-poster" src="" alt="" decoding="async" />
+        <button id="detail-close" class="close-btn">&#10005;</button>
+      </div>
+      <div class="sheet-body">
+        <div class="detail-header-row">
+          <div class="detail-header-text">
             <h3 id="detail-title" class="sheet-title"></h3>
             <p id="detail-subtitle" class="detail-subtitle hidden"></p>
           </div>
         </div>
-      </div>
-      <div class="sheet-body">
+
         <div id="detail-meta-pills" class="meta-pill-row"></div>
         <div id="detail-genres" class="genre-row"></div>
 
         <p class="synopsis-label">Synopsis</p>
         <p id="detail-description" class="sheet-description"></p>
-        <button id="detail-readmore" class="read-more-link hidden" type="button">Read More</button>
+        <button id="detail-readmore" class="read-more-link hidden">Read More</button>
 
         <div id="detail-related" class="related-list hidden"></div>
 
         <div id="detail-action-area"></div>
 
-        <button id="report-open-btn" class="report-text-link" type="button">&#128681; Report</button>
+        <button id="report-open-btn" class="report-text-link">&#128681; Report</button>
       </div>
     </div>
   </div>
