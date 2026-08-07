@@ -58,43 +58,9 @@ query ($id: Int) {
 }
 """
 
-# SFW discovery — used by Trending / Top Airing / Popular (no hentai)
+# Adult discovery — used by Trending / Top Airing / Popular
+# BL / gay / boys love filtered out after fetch
 DISCOVER_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 10) {
-    pageInfo { hasNextPage }
-    media(type: ANIME, isAdult: false, sort: $sort) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      episodes
-      description(asHtml: false)
-    }
-  }
-}
-"""
-
-DISCOVER_AIRING_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 10) {
-    pageInfo { hasNextPage }
-    media(type: ANIME, isAdult: false, sort: $sort, status: RELEASING) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      episodes
-      description(asHtml: false)
-    }
-  }
-}
-"""
-
-# Adult (hentai) discovery — used by HANIME tab only
-ADULT_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
   Page(page: $page, perPage: 10) {
     pageInfo { hasNextPage }
@@ -111,7 +77,7 @@ query ($sort: [MediaSort], $page: Int) {
 }
 """
 
-ADULT_DISCOVER_AIRING_QUERY = """
+DISCOVER_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
   Page(page: $page, perPage: 10) {
     pageInfo { hasNextPage }
@@ -338,29 +304,33 @@ def _best_title(title_obj: dict) -> str:
 
 
 # Genres / tags that should never appear in Trending / Top Airing / Popular
+# Only gay / BL / boys love — adult hentai and regular manhwa stay
 _BLOCKED_GENRES = {
-    "yaoi", "boys love", "bl", "gay", "shounen ai", "bara",
-    "yaoi ", "boys' love", "boy's love",
+    "yaoi", "boys love", "boys' love", "boy's love",
+    "bl", "gay", "shounen ai", "bara",
 }
 
 
 def _is_blocked_item(item: dict) -> bool:
-    """Return True if the item should be hidden (gay / BL related)."""
+    """Return True if the item should be hidden (gay / BL / boys love)."""
     genres = item.get("genres") or []
     for g in genres:
         if not g:
             continue
         if str(g).strip().lower() in _BLOCKED_GENRES:
             return True
-    # Also check title for common BL markers as a safety net
+    # Title safety net for common BL markers
     title = (item.get("title") or "").lower()
-    if any(kw in title for kw in ("yaoi", " boys love", "bl ", " (bl)")):
+    if any(kw in title for kw in (
+        "yaoi", "boys love", "boy's love", "boys' love",
+        " (bl)", "[bl]", " bl ",
+    )):
         return True
     return False
 
 
 def _filter_blocked(results: list) -> list:
-    """Drop gay / BL / Yaoi items from a results list."""
+    """Drop gay / BL / Yaoi / boys love items from a results list."""
     return [r for r in results if not _is_blocked_item(r)]
 
 
@@ -582,45 +552,24 @@ class AniListSource(AnimeSource):
         return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
 
     def get_trending(self, page: int = 1) -> dict:
-        # SFW only — used by main Trending column (no hentai / BL)
+        # Adult anime — BL / gay filtered out after fetch
         return self._discover(
-            "TRENDING_DESC", page, cache_prefix="sfw-trend-v1:",
+            "TRENDING_DESC", page, cache_prefix="trend-v2:",
             ttl=CATALOG_CACHE_TTL,
         )
 
     def get_popular(self, page: int = 1) -> dict:
-        # SFW Top Airing — currently releasing, no hentai
+        # Top Airing (currently releasing) — BL / gay filtered out
         return self._discover(
             "POPULARITY_DESC", page, query=DISCOVER_AIRING_QUERY,
-            cache_prefix="sfw-airing-v1:", ttl=CATALOG_CACHE_TTL,
+            cache_prefix="airing-v2:", ttl=CATALOG_CACHE_TTL,
         )
 
     def get_most_popular(self, page: int = 1) -> dict:
-        # SFW Popular overall — no hentai
+        # Popular overall — BL / gay filtered out
         return self._discover(
-            "POPULARITY_DESC", page, cache_prefix="sfw-popular-v1:",
+            "POPULARITY_DESC", page, cache_prefix="popular-v2:",
             ttl=CATALOG_CACHE_TTL,
-        )
-
-    def get_adult_trending(self, page: int = 1) -> dict:
-        """Adult/hentai trending — used by HANIME tab only."""
-        return self._discover(
-            "TRENDING_DESC", page, query=ADULT_DISCOVER_QUERY,
-            cache_prefix="adult-trend-v1:", ttl=CATALOG_CACHE_TTL,
-        )
-
-    def get_adult_airing(self, page: int = 1) -> dict:
-        """Adult/hentai currently airing — HANIME tab."""
-        return self._discover(
-            "POPULARITY_DESC", page, query=ADULT_DISCOVER_AIRING_QUERY,
-            cache_prefix="adult-airing-v1:", ttl=CATALOG_CACHE_TTL,
-        )
-
-    def get_adult_popular(self, page: int = 1) -> dict:
-        """Adult/hentai most popular — HANIME tab."""
-        return self._discover(
-            "POPULARITY_DESC", page, query=ADULT_DISCOVER_QUERY,
-            cache_prefix="adult-popular-v1:", ttl=CATALOG_CACHE_TTL,
         )
 
     def _discover_manga(self, sort: str, page: int = 1, query: str = MANGA_DISCOVER_QUERY, cache_prefix: str = "manga:", ttl: int | None = None) -> dict:
