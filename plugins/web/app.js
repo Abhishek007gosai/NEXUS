@@ -1698,6 +1698,19 @@
   let searchLoading = false;
   let searchToken = 0;
 
+  function searchTypeLabel(item) {
+    const t = (item.media_type || "").toUpperCase();
+    if (t === "MANGA") {
+      const c = (item.countryOfOrigin || "").toUpperCase();
+      if (c === "KR") return "H-Manhwa";
+      if (c === "CN") return "H-Manhua";
+      if ((item.format || "").toUpperCase() === "NOVEL") return "Novel";
+      return "H-Manga";
+    }
+    if (t === "ANIME") return "H-Anime";
+    return item.format || "";
+  }
+
   function searchResultRow(item, onOpen) {
     const row = document.createElement("div");
     row.className = "search-result-row";
@@ -1710,6 +1723,13 @@
     body.appendChild(title);
     const meta = document.createElement("div");
     meta.className = "search-result-meta";
+    const typeLabel = searchTypeLabel(item);
+    if (typeLabel) {
+      const type = document.createElement("span");
+      type.className = "search-result-type";
+      type.textContent = typeLabel;
+      meta.appendChild(type);
+    }
     if (item.year) {
       const year = document.createElement("span");
       year.className = "search-result-year";
@@ -1734,6 +1754,7 @@
     return row;
   }
 
+
   async function runLibrarySearch(q) {
     const query = q.trim();
     if (!query) { renderSearchLanding(); return; }
@@ -1744,6 +1765,7 @@
     searchResults.classList.remove("hidden");
     searchResultsGroups.innerHTML = "";
     searchResultsEmpty.classList.add("hidden");
+    searchResultsEmpty.textContent = "Searching…";
 
     const availIndex = buildAvailableIndex();
     const localMatches = available.filter((a) => a.title.toLowerCase().includes(query.toLowerCase()));
@@ -1757,12 +1779,20 @@
     const myToken = ++searchToken;
     searchLoading = true;
     try {
+      // /api/search/anime runs search_all → adult anime + manga/manhwa/novels
       const data = await api(`/api/search/anime?q=${encodeURIComponent(query)}&page=1`);
-      if (myToken !== searchToken) return; // a newer search superseded this one
-      searchHasNext = data.has_next;
+      if (myToken !== searchToken) return;
+      searchHasNext = !!data.has_next;
       const localTitles = new Set(localMatches.map((a) => a.title.toLowerCase()));
-      data.results.forEach((item) => {
-        if (localTitles.has(item.title.toLowerCase())) return; // already shown above
+      const localIds = new Set(
+        localMatches
+          .filter((a) => a.source_id != null)
+          .map((a) => String(a.source_id))
+      );
+      (data.results || []).forEach((item) => {
+        const sid = item.source_id != null ? String(item.source_id) : "";
+        if (sid && localIds.has(sid)) return;
+        if (localTitles.has((item.title || "").toLowerCase())) return;
         const matched = availIndex.match(item);
         item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
         searchResultsGroups.appendChild(searchResultRow(item, () => {
@@ -1770,9 +1800,17 @@
           openDiscoverDetail(item);
         }));
       });
-      searchResultsEmpty.classList.toggle("hidden", searchResultsGroups.children.length !== 0);
+      const empty = searchResultsGroups.children.length === 0;
+      searchResultsEmpty.textContent = empty
+        ? "No adult anime / manhwa / manga / novel found for that title."
+        : searchResultsEmpty.textContent;
+      searchResultsEmpty.classList.toggle("hidden", !empty);
     } catch (err) {
-      searchResultsEmpty.classList.toggle("hidden", searchResultsGroups.children.length !== 0);
+      const empty = searchResultsGroups.children.length === 0;
+      searchResultsEmpty.textContent = empty
+        ? "Search failed — check connection and try again."
+        : searchResultsEmpty.textContent;
+      searchResultsEmpty.classList.toggle("hidden", !empty);
     }
     searchLoading = false;
   }
