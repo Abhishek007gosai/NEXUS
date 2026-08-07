@@ -58,7 +58,43 @@ query ($id: Int) {
 }
 """
 
+# SFW discovery — used by Trending / Top Airing / Popular (no hentai)
 DISCOVER_QUERY = """
+query ($sort: [MediaSort], $page: Int) {
+  Page(page: $page, perPage: 10) {
+    pageInfo { hasNextPage }
+    media(type: ANIME, isAdult: false, sort: $sort) {
+      id
+      title { romaji english }
+      coverImage { extraLarge large }
+      averageScore
+      genres
+      episodes
+      description(asHtml: false)
+    }
+  }
+}
+"""
+
+DISCOVER_AIRING_QUERY = """
+query ($sort: [MediaSort], $page: Int) {
+  Page(page: $page, perPage: 10) {
+    pageInfo { hasNextPage }
+    media(type: ANIME, isAdult: false, sort: $sort, status: RELEASING) {
+      id
+      title { romaji english }
+      coverImage { extraLarge large }
+      averageScore
+      genres
+      episodes
+      description(asHtml: false)
+    }
+  }
+}
+"""
+
+# Adult (hentai) discovery — used by HANIME tab only
+ADULT_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
   Page(page: $page, perPage: 10) {
     pageInfo { hasNextPage }
@@ -75,10 +111,7 @@ query ($sort: [MediaSort], $page: Int) {
 }
 """
 
-# Same shape as DISCOVER_QUERY, but restricted to anime that is actually
-# still airing right now — used for the "Top Airing" feed so finished
-# shows (e.g. Death Note) don't show up just because they're popular.
-DISCOVER_AIRING_QUERY = """
+ADULT_DISCOVER_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
   Page(page: $page, perPage: 10) {
     pageInfo { hasNextPage }
@@ -549,22 +582,45 @@ class AniListSource(AnimeSource):
         return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
 
     def get_trending(self, page: int = 1) -> dict:
-        return self._discover("TRENDING_DESC", page, ttl=CATALOG_CACHE_TTL)
+        # SFW only — used by main Trending column (no hentai / BL)
+        return self._discover(
+            "TRENDING_DESC", page, cache_prefix="sfw-trend-v1:",
+            ttl=CATALOG_CACHE_TTL,
+        )
 
     def get_popular(self, page: int = 1) -> dict:
-        # Backs the "Top Airing" section — must only include anime that is
-        # currently releasing, not just anime that is popular overall.
+        # SFW Top Airing — currently releasing, no hentai
         return self._discover(
             "POPULARITY_DESC", page, query=DISCOVER_AIRING_QUERY,
-            cache_prefix="airing:", ttl=CATALOG_CACHE_TTL,
+            cache_prefix="sfw-airing-v1:", ttl=CATALOG_CACHE_TTL,
         )
 
     def get_most_popular(self, page: int = 1) -> dict:
-        # Backs the "Popular" section — most popular anime overall,
-        # regardless of airing status (unlike get_popular/"Top Airing").
+        # SFW Popular overall — no hentai
         return self._discover(
-            "POPULARITY_DESC", page, cache_prefix="popular-all:",
+            "POPULARITY_DESC", page, cache_prefix="sfw-popular-v1:",
             ttl=CATALOG_CACHE_TTL,
+        )
+
+    def get_adult_trending(self, page: int = 1) -> dict:
+        """Adult/hentai trending — used by HANIME tab only."""
+        return self._discover(
+            "TRENDING_DESC", page, query=ADULT_DISCOVER_QUERY,
+            cache_prefix="adult-trend-v1:", ttl=CATALOG_CACHE_TTL,
+        )
+
+    def get_adult_airing(self, page: int = 1) -> dict:
+        """Adult/hentai currently airing — HANIME tab."""
+        return self._discover(
+            "POPULARITY_DESC", page, query=ADULT_DISCOVER_AIRING_QUERY,
+            cache_prefix="adult-airing-v1:", ttl=CATALOG_CACHE_TTL,
+        )
+
+    def get_adult_popular(self, page: int = 1) -> dict:
+        """Adult/hentai most popular — HANIME tab."""
+        return self._discover(
+            "POPULARITY_DESC", page, query=ADULT_DISCOVER_QUERY,
+            cache_prefix="adult-popular-v1:", ttl=CATALOG_CACHE_TTL,
         )
 
     def _discover_manga(self, sort: str, page: int = 1, query: str = MANGA_DISCOVER_QUERY, cache_prefix: str = "manga:", ttl: int | None = None) -> dict:

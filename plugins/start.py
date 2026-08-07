@@ -11,6 +11,7 @@ from helper.helper_func import (
     batch_auto_del_notification,
     retry_on_flood,
     paced_copy,
+    paced_forward,
     styled_button,
 )
 import asyncio
@@ -334,66 +335,28 @@ async def start_command(client: Client, message: Message):
         live_chat = source_channel_id or getattr(client, "primary_db_channel", client.db)
 
         for msg in messages:
-            # Re-fetch THIS message right before send so any edit you made
-            # on the DB post (caption text OR "CLICK HERE" button) is used.
+            # Forward the original post from the DB channel (no copy / no caption rewrite)
+            protect_this = client.protect
             try:
-                fresh = await retry_on_flood(
-                    lambda mid=msg.id: client.get_messages(chat_id=live_chat, message_ids=mid),
-                    max_retries=3,
-                    logger=log,
-                    label=f"live_fetch:{msg.id}",
+                # Prefer single-message forward; result may be Message or list
+                forwarded = await paced_forward(
+                    client,
+                    chat_id=message.from_user.id,
+                    from_chat_id=live_chat,
+                    message_ids=msg.id,
+                    protect_content=protect_this,
                 )
-                if fresh is not None and not getattr(fresh, "empty", False):
-                    msg = fresh
-            except Exception as e:
-                log.warning(f"Live re-fetch failed for {msg.id}, using cached: {e}")
-
-            # Caption: prefer live HTML caption from the DB post
-            if msg.caption:
-                try:
-                    live_caption = msg.caption.html
-                except Exception:
-                    live_caption = msg.caption
-            else:
-                live_caption = None
-
-            file_name = ""
-            if getattr(msg, "document", None) and msg.document:
-                file_name = msg.document.file_name or ""
-
-            caption_tpl = (client.messages.get("CAPTION") or "").strip()
-            if caption_tpl and "{previouscaption}" in caption_tpl and getattr(msg, "document", None):
-                try:
-                    caption = caption_tpl.format(previouscaption=live_caption or file_name or "")
-                except Exception:
-                    caption = live_caption or ""
-            else:
-                # No template override → send exactly what is on the DB post
-                caption = live_caption if live_caption is not None else ""
-
-            # Buttons: always from the live DB post (unless globally disabled)
-            reply_markup = None if client.disable_btn else msg.reply_markup
-            protect_this = True if reply_markup else client.protect
-
-            try:
-                copy_kwargs = {
-                    "chat_id": message.from_user.id,
-                    "protect_content": protect_this,
-                    "caption": caption,
-                }
-                # Always pass reply_markup so button edits apply (or clear)
-                if not client.disable_btn:
-                    copy_kwargs["reply_markup"] = reply_markup
-
-                copied_msg = await paced_copy(msg, **copy_kwargs)
-                if copied_msg is not None:
-                    yugen_msgs.append(copied_msg)
+                if forwarded is not None:
+                    if isinstance(forwarded, list):
+                        yugen_msgs.extend(m for m in forwarded if m is not None)
+                    else:
+                        yugen_msgs.append(forwarded)
             except Exception as e:
                 err = str(e).lower()
                 if "empty" in err:
                     log.info(f"Skipping empty message {getattr(msg, 'id', '?')}")
                 else:
-                    log.warning(f"Failed to send message {getattr(msg, 'id', '?')}: {e}")
+                    log.warning(f"Failed to forward message {getattr(msg, 'id', '?')}: {e}")
                 continue
 
         # 8. Auto delete timer
