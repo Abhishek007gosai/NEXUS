@@ -407,11 +407,21 @@ html, body {
   border-radius: 12px 12px 0 0;
 }
 .poster-art img,
-.poster-card > img {
+.poster-card > img,
+.poster-art .generated-thumb {
   width: 100%;
   height: 148px;
   object-fit: cover;
   display: block;
+}
+.generated-thumb {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sheet-media .generated-thumb {
+  width: 100%;
+  height: 100%;
 }
 
 .hot-badge {
@@ -435,6 +445,20 @@ html, body {
   background: rgba(0, 0, 0, 0.72);
   color: var(--amber);
   font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 6px;
+  line-height: 1.3;
+  letter-spacing: 0.2px;
+}
+.poster-seasons {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 9.5px;
   font-weight: 700;
   padding: 3px 7px;
   border-radius: 6px;
@@ -628,7 +652,9 @@ html, body {
 .letter-group-line { flex: 1; height: 1px; background: var(--border); }
 
 .available-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-.available-grid .poster-card img, .available-grid .poster-art img { height: 148px; }
+.available-grid .poster-card img,
+.available-grid .poster-art img,
+.available-grid .poster-art .generated-thumb { height: 148px; }
 
 /* ---------------- bottom nav ---------------- */
 

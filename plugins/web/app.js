@@ -59,6 +59,29 @@
     };
   }
 
+  // Route remote cover/banner images through our same-origin proxy so
+  // Telegram's WebView (and strict referrer policies) can actually load
+  // them. Direct s4.anilist.co / MAL CDN links often fail silently there.
+  const PROXY_HOSTS = new Set([
+    "s4.anilist.co",
+    "s3.anilist.co",
+    "img.anilist.co",
+    "media.anilist.co",
+    "cdn.myanimelist.net",
+  ]);
+  function proxyImg(url) {
+    if (!url || typeof url !== "string") return "";
+    const u = url.trim();
+    if (!u.startsWith("https://")) return u;
+    try {
+      const host = new URL(u).hostname.toLowerCase();
+      if (!PROXY_HOSTS.has(host)) return u;
+      return `/api/img?u=${encodeURIComponent(u)}`;
+    } catch (_) {
+      return u;
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Generated placeholder thumbnail — used whenever an image is missing
   // or fails to load, so nothing ever shows a broken image icon.
@@ -90,14 +113,15 @@
   }
 
   function thumbImg(container, src, title) {
-    if (!src) {
+    const proxied = proxyImg(src);
+    if (!proxied) {
       container.appendChild(generatedThumb(title));
       return;
     }
     const img = document.createElement("img");
     img.loading = "lazy";
-    img.src = src;
-    img.alt = title;
+    img.src = proxied;
+    img.alt = title || "";
     img.onerror = () => img.replaceWith(generatedThumb(title));
     container.appendChild(img);
   }
@@ -340,16 +364,18 @@
 
     const art = document.createElement("div");
     art.className = "poster-art";
-    const img = document.createElement("img");
-    img.loading = "lazy";
-    img.src = item.poster_url || "";
-    img.alt = item.title;
-    art.appendChild(img);
+    thumbImg(art, item.poster_url, item.title);
     if (item.rating) {
       const badge = document.createElement("span");
       badge.className = "poster-rating";
       badge.textContent = "\u2605 " + Number(item.rating).toFixed(1);
       art.appendChild(badge);
+    }
+    if (item.franchise_count && item.franchise_count > 1) {
+      const seasons = document.createElement("span");
+      seasons.className = "poster-seasons";
+      seasons.textContent = item.franchise_count + " seasons";
+      art.appendChild(seasons);
     }
     card.appendChild(art);
 
@@ -383,11 +409,7 @@
 
     const art = document.createElement("div");
     art.className = "poster-art";
-    const img = document.createElement("img");
-    img.loading = "lazy";
-    img.src = item.poster_url || "";
-    img.alt = item.title;
-    art.appendChild(img);
+    thumbImg(art, item.poster_url, item.title);
 
     // Rating overlay on the poster (replaces HOT / NEW EP / POPULAR badges)
     if (item.rating) {
@@ -674,9 +696,10 @@
   }
 
   function primaryListForType(type) {
-    // Every linked title in this media type (anime → H-ANIME, manga → H-MANHWA).
-    // Must have a join_link to appear. No franchise collapse — each linked
-    // title shows under its own letter so admins always see what they added.
+    // Linked titles in this media type (anime → H-ANIME, manga → H-MANHWA).
+    // Franchise members (seasons / OVAs / movies linked via AniList relations)
+    // are collapsed to a single card so "Bible Black", "Bible Black Origins",
+    // etc. appear as one entry instead of flooding the A–Z grid.
     let pool = available.filter((a) => {
       if (!isMediaType(a, type)) return false;
       if (!(a.join_link || "").trim()) return false;
@@ -696,7 +719,115 @@
         return s === "FINISHED" || s === "CANCELLED";
       });
     }
-    return pool;
+    return collapseFranchises(pool);
+  }
+
+  // Union connected components via related_ids (same-source only), then
+  // keep one representative per franchise — latest full season in front
+  // (TV/ONA preferred over OVA/movie/special).
+  function collapseFranchises(pool) {
+    if (!pool.length) return pool;
+
+    const byKey = new Map(); // `${source}:${source_id}` → item
+    pool.forEach((a) => {
+      const src = a.source || "anilist";
+      const sid = a.source_id != null ? String(a.source_id) : null;
+      if (sid != null) byKey.set(`${src}:${sid}`, a);
+    });
+
+    const parent = new Map();
+    function find(x) {
+      let p = parent.get(x);
+      if (p == null) {
+        parent.set(x, x);
+        return x;
+      }
+      if (p !== x) {
+        p = find(p);
+        parent.set(x, p);
+      }
+      return p;
+    }
+    function union(a, b) {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent.set(ra, rb);
+    }
+
+    pool.forEach((a) => {
+      const src = a.source || "anilist";
+      const sid = a.source_id != null ? String(a.source_id) : null;
+      if (sid == null) return;
+      const selfKey = `${src}:${sid}`;
+      find(selfKey);
+      (a.related_ids || []).forEach((rid) => {
+        const relKey = `${src}:${String(rid)}`;
+        if (byKey.has(relKey)) union(selfKey, relKey);
+      });
+    });
+
+    const groups = new Map(); // root → items[]
+    pool.forEach((a) => {
+      const src = a.source || "anilist";
+      const sid = a.source_id != null ? String(a.source_id) : null;
+      const key = sid != null ? find(`${src}:${sid}`) : `solo:${a.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(a);
+    });
+
+    // Prefer a full-release season (TV / TV_SHORT / ONA / MANGA) over
+    // OVA / SPECIAL / MOVIE / ONE_SHOT, then the newest by date.
+    // Missing dates rank last so unknown entries don't steal the slot.
+    const FULL_SEASON = new Set(["TV", "TV_SHORT", "ONA", "MANGA", "NOVEL"]);
+    function isFullSeason(a) {
+      const f = (a.format || "").toUpperCase();
+      if (!f) return true; // unknown format — treat as season candidate
+      return FULL_SEASON.has(f);
+    }
+    function repScore(a) {
+      return [
+        isFullSeason(a) ? 1 : 0,
+        a.year != null ? a.year : -1,
+        a.start_month != null ? a.start_month : -1,
+        a.start_day != null ? a.start_day : -1,
+        a.id != null ? a.id : -1,
+      ];
+    }
+    function better(a, b) {
+      const sa = repScore(a);
+      const sb = repScore(b);
+      for (let i = 0; i < sa.length; i++) {
+        if (sa[i] !== sb[i]) return sa[i] > sb[i];
+      }
+      return false;
+    }
+
+    const out = [];
+    groups.forEach((members) => {
+      let rep = members[0];
+      for (let i = 1; i < members.length; i++) {
+        if (better(members[i], rep)) rep = members[i];
+      }
+      // Attach siblings so the detail sheet can surface the rest of the
+      // franchise without a second round-trip when enrichment fails.
+      if (members.length > 1) {
+        rep = {
+          ...rep,
+          franchise_count: members.length,
+          franchise_members: members
+            .filter((m) => m.id !== rep.id)
+            .map((m) => ({
+              id: m.id,
+              title: m.title,
+              poster_url: m.poster_url,
+              year: m.year,
+              join_link: m.join_link,
+            })),
+        };
+      }
+      out.push(rep);
+    });
+    return out;
   }
 
   function renderLetterBarFor(type, letterBarEl, activeLetter, setLetter) {
@@ -808,6 +939,7 @@
     const sheetMedia = detailPoster.parentElement;
     const hasRealBanner = !!anime.banner_url;
     const bannerSrc = anime.banner_url || anime.poster_url;
+    const bannerProxied = proxyImg(bannerSrc);
 
     // openDiscoverDetail (and friends) call this twice per tap: once
     // immediately with placeholder data, then again once the full AniList
@@ -821,17 +953,18 @@
       detailPoster.src = "";
       detailPoster.style.display = "";
       detailPoster.classList.toggle("poster-fallback", !hasRealBanner);
-      sheetMedia.classList.toggle("has-blur-bg", !hasRealBanner && !!bannerSrc);
-      if (!hasRealBanner && bannerSrc) {
-        sheetMedia.style.setProperty("--banner-img", `url("${bannerSrc}")`);
+      sheetMedia.classList.toggle("has-blur-bg", !hasRealBanner && !!bannerProxied);
+      if (!hasRealBanner && bannerProxied) {
+        sheetMedia.style.setProperty("--banner-img", `url("${bannerProxied}")`);
       } else {
         sheetMedia.style.removeProperty("--banner-img");
       }
-      if (bannerSrc) {
-        detailPoster.src = bannerSrc;
+      if (bannerProxied) {
+        detailPoster.src = bannerProxied;
         detailPoster.onerror = () => {
           detailPoster.style.display = "none";
           sheetMedia.classList.remove("has-blur-bg");
+          sheetMedia.style.removeProperty("--banner-img");
           const gen = generatedThumb(anime.title);
           gen.style.position = "absolute";
           gen.style.inset = "0";
@@ -843,6 +976,7 @@
         const gen = generatedThumb(anime.title);
         gen.style.position = "absolute";
         gen.style.inset = "0";
+        gen.style.zIndex = "1";
         sheetMedia.insertBefore(gen, detailPoster);
       }
     }
