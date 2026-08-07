@@ -997,7 +997,17 @@ def _to_anime(doc) -> dict | None:
     d["genres"] = d.get("genres") or []
     d["available"] = bool(d.get("join_link"))
     d["library_section"] = d.get("library_section")  # ongoing | finished | None
-    d["media_type"] = d.get("media_type") or "ANIME"
+    # Anime → H-ANIME; Manga / Manhwa / Manhua / Novels → H-MANHWA
+    mt = (d.get("media_type") or "").upper()
+    if mt not in ("ANIME", "MANGA"):
+        fmt = (d.get("format") or "").upper()
+        if fmt in ("MANGA", "NOVEL", "ONE_SHOT", "MANHUA", "MANHWA"):
+            mt = "MANGA"
+        elif fmt in ("TV", "MOVIE", "OVA", "ONA", "SPECIAL", "TV_SHORT"):
+            mt = "ANIME"
+        else:
+            mt = "ANIME"
+    d["media_type"] = mt
     return d
 
 
@@ -1102,6 +1112,19 @@ def get_franchise_neighbors(details: dict) -> list[dict]:
     return out
 
 
+def _normalize_media_type(details: dict) -> str:
+    """Anime → H-ANIME; Manga / Manhwa / Manhua / Novels → H-MANHWA."""
+    mt = (details.get("media_type") or "").upper()
+    if mt in ("ANIME", "MANGA"):
+        return mt
+    fmt = (details.get("format") or "").upper()
+    if fmt in ("MANGA", "NOVEL", "ONE_SHOT", "MANHUA", "MANHWA"):
+        return "MANGA"
+    if fmt in ("TV", "MOVIE", "OVA", "ONA", "SPECIAL", "TV_SHORT"):
+        return "ANIME"
+    return "ANIME"
+
+
 def upsert_anime(details: dict, added_by: int | None = None) -> int:
     """Insert a new catalog entry from a normalized source dict, or update
     the existing one if this (source, source_id) was already posted.
@@ -1133,7 +1156,7 @@ def upsert_anime(details: dict, added_by: int | None = None) -> int:
         "chapters": details.get("chapters"),
         "format": details.get("format"),
         "duration": details.get("duration"),
-        "media_type": details.get("media_type") or "ANIME",
+        "media_type": _normalize_media_type(details),
         "countryOfOrigin": details.get("countryOfOrigin"),
         "related_ids": related_ids,
         "relations": details.get("relations", []),
