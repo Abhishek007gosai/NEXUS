@@ -14,17 +14,39 @@ from plugins.base import AnimeSource
 
 SEARCH_QUERY = """
 query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 25) {
+  Page(page: $page, perPage: 50) {
     pageInfo { hasNextPage }
     media(search: $search, type: ANIME, isAdult: true, sort: SEARCH_MATCH) {
       id
-      title { romaji english }
+      title { romaji english native }
       startDate { year }
       coverImage { extraLarge large }
       averageScore
       genres
       format
       episodes
+      isAdult
+    }
+  }
+}
+"""
+
+# Broader anime search (no isAdult filter) — used as a fallback so titles
+# mis-tagged on AniList still surface; we keep only adult / Hentai hits.
+SEARCH_ANIME_BROAD_QUERY = """
+query ($search: String, $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+      id
+      title { romaji english native }
+      startDate { year }
+      coverImage { extraLarge large }
+      averageScore
+      genres
+      format
+      episodes
+      isAdult
     }
   }
 }
@@ -196,17 +218,16 @@ query ($sort: [MediaSort], $page: Int) {
 
 MANGA_SEARCH_QUERY = """
 query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 25) {
+  Page(page: $page, perPage: 50) {
     pageInfo { hasNextPage }
     media(
       search: $search
       type: MANGA
       isAdult: true
-      format_in: [MANGA, ONE_SHOT, NOVEL]
       sort: SEARCH_MATCH
     ) {
       id
-      title { romaji english }
+      title { romaji english native }
       startDate { year }
       coverImage { extraLarge large }
       averageScore
@@ -214,6 +235,32 @@ query ($search: String, $page: Int) {
       format
       chapters
       countryOfOrigin
+      isAdult
+    }
+  }
+}
+"""
+
+# Broader manga/manhwa/manhua/novel search without isAdult — filter after.
+SEARCH_MANGA_BROAD_QUERY = """
+query ($search: String, $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    media(
+      search: $search
+      type: MANGA
+      sort: SEARCH_MATCH
+    ) {
+      id
+      title { romaji english native }
+      startDate { year }
+      coverImage { extraLarge large }
+      averageScore
+      genres
+      format
+      chapters
+      countryOfOrigin
+      isAdult
     }
   }
 }
@@ -411,31 +458,69 @@ class AniListSource(AnimeSource):
             return data
         raise last_exc if last_exc else requests.HTTPError("AniList request failed")
 
+    def _map_search_item(self, m: dict, media_type: str) -> dict:
+        score = m.get("averageScore")
+        item = {
+            "source": self.name,
+            "source_id": m["id"],
+            "anilist_id": m["id"],
+            "title": _best_title(m.get("title") or {}),
+            "year": (m.get("startDate") or {}).get("year"),
+            "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
+            "rating": round(score / 10, 1) if score else None,
+            "genres": (m.get("genres") or [])[:3],
+            "format": m.get("format"),
+            "media_type": media_type,
+            "isAdult": bool(m.get("isAdult")),
+        }
+        if media_type == "ANIME":
+            item["episodes"] = m.get("episodes")
+        else:
+            item["chapters"] = m.get("chapters")
+            item["countryOfOrigin"] = m.get("countryOfOrigin")
+        return item
+
+    @staticmethod
+    def _is_adult_result(m: dict) -> bool:
+        if m.get("isAdult"):
+            return True
+        genres = {str(g).strip().lower() for g in (m.get("genres") or [])}
+        return bool(genres & {"hentai", "yaoi", "yuri"})
+
     def search(self, query: str, page: int = 1) -> dict:
         data = self._post(SEARCH_QUERY, {"search": query, "page": page})
         media = data["Page"]["media"]
-        results = []
-        for m in media:
-            score = m.get("averageScore")
-            results.append({
-                "source_id": m["id"],
-                "anilist_id": m["id"],
-                "title": _best_title(m["title"]),
-                "year": (m.get("startDate") or {}).get("year"),
-                "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
-                "rating": round(score / 10, 1) if score else None,
-                "genres": (m.get("genres") or [])[:3],
-                "format": m.get("format"),
-                "episodes": m.get("episodes"),
-                "media_type": "ANIME",
-            })
-        return {"results": results, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
+        results = [self._map_search_item(m, "ANIME") for m in media]
+        # Fallback: broader search if adult-only returned nothing
+        if not results:
+            try:
+                broad = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
+                for m in broad["Page"]["media"]:
+                    if self._is_adult_result(m):
+                        results.append(self._map_search_item(m, "ANIME"))
+                has_next = broad["Page"]["pageInfo"]["hasNextPage"]
+            except Exception:
+                has_next = data["Page"]["pageInfo"]["hasNextPage"]
+        else:
+            has_next = data["Page"]["pageInfo"]["hasNextPage"]
+        return {"results": results, "has_next": has_next}
 
     def search_all(self, query: str, page: int = 1) -> dict:
-        """Search adult anime (hentai) + adult manga/manhwa/doujin (pornhwa)."""
-        anime = self.search(query, page)
-        manga = self.search_manga(query, page)
-        # Dedupe by anilist id (rare overlap), anime first then manga
+        """Search adult anime (hentai) + adult manga/manhwa/novel (pornhwa).
+
+        Each side is independent so a failure/rate-limit on anime still
+        returns manga hits (and vice versa).
+        """
+        anime = {"results": [], "has_next": False}
+        manga = {"results": [], "has_next": False}
+        try:
+            anime = self.search(query, page)
+        except Exception:
+            pass
+        try:
+            manga = self.search_manga(query, page)
+        except Exception:
+            pass
         seen = set()
         merged = []
         for item in (anime.get("results") or []) + (manga.get("results") or []):
@@ -700,23 +785,21 @@ class AniListSource(AnimeSource):
     def search_manga(self, query: str, page: int = 1) -> dict:
         data = self._post(MANGA_SEARCH_QUERY, {"search": query, "page": page})
         media = data["Page"]["media"]
-        results = []
-        for m in media:
-            score = m.get("averageScore")
-            results.append({
-                "source_id": m["id"],
-                "anilist_id": m["id"],
-                "title": _best_title(m["title"]),
-                "year": (m.get("startDate") or {}).get("year"),
-                "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
-                "rating": round(score / 10, 1) if score else None,
-                "genres": (m.get("genres") or [])[:3],
-                "format": m.get("format"),
-                "chapters": m.get("chapters"),
-                "countryOfOrigin": m.get("countryOfOrigin"),
-                "media_type": "MANGA",
-            })
-        return {"results": results, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
+        results = [self._map_search_item(m, "MANGA") for m in media]
+        # Fallback: broader search if adult-only returned nothing (covers
+        # manhwa/manhua/novels that AniList did not flag isAdult).
+        if not results:
+            try:
+                broad = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
+                for m in broad["Page"]["media"]:
+                    if self._is_adult_result(m):
+                        results.append(self._map_search_item(m, "MANGA"))
+                has_next = broad["Page"]["pageInfo"]["hasNextPage"]
+            except Exception:
+                has_next = data["Page"]["pageInfo"]["hasNextPage"]
+        else:
+            has_next = data["Page"]["pageInfo"]["hasNextPage"]
+        return {"results": results, "has_next": has_next}
 
     def browse_genre(self, genre: str, page: int = 1, media_type: str = "ANIME") -> dict:
         """Browse adult titles in a genre. media_type: ANIME (H-ANIME) or MANGA (H-MANHWA)."""
