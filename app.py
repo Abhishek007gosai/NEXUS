@@ -461,6 +461,8 @@ def api_proxy_image():
     allowed = {
         "s4.anilist.co",
         "s3.anilist.co",
+        "img.anilist.co",
+        "media.anilist.co",
         "cdn.myanimelist.net",
     }
     if host not in allowed:
