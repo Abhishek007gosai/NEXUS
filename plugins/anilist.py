@@ -304,6 +304,33 @@ def _best_title(title_obj: dict) -> str:
     return title_obj.get("english") or title_obj.get("romaji") or "Untitled"
 
 
+# Genres / tags that should never appear in Trending / Top Airing / Popular
+_BLOCKED_GENRES = {
+    "yaoi", "boys love", "bl", "gay", "shounen ai", "bara",
+    "yaoi ", "boys' love", "boy's love",
+}
+
+
+def _is_blocked_item(item: dict) -> bool:
+    """Return True if the item should be hidden (gay / BL related)."""
+    genres = item.get("genres") or []
+    for g in genres:
+        if not g:
+            continue
+        if str(g).strip().lower() in _BLOCKED_GENRES:
+            return True
+    # Also check title for common BL markers as a safety net
+    title = (item.get("title") or "").lower()
+    if any(kw in title for kw in ("yaoi", " boys love", "bl ", " (bl)")):
+        return True
+    return False
+
+
+def _filter_blocked(results: list) -> list:
+    """Drop gay / BL / Yaoi items from a results list."""
+    return [r for r in results if not _is_blocked_item(r)]
+
+
 class AniListSource(AnimeSource):
     name = "anilist"
 
@@ -515,6 +542,8 @@ class AniListSource(AnimeSource):
                     "episodes": m.get("episodes"),
                     "synopsis": _clean_description(m.get("description"))[:140],
                 })
+            # Never show gay / BL content in Trending / Top Airing / Popular
+            out = _filter_blocked(out)
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
         return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
@@ -557,10 +586,9 @@ class AniListSource(AnimeSource):
                     "countryOfOrigin": m.get("countryOfOrigin"),
                     "media_type": "MANGA",
                     "synopsis": _clean_description(m.get("description"))[:140],
-                    "source": self.name,
-                    "source_id": m["id"],
-                    "media_type": "ANIME",
                 })
+            # Never show gay / BL content in Trending / Top Airing / Popular
+            out = _filter_blocked(out)
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
         return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
 
@@ -580,7 +608,7 @@ class AniListSource(AnimeSource):
         return {"results": out, "has_next": has_next}
 
     def get_trending_manga(self, page: int = 1) -> dict:
-        """Trending adult manga + manhwa + doujinshi + BL/Yaoi pornhwa."""
+        """Trending adult manga + manhwa + doujinshi (BL/Yaoi excluded)."""
         def fetch():
             general = self._discover_manga(
                 "TRENDING_DESC", page, query=MANGA_DISCOVER_QUERY,
@@ -590,38 +618,27 @@ class AniListSource(AnimeSource):
                 "TRENDING_DESC", page, query=MANHWA_DISCOVER_QUERY,
                 cache_prefix="m-trend-kr-v3:", ttl=CATALOG_CACHE_TTL,
             )
-            bl = self._discover_manga(
-                "TRENDING_DESC", page, query=BL_DISCOVER_QUERY,
-                cache_prefix="m-trend-bl-v1:", ttl=CATALOG_CACHE_TTL,
-            )
-            bl_kr = self._discover_manga(
-                "TRENDING_DESC", page, query=BL_MANHWA_QUERY,
-                cache_prefix="m-trend-bl-kr-v1:", ttl=CATALOG_CACHE_TTL,
-            )
-            # BL first so Yaoi/pornhwa is visible, then KR manhwa, then general
-            return self._merge_manga_pages(bl_kr, bl, manhwa, general)
+            # BL / Yaoi queries intentionally omitted — filtered out of discovery
+            return self._merge_manga_pages(manhwa, general)
         return self._cached(
-            f"manga-trend-merged-v4:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-trend-merged-v5:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     def get_airing_manga(self, page: int = 1) -> dict:
-        """Ongoing adult manga / manhwa / doujin / BL — Top Airing row."""
+        """Ongoing adult manga / manhwa / doujin (BL excluded) — Top Airing row."""
         def fetch():
             general = self._discover_manga(
                 "POPULARITY_DESC", page, query=MANGA_AIRING_QUERY,
                 cache_prefix="m-air-v3:", ttl=CATALOG_CACHE_TTL,
             )
-            bl = self._discover_manga(
-                "POPULARITY_DESC", page, query=BL_AIRING_QUERY,
-                cache_prefix="m-air-bl-v1:", ttl=CATALOG_CACHE_TTL,
-            )
-            return self._merge_manga_pages(bl, general)
+            # BL / Yaoi queries intentionally omitted
+            return self._merge_manga_pages(general)
         return self._cached(
-            f"manga-air-merged-v4:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-air-merged-v5:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     def get_popular_manga(self, page: int = 1) -> dict:
-        """Popular adult manga + manhwa + doujinshi + BL/Yaoi pornhwa."""
+        """Popular adult manga + manhwa + doujinshi (BL/Yaoi excluded)."""
         def fetch():
             general = self._discover_manga(
                 "POPULARITY_DESC", page, query=MANGA_DISCOVER_QUERY,
@@ -631,17 +648,10 @@ class AniListSource(AnimeSource):
                 "POPULARITY_DESC", page, query=MANHWA_DISCOVER_QUERY,
                 cache_prefix="m-pop-kr-v3:", ttl=CATALOG_CACHE_TTL,
             )
-            bl = self._discover_manga(
-                "POPULARITY_DESC", page, query=BL_DISCOVER_QUERY,
-                cache_prefix="m-pop-bl-v1:", ttl=CATALOG_CACHE_TTL,
-            )
-            bl_kr = self._discover_manga(
-                "POPULARITY_DESC", page, query=BL_MANHWA_QUERY,
-                cache_prefix="m-pop-bl-kr-v1:", ttl=CATALOG_CACHE_TTL,
-            )
-            return self._merge_manga_pages(bl_kr, bl, manhwa, general)
+            # BL / Yaoi queries intentionally omitted
+            return self._merge_manga_pages(manhwa, general)
         return self._cached(
-            f"manga-pop-merged-v4:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-pop-merged-v5:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     # Back-compat aliases used by older routes

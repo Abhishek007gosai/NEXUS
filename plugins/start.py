@@ -1,8 +1,8 @@
 from helper.helper_func import *
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import humanize
-from config import OWNER_ID
+from config import OWNER_ID, WEBAPP_URL
 from plugins.shortner import get_short
 from helper.helper_func import (
     get_messages,
@@ -11,11 +11,19 @@ from helper.helper_func import (
     batch_auto_del_notification,
     retry_on_flood,
     paced_copy,
+    styled_button,
 )
 import asyncio
 from datetime import datetime, timedelta
 from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait
+
+
+def _start_index_button(label: str = "OPEN INDEX") -> InlineKeyboardButton:
+    """Full-width green button that opens the Anime Index mini app."""
+    if WEBAPP_URL and WEBAPP_URL.startswith("https://"):
+        return styled_button(label, style="success", web_app=WebAppInfo(url=WEBAPP_URL))
+    return styled_button(label, style="success", url=WEBAPP_URL or "https://telegram.org")
 
 #===============================================================#
 
@@ -412,9 +420,13 @@ async def start_command(client: Client, message: Message):
 
     # 9. Normal start message
     else:
-        buttons = [[styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data='close')]]
+        # Match screenshot layout: full-width OPEN INDEX on top, then HELP + CLOSE
+        buttons = [
+            [_start_index_button("OPEN INDEX")],
+            [styled_button("HELP", style="danger", callback_data="about"), styled_button("CLOSE", style="danger", callback_data='close')],
+        ]
         if user_id in client.admins:
-            buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
+            buttons.insert(1, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
 
         photo = client.messages.get("START_PHOTO", "")
         start_caption = client.messages.get('START', 'Welcome, {mention}').format(
