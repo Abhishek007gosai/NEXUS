@@ -117,6 +117,29 @@ async def paced_copy(msg, **kwargs):
     return result
 
 
+async def paced_forward(client, chat_id, from_chat_id, message_ids, **kwargs):
+    """``client.forward_messages`` with FloodWait retries + optional inter-send pacing.
+
+    Prefer this over copy when the user wants the original DB-channel post
+    forwarded as-is (no caption/button rewriting).
+    """
+    if not isinstance(message_ids, (list, tuple)):
+        message_ids = [message_ids]
+
+    async def _do():
+        return await client.forward_messages(
+            chat_id=chat_id,
+            from_chat_id=from_chat_id,
+            message_ids=message_ids,
+            **kwargs,
+        )
+
+    result = await retry_on_flood(_do, max_retries=5, label="forward")
+    if SEND_PACING_SECONDS > 0:
+        await asyncio.sleep(SEND_PACING_SECONDS)
+    return result
+
+
 # =============================================================================
 # API compatibility helpers (kurigram / pyrogram deprecations)
 # =============================================================================
