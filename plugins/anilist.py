@@ -59,7 +59,7 @@ query ($id: Int) {
 """
 
 # Adult discovery — used by Trending / Top Airing / Popular
-# BL / gay / boys love filtered out after fetch
+# BL / gay / boys love filtered out after fetch (uses full genres + tags)
 DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
   Page(page: $page, perPage: 10) {
@@ -70,6 +70,7 @@ query ($sort: [MediaSort], $page: Int) {
       coverImage { extraLarge large }
       averageScore
       genres
+      tags { name }
       episodes
       description(asHtml: false)
     }
@@ -87,6 +88,7 @@ query ($sort: [MediaSort], $page: Int) {
       coverImage { extraLarge large }
       averageScore
       genres
+      tags { name }
       episodes
       description(asHtml: false)
     }
@@ -119,6 +121,7 @@ query ($sort: [MediaSort], $page: Int) {
       type: MANGA
       isAdult: true
       format_in: [MANGA, ONE_SHOT, NOVEL]
+      genre_not_in: ["Yaoi"]
       sort: $sort
     ) {
       id
@@ -126,6 +129,7 @@ query ($sort: [MediaSort], $page: Int) {
       coverImage { extraLarge large }
       averageScore
       genres
+      tags { name }
       chapters
       format
       countryOfOrigin
@@ -144,6 +148,7 @@ query ($sort: [MediaSort], $page: Int) {
       isAdult: true
       countryOfOrigin: KR
       format_in: [MANGA, ONE_SHOT]
+      genre_not_in: ["Yaoi"]
       sort: $sort
     ) {
       id
@@ -151,6 +156,7 @@ query ($sort: [MediaSort], $page: Int) {
       coverImage { extraLarge large }
       averageScore
       genres
+      tags { name }
       chapters
       format
       countryOfOrigin
@@ -170,6 +176,7 @@ query ($sort: [MediaSort], $page: Int) {
       isAdult: true
       status: RELEASING
       format_in: [MANGA, ONE_SHOT, NOVEL]
+      genre_not_in: ["Yaoi"]
       sort: $sort
     ) {
       id
@@ -177,6 +184,7 @@ query ($sort: [MediaSort], $page: Int) {
       coverImage { extraLarge large }
       averageScore
       genres
+      tags { name }
       chapters
       format
       countryOfOrigin
@@ -304,27 +312,38 @@ def _best_title(title_obj: dict) -> str:
 
 
 # Genres / tags that should never appear in Trending / Top Airing / Popular
-# Only gay / BL / boys love — adult hentai and regular manhwa stay
+# Only gay / BL / boys love — adult hentai and regular (hetero) manhwa stay
 _BLOCKED_GENRES = {
     "yaoi", "boys love", "boys' love", "boy's love",
     "bl", "gay", "shounen ai", "bara",
 }
 
+_BLOCKED_TAGS = {
+    "yaoi", "boys' love", "boys love", "boy's love",
+    "shounen ai", "bara", "gay", "male on male",
+    "mlm", "bl",
+}
+
+_BLOCKED_TITLE_KW = (
+    "yaoi", "boys love", "boy's love", "boys' love",
+    " (bl)", "[bl]", " bl ", "-bl ", " bl-",
+)
+
 
 def _is_blocked_item(item: dict) -> bool:
     """Return True if the item should be hidden (gay / BL / boys love)."""
-    genres = item.get("genres") or []
-    for g in genres:
-        if not g:
-            continue
-        if str(g).strip().lower() in _BLOCKED_GENRES:
+    # Full genre list (not the truncated display list)
+    for g in item.get("genres") or []:
+        if g and str(g).strip().lower() in _BLOCKED_GENRES:
             return True
-    # Title safety net for common BL markers
+    # AniList tags (stronger signal for KR BL manhwa)
+    for t in item.get("tags") or []:
+        name = t if isinstance(t, str) else (t.get("name") if isinstance(t, dict) else None)
+        if name and str(name).strip().lower() in _BLOCKED_TAGS:
+            return True
+    # Title safety net
     title = (item.get("title") or "").lower()
-    if any(kw in title for kw in (
-        "yaoi", "boys love", "boy's love", "boys' love",
-        " (bl)", "[bl]", " bl ",
-    )):
+    if any(kw in title for kw in _BLOCKED_TITLE_KW):
         return True
     return False
 
@@ -533,6 +552,8 @@ class AniListSource(AnimeSource):
             out = []
             for m in data["Page"]["media"]:
                 score = m.get("averageScore")
+                full_genres = m.get("genres") or []
+                tags = [t.get("name") for t in (m.get("tags") or []) if t.get("name")]
                 out.append({
                     "title": _best_title(m["title"]),
                     "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
@@ -541,12 +562,16 @@ class AniListSource(AnimeSource):
                     "source": self.name,
                     "source_id": m["id"],
                     "media_type": "ANIME",
-                    "genres": (m.get("genres") or [])[:3],
+                    "genres": full_genres,  # full list for BL filter; trimmed after
+                    "tags": tags,
                     "episodes": m.get("episodes"),
                     "synopsis": _clean_description(m.get("description"))[:140],
                 })
-            # Never show gay / BL content in Trending / Top Airing / Popular
+            # Drop gay / BL / Yaoi before truncating genres for display
             out = _filter_blocked(out)
+            for item in out:
+                item["genres"] = (item.get("genres") or [])[:3]
+                item.pop("tags", None)
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
         return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
@@ -554,7 +579,7 @@ class AniListSource(AnimeSource):
     def get_trending(self, page: int = 1) -> dict:
         # Adult anime — BL / gay filtered out after fetch
         return self._discover(
-            "TRENDING_DESC", page, cache_prefix="trend-v2:",
+            "TRENDING_DESC", page, cache_prefix="trend-v3:",
             ttl=CATALOG_CACHE_TTL,
         )
 
@@ -562,13 +587,13 @@ class AniListSource(AnimeSource):
         # Top Airing (currently releasing) — BL / gay filtered out
         return self._discover(
             "POPULARITY_DESC", page, query=DISCOVER_AIRING_QUERY,
-            cache_prefix="airing-v2:", ttl=CATALOG_CACHE_TTL,
+            cache_prefix="airing-v3:", ttl=CATALOG_CACHE_TTL,
         )
 
     def get_most_popular(self, page: int = 1) -> dict:
         # Popular overall — BL / gay filtered out
         return self._discover(
-            "POPULARITY_DESC", page, cache_prefix="popular-v2:",
+            "POPULARITY_DESC", page, cache_prefix="popular-v3:",
             ttl=CATALOG_CACHE_TTL,
         )
 
@@ -578,6 +603,8 @@ class AniListSource(AnimeSource):
             out = []
             for m in data["Page"]["media"]:
                 score = m.get("averageScore")
+                full_genres = m.get("genres") or []
+                tags = [t.get("name") for t in (m.get("tags") or []) if t.get("name")]
                 out.append({
                     "title": _best_title(m["title"]),
                     "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
@@ -585,15 +612,19 @@ class AniListSource(AnimeSource):
                     "anilist_id": m["id"],
                     "source": self.name,
                     "source_id": m["id"],
-                    "genres": (m.get("genres") or [])[:3],
+                    "genres": full_genres,  # full list for BL filter; trimmed after
+                    "tags": tags,
                     "chapters": m.get("chapters"),
                     "format": m.get("format"),
                     "countryOfOrigin": m.get("countryOfOrigin"),
                     "media_type": "MANGA",
                     "synopsis": _clean_description(m.get("description"))[:140],
                 })
-            # Never show gay / BL content in Trending / Top Airing / Popular
+            # Drop gay / BL / Yaoi before truncating genres for display
             out = _filter_blocked(out)
+            for item in out:
+                item["genres"] = (item.get("genres") or [])[:3]
+                item.pop("tags", None)
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
         return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
 
@@ -626,7 +657,7 @@ class AniListSource(AnimeSource):
             # BL / Yaoi queries intentionally omitted — filtered out of discovery
             return self._merge_manga_pages(manhwa, general)
         return self._cached(
-            f"manga-trend-merged-v5:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-trend-merged-v6:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     def get_airing_manga(self, page: int = 1) -> dict:
@@ -639,7 +670,7 @@ class AniListSource(AnimeSource):
             # BL / Yaoi queries intentionally omitted
             return self._merge_manga_pages(general)
         return self._cached(
-            f"manga-air-merged-v5:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-air-merged-v6:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     def get_popular_manga(self, page: int = 1) -> dict:
@@ -656,7 +687,7 @@ class AniListSource(AnimeSource):
             # BL / Yaoi queries intentionally omitted
             return self._merge_manga_pages(manhwa, general)
         return self._cached(
-            f"manga-pop-merged-v5:{page}", fetch, ttl=CATALOG_CACHE_TTL
+            f"manga-pop-merged-v6:{page}", fetch, ttl=CATALOG_CACHE_TTL
         )
 
     # Back-compat aliases used by older routes
