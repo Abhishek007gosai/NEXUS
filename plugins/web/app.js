@@ -722,18 +722,34 @@
     return collapseFranchises(pool);
   }
 
-  // Union connected components via related_ids (same-source only), then
-  // keep one representative per franchise — latest full season in front
-  // (TV/ONA preferred over OVA/movie/special).
+  // Collapse franchise members into one card. Connect via:
+  //  1) AniList related_ids (when present on stored docs)
+  //  2) Shared join_link (link propagation already unifies a franchise)
+  //  3) Shared title base ("Bible Black: New Testament" → "bible black")
+  // Representative: latest full season (TV/ONA) in front; OVAs last.
   function collapseFranchises(pool) {
     if (!pool.length) return pool;
 
-    const byKey = new Map(); // `${source}:${source_id}` → item
-    pool.forEach((a) => {
+    function itemKey(a) {
       const src = a.source || "anilist";
-      const sid = a.source_id != null ? String(a.source_id) : null;
-      if (sid != null) byKey.set(`${src}:${sid}`, a);
-    });
+      if (a.source_id != null) return `${src}:${a.source_id}`;
+      return `id:${a.id}`;
+    }
+
+    function titleBase(title) {
+      let t = (title || "").toLowerCase();
+      // Strip common season / edition suffixes so related titles share a base.
+      t = t.replace(/\s*[:\-–—]\s*.*$/, ""); // after colon/dash
+      t = t.replace(/\s*\((?:ova|ona|special|movie|tv|season\s*\d+)\)\s*$/i, "");
+      t = t
+        .replace(/\s+(only\s+version|origins?|gaiden|new\s+testament|complete|kanzenban|recap|summary|movie|ova|ona|special|season\s*\d+|s\d+)\s*$/i, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return t;
+    }
+
+    const byKey = new Map();
+    pool.forEach((a) => byKey.set(itemKey(a), a));
 
     const parent = new Map();
     function find(x) {
@@ -754,34 +770,54 @@
       if (ra !== rb) parent.set(ra, rb);
     }
 
+    // 1) related_ids graph
     pool.forEach((a) => {
-      const src = a.source || "anilist";
-      const sid = a.source_id != null ? String(a.source_id) : null;
-      if (sid == null) return;
-      const selfKey = `${src}:${sid}`;
+      const selfKey = itemKey(a);
       find(selfKey);
+      const src = a.source || "anilist";
       (a.related_ids || []).forEach((rid) => {
         const relKey = `${src}:${String(rid)}`;
         if (byKey.has(relKey)) union(selfKey, relKey);
       });
     });
 
-    const groups = new Map(); // root → items[]
+    // 2) shared join_link (franchise link propagation)
+    const byLink = new Map();
     pool.forEach((a) => {
-      const src = a.source || "anilist";
-      const sid = a.source_id != null ? String(a.source_id) : null;
-      const key = sid != null ? find(`${src}:${sid}`) : `solo:${a.id}`;
+      const link = (a.join_link || "").trim();
+      if (!link) return;
+      if (!byLink.has(link)) byLink.set(link, []);
+      byLink.get(link).push(itemKey(a));
+    });
+    byLink.forEach((keys) => {
+      for (let i = 1; i < keys.length; i++) union(keys[0], keys[i]);
+    });
+
+    // 3) shared title base (covers old posts missing related_ids)
+    const byBase = new Map();
+    pool.forEach((a) => {
+      const base = titleBase(a.title);
+      if (!base || base.length < 4) return;
+      if (!byBase.has(base)) byBase.set(base, []);
+      byBase.get(base).push(itemKey(a));
+    });
+    byBase.forEach((keys) => {
+      for (let i = 1; i < keys.length; i++) union(keys[0], keys[i]);
+    });
+
+    const groups = new Map();
+    pool.forEach((a) => {
+      const key = find(itemKey(a));
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(a);
     });
 
     // Prefer a full-release season (TV / TV_SHORT / ONA / MANGA) over
     // OVA / SPECIAL / MOVIE / ONE_SHOT, then the newest by date.
-    // Missing dates rank last so unknown entries don't steal the slot.
     const FULL_SEASON = new Set(["TV", "TV_SHORT", "ONA", "MANGA", "NOVEL"]);
     function isFullSeason(a) {
       const f = (a.format || "").toUpperCase();
-      if (!f) return true; // unknown format — treat as season candidate
+      if (!f) return true;
       return FULL_SEASON.has(f);
     }
     function repScore(a) {
@@ -808,8 +844,6 @@
       for (let i = 1; i < members.length; i++) {
         if (better(members[i], rep)) rep = members[i];
       }
-      // Attach siblings so the detail sheet can surface the rest of the
-      // franchise without a second round-trip when enrichment fails.
       if (members.length > 1) {
         rep = {
           ...rep,
