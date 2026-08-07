@@ -39,28 +39,38 @@
         <button class="pill-tab" data-tab="hmanhwa">H-MANHWA</button>
       </div>
 
-      <!-- ALL: clean (non-adult, non-BL) anime only — no hentai / manga / manhwa -->
+      <!-- ALL: hentai + manga/manhwa (BL / gay filtered out on server) -->
       <div id="tab-all">
         <section>
           <div class="section-header-row">
             <h2 class="section-header section-header--trending"><span class="accent-bar"></span>Trending</h2>
           </div>
+          <p class="sub-section-label">Hentai</p>
           <div id="all-trending-hentai" class="hscroll"></div>
+          <p class="sub-section-label">Manga / Manhwa</p>
+          <div id="all-trending-manga" class="hscroll"></div>
         </section>
 
         <section>
           <div class="section-header-row">
             <h2 class="section-header section-header--airing"><span class="accent-bar"></span>Top Airing</h2>
           </div>
+          <p class="sub-section-label">Hentai</p>
           <div id="all-airing-hentai" class="hscroll"></div>
+          <p class="sub-section-label">Manga / Manhwa</p>
+          <div id="all-airing-manga" class="hscroll"></div>
         </section>
 
         <section>
           <div class="section-header-row">
             <h2 class="section-header section-header--popular"><span class="accent-bar"></span>Popular</h2>
           </div>
+          <p class="sub-section-label">Hentai</p>
           <div id="all-popular-hentai" class="popular-grid"></div>
           <button id="all-popular-hentai-more" class="load-more-btn hidden" type="button">Load more</button>
+          <p class="sub-section-label" style="margin-top:16px">Manga / Manhwa</p>
+          <div id="all-popular-manga" class="popular-grid"></div>
+          <button id="all-popular-manga-more" class="load-more-btn hidden" type="button">Load more</button>
         </section>
       </div>
 

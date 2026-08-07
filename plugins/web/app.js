@@ -475,8 +475,8 @@
     renderSkeletonRow(hanimeTrendingRow, 4);
     renderSkeletonRow(hanimePopularGrid, 6);
     const [t, p] = await Promise.all([
-      safeApi("/api/catalog/adult/trending"),
-      safeApi("/api/catalog/adult/popular"),
+      safeApi("/api/catalog/trending"),
+      safeApi("/api/catalog/most-popular"),
     ]);
     hanimeDiscTrending = t.results || [];
     hanimeDiscPopular = p.results || [];
@@ -493,7 +493,7 @@
       hanimePopularMore.disabled = true;
       hanimePopularMore.textContent = "Loading…";
     }
-    const data = await safeApi(`/api/catalog/adult/popular?page=${hanimeDiscPopularPage + 1}`);
+    const data = await safeApi(`/api/catalog/most-popular?page=${hanimeDiscPopularPage + 1}`);
     hanimeDiscPopularPage += 1;
     hanimeDiscPopular = hanimeDiscPopular.concat(data.results || []);
     hanimeDiscPopularHasNext = !!data.has_next;
@@ -605,11 +605,35 @@
   }
 
   async function loadAllDiscover() {
-    // Main columns: clean SFW anime only (no hentai / manga / manhwa / BL)
     renderSkeletonRow(allTrendingHentai, 4);
     renderSkeletonRow(allAiringHentai, 4);
     renderSkeletonRow(allPopularHentai, 4);
+    renderSkeletonRow(allTrendingManga, 4);
+    renderSkeletonRow(allAiringManga, 4);
+    renderSkeletonRow(allPopularManga, 4);
 
+    // Wave 1: manga / manhwa (BL filtered on server)
+    const [mt, ma, mp] = await Promise.all([
+      safeApi("/api/catalog/manga/trending"),
+      safeApi("/api/catalog/manga/airing"),
+      safeApi("/api/catalog/manga/popular"),
+    ]);
+    mTrending = mt.results || [];
+    mAiring = ma.results || [];
+    mAiringHasNext = !!ma.has_next;
+    mAiringPage = 1;
+    mPopular = mp.results || [];
+    mPopularHasNext = !!mp.has_next;
+    mPopularPage = 1;
+    fillHscroll(allTrendingManga, mTrending, trendingCard);
+    fillHscroll(allAiringManga, mAiring, topAiringCard);
+    fillGrid(allPopularManga, mPopular);
+    if (allPopularMangaMore) allPopularMangaMore.classList.toggle("hidden", !mPopularHasNext);
+    noteEmpty(allTrendingManga, "No manga loaded");
+    noteEmpty(allAiringManga, "No manga loaded");
+    noteEmpty(allPopularManga, "No manga loaded");
+
+    // Wave 2: hentai (BL / gay filtered on server)
     const [ht, ha, hp] = await Promise.all([
       safeApi("/api/catalog/trending"),
       safeApi("/api/catalog/popular"),
@@ -626,9 +650,9 @@
     fillHscroll(allAiringHentai, hAiring, topAiringCard);
     fillGrid(allPopularHentai, hPopular);
     if (allPopularHentaiMore) allPopularHentaiMore.classList.toggle("hidden", !hPopularHasNext);
-    noteEmpty(allTrendingHentai, "Nothing trending right now");
-    noteEmpty(allAiringHentai, "Nothing airing right now");
-    noteEmpty(allPopularHentai, "Nothing popular right now");
+    noteEmpty(allTrendingHentai, "Hentai feed unavailable");
+    noteEmpty(allAiringHentai, "Hentai feed unavailable");
+    noteEmpty(allPopularHentai, "Hentai feed unavailable");
   }
 
   // ---------------------------------------------------------------------
