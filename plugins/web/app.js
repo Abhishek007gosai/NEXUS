@@ -674,8 +674,14 @@
   }
 
   function primaryListForType(type) {
-    // Franchise collapse within the same media type only
-    let pool = available.filter((a) => isMediaType(a, type));
+    // Every linked title in this media type (anime → H-ANIME, manga → H-MANHWA).
+    // Must have a join_link to appear. No franchise collapse — each linked
+    // title shows under its own letter so admins always see what they added.
+    let pool = available.filter((a) => {
+      if (!isMediaType(a, type)) return false;
+      if (!(a.join_link || "").trim()) return false;
+      return true;
+    });
     if (type === "MANGA") {
       // Prefer admin-chosen library_section; fall back to AniList status
       pool = pool.filter((a) => {
@@ -690,34 +696,7 @@
         return s === "FINISHED" || s === "CANCELLED";
       });
     }
-    const bySourceId = new Map();
-    pool.forEach((a) => {
-      if (a.source === "anilist" && a.source_id != null) bySourceId.set(String(a.source_id), a);
-    });
-    const visited = new Set();
-    const primaries = [];
-    pool.forEach((start) => {
-      const startKey = String(start.id);
-      if (visited.has(startKey)) return;
-      const group = [];
-      const frontier = [start];
-      const localSeen = new Set([startKey]);
-      while (frontier.length) {
-        const cur = frontier.pop();
-        group.push(cur);
-        (cur.related_ids || []).forEach((rid) => {
-          const relItem = bySourceId.get(String(rid));
-          if (relItem && !localSeen.has(String(relItem.id))) {
-            localSeen.add(String(relItem.id));
-            frontier.push(relItem);
-          }
-        });
-      }
-      group.forEach((g) => visited.add(String(g.id)));
-      group.sort((x, y) => (y.year || 0) - (x.year || 0) || y.id - x.id);
-      primaries.push(group[0]);
-    });
-    return primaries;
+    return pool;
   }
 
   function renderLetterBarFor(type, letterBarEl, activeLetter, setLetter) {
