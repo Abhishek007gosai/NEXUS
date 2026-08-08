@@ -1768,7 +1768,16 @@
     searchResultsEmpty.textContent = "Searching…";
 
     const availIndex = buildAvailableIndex();
-    const localMatches = available.filter((a) => a.title.toLowerCase().includes(query.toLowerCase()));
+    const qLower = query.toLowerCase();
+    // Match full query OR every individual word against title + alt_title
+    // so multi-word titles and alt names (e.g. "Landlord Sisters" /
+    // "My Landlady Noona" / "건물주 누나") still appear in search.
+    const words = qLower.split(/\s+/).filter(Boolean);
+    const localMatches = available.filter((a) => {
+      const t = ((a.title || "") + " " + (a.alt_title || "")).toLowerCase();
+      if (t.includes(qLower)) return true;
+      return words.length > 1 && words.every((w) => t.includes(w));
+    });
     localMatches.forEach((item) => {
       searchResultsGroups.appendChild(searchResultRow(item, () => {
         trackConfirmedSearch(item.title);
@@ -1802,7 +1811,7 @@
       });
       const empty = searchResultsGroups.children.length === 0;
       searchResultsEmpty.textContent = empty
-        ? "No adult anime / manhwa / manga / novel found for that title."
+        ? "No pornhwa / hentai / manhwa / manhua / novel found for that title."
         : searchResultsEmpty.textContent;
       searchResultsEmpty.classList.toggle("hidden", !empty);
     } catch (err) {
