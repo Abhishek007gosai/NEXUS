@@ -23,14 +23,14 @@ MSG_EFFECT = 5046509860389126442
 ADMINS = [8771195193]
 
 # ──────────────────────────────────────────────
-# MongoDB — File Store
+# MongoDB
 # ──────────────────────────────────────────────
-DB_URI = os.getenv("DB_URI", "")
+# For Multiple Database URL Use One Space Between Each
+# Example: DB_URI="mongodb://uri1 mongodb://uri2 mongodb://uri3"
+# The bot will try them in order and use the first one that connects.
+# If one database gets full / unreachable, put a working URI first (or remove the full one).
+DB_URI = [u for u in os.getenv("DB_URI", "").split() if u.strip()]
 DB_NAME = os.getenv("DB_NAME", "cluster0")
-LINKSHARE_DB_URI = os.getenv("LINKSHARE_DB_URI", DB_URI)
-LINKSHARE_DB_NAME = os.getenv("LINKSHARE_DB_NAME", "cluster0")
-WEB_DB_URI = os.getenv("WEB_DB_URI", "") or DB_URI
-WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
 
 # ──────────────────────────────────────────────
 # Anime Index branding
@@ -38,6 +38,8 @@ WEB_DB_NAME = os.getenv("WEB_DB_NAME", "cluster0")
 BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
 BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
+# Custom URL for the "Open Index" button (falls back to WEBAPP_URL if empty)
+INDEX_URL = os.getenv("INDEX_URL", "").rstrip("/")
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
 SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")

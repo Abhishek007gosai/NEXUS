@@ -38,7 +38,7 @@ def run_flask():
 #================================================
 
 class Bot(Client):
-    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn, linkshare_db_uri=None, linkshare_db_name=None):
+    def __init__(self, session, workers, db, fsub, token, admins, messages, auto_del, db_uri, db_name, api_id, api_hash, protect, disable_btn):
         super().__init__(
             name=session,
             api_hash=api_hash,
@@ -62,8 +62,9 @@ class Bot(Client):
         self.req_fsub = {}
         self.disable_btn = disable_btn
         self.reply_text = messages.get('REPLY', 'ғᴜᴄᴋ ᴏғғ ʙɪᴛᴄʜ !!!')
+        # DB_URI is a list — MongoDB/LinkShareDB try each URI until one connects
         self.mongodb = MongoDB(db_uri, db_name)
-        self.linkshare_db = LinkShareDB(linkshare_db_uri or db_uri, linkshare_db_name or "linkshare")
+        self.linkshare_db = LinkShareDB(db_uri, db_name)
         self.req_channels = []
         self.db_channels = {}
         self.primary_db_channel = db

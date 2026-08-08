@@ -9,7 +9,6 @@ from pyrogram import compose
 from config import (
     SESSION, WORKERS, DB_CHANNEL, FSUBS, TOKEN, ADMINS, MESSAGES,
     AUTO_DEL, DB_URI, DB_NAME, API_ID, API_HASH, PROTECT, DISABLE_BTN,
-    LINKSHARE_DB_URI, LINKSHARE_DB_NAME,
 )
 
 
@@ -53,8 +52,6 @@ async def main():
             API_HASH,
             PROTECT,
             DISABLE_BTN,
-            LINKSHARE_DB_URI,
-            LINKSHARE_DB_NAME,
         )
     ]
     await compose(apps)

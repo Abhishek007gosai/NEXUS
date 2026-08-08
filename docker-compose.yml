@@ -13,9 +13,7 @@ services:
     environment:
       - PORT=5010
       - DB_URI=mongodb://mongo:27017
-      - WEB_DB_URI=mongodb://mongo:27017
-      - DB_NAME=file_store
-      - WEB_DB_NAME=anime_index
+      - DB_NAME=cluster0
     volumes:
       - ./sessions:/app/sessions
       - ./bot.log:/app/bot.log
