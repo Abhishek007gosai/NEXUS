@@ -288,11 +288,14 @@ async def home(client: Client, query: CallbackQuery):
     except Exception:
         pass
     buttons = []
-    index_url = (INDEX_URL or WEBAPP_URL or "").strip()
-    if index_url.startswith("https://"):
-        buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=index_url))])
-    elif index_url.startswith("http://"):
+    index_url = (INDEX_URL or "").strip()
+    webapp_url = (WEBAPP_URL or "").strip()
+    if index_url.startswith(("https://", "http://")):
         buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=index_url)])
+    elif webapp_url.startswith("https://"):
+        buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=webapp_url))])
+    elif webapp_url.startswith("http://"):
+        buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=webapp_url)])
     buttons.append([styled_button("Help", style="danger", callback_data="about"), styled_button("Close", style="danger", callback_data="close")])
     if query.from_user.id in client.admins:
         buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])

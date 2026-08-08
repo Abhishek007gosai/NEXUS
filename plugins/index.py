@@ -73,14 +73,16 @@ def new_session(**kwargs) -> str:
 
 
 def _webapp_button(label: str | None = None) -> InlineKeyboardButton:
-    """/anidex — open the Anime Index (uses INDEX_URL, falls back to WEBAPP_URL)."""
+    """/anidex — open index. INDEX_URL = normal link; WEBAPP_URL = mini app."""
     label = label or "ᴏᴘᴇɴ ɪɴᴅᴇx"
-    url = (INDEX_URL or WEBAPP_URL or "").strip()
-    if url.startswith("https://"):
-        return styled_button(label, style="success", web_app=WebAppInfo(url=url))
-    if url.startswith("http://"):
-        return styled_button(label, style="success", url=url)
-    # Invalid / missing URL — safe placeholder so the button still works
+    index_url = (INDEX_URL or "").strip()
+    webapp_url = (WEBAPP_URL or "").strip()
+    if index_url.startswith(("https://", "http://")):
+        return styled_button(label, style="success", url=index_url)
+    if webapp_url.startswith("https://"):
+        return styled_button(label, style="success", web_app=WebAppInfo(url=webapp_url))
+    if webapp_url.startswith("http://"):
+        return styled_button(label, style="success", url=webapp_url)
     return styled_button(label, style="success", url="https://telegram.org")
 
 

@@ -418,18 +418,21 @@ async def start_command(client: Client, message: Message):
         # (+ SETTINGS for admins)
         buttons = []
 
-        # Open Index button (INDEX_URL, falls back to WEBAPP_URL)
-        # Only add if URL is a valid http(s) link — invalid URL causes BUTTON_URL_INVALID
-        index_url = (INDEX_URL or WEBAPP_URL or "").strip()
-        if index_url.startswith("https://"):
-            buttons.append([
-                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=index_url))
-            ])
-        elif index_url.startswith("http://"):
+        # Open Index button — INDEX_URL preferred (normal url link), else WEBAPP_URL (mini app)
+        index_url = (INDEX_URL or "").strip()
+        webapp_url = (WEBAPP_URL or "").strip()
+        if index_url.startswith(("https://", "http://")):
             buttons.append([
                 styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=index_url)
             ])
-        # else: skip button if URL missing or invalid (avoids BUTTON_URL_INVALID crash)
+        elif webapp_url.startswith("https://"):
+            buttons.append([
+                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=webapp_url))
+            ])
+        elif webapp_url.startswith("http://"):
+            buttons.append([
+                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=webapp_url)
+            ])
 
         buttons.append([
             styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"),
@@ -448,19 +451,45 @@ async def start_command(client: Client, message: Message):
             id=message.from_user.id
         )
 
-        if photo:
-            await client.send_photo(
-                chat_id=message.chat.id,
-                photo=photo,
-                caption=start_caption,
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-        else:
-            await client.send_message(
-                chat_id=message.chat.id,
-                text=start_caption,
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+        async def _send_start(markup):
+            if photo:
+                await client.send_photo(
+                    chat_id=message.chat.id,
+                    photo=photo,
+                    caption=start_caption,
+                    reply_markup=markup,
+                )
+            else:
+                await client.send_message(
+                    chat_id=message.chat.id,
+                    text=start_caption,
+                    reply_markup=markup,
+                )
+
+        try:
+            await _send_start(InlineKeyboardMarkup(buttons))
+        except Exception as e:
+            # BUTTON_URL_INVALID — drop URL/web_app buttons and retry so /start never crashes
+            if "BUTTON_URL" in str(e).upper() or "URL_INVALID" in str(e).upper():
+                safe_buttons = [
+                    row for row in buttons
+                    if all(
+                        getattr(btn, "url", None) is None
+                        and getattr(btn, "web_app", None) is None
+                        for btn in row
+                    )
+                ]
+                if not safe_buttons:
+                    safe_buttons = [[
+                        styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"),
+                        styled_button("ᴄʟᴏsᴇ", style="danger", callback_data="close"),
+                    ]]
+                try:
+                    await _send_start(InlineKeyboardMarkup(safe_buttons))
+                except Exception:
+                    await client.send_message(chat_id=message.chat.id, text=start_caption)
+            else:
+                raise
         return
 
 #===============================================================#
