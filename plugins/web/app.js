@@ -1521,9 +1521,6 @@
     if (!overlay) return;
     el("help-edit-cancel").addEventListener("click", closeHelpEdit);
     overlay.addEventListener("click", (e) => { if (e.target === overlay) closeHelpEdit(); });
-    el("help-edit-add").addEventListener("click", () => {
-      el("help-edit-links").appendChild(helpEditRow("", ""));
-    });
     const addMore = el("help-edit-add-more");
     if (addMore) {
       addMore.addEventListener("click", () => {

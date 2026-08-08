@@ -740,30 +740,30 @@ html, body {
 .profile-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 14px;
 }
 
-.profile-hint { color: var(--text-faint); font-size: 14px; margin: 0; }
+.profile-hint { color: var(--text-faint); font-size: 12px; margin: 0; }
 
 .profile-header {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding-bottom: 16px;
-  margin-bottom: 16px;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
   border-bottom: 1px solid var(--border);
 }
 
 .profile-avatar {
-  width: 52px;
-  height: 52px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: var(--grad);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 15px;
   font-weight: 700;
   color: #fff;
   flex: none;
@@ -774,16 +774,16 @@ html, body {
   background: var(--surface-2);
 }
 
-.profile-name { font-size: 16px; font-weight: 700; }
-.profile-username { font-size: 13px; color: var(--text-faint); }
+.profile-name { font-size: 14px; font-weight: 700; }
+.profile-username { font-size: 11px; color: var(--text-faint); }
 
 .profile-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
-  font-size: 14px;
+  font-size: 12.5px;
 }
 .profile-row:last-child { border-bottom: none; }
 .profile-row .label { color: var(--text-dim); }
@@ -791,24 +791,24 @@ html, body {
 
 /* Support Chat button under Access */
 .profile-support-wrap {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .profile-support-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 13px 16px;
+  padding: 10px 12px;
   border: none;
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--grad);
   color: #fff;
-  font-size: 14.5px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
-  box-shadow: 0 6px 18px rgba(47, 109, 52, 0.28);
+  box-shadow: 0 4px 12px rgba(47, 109, 52, 0.25);
 }
 .profile-support-btn:active { transform: scale(0.98); opacity: 0.95; }
 
@@ -816,51 +816,51 @@ html, body {
 .help-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 10px;
 }
 .help-card {
   margin-top: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px 14px;
+  border-radius: 12px;
+  padding: 12px;
 }
 .help-card--link {
-  padding: 14px;
+  padding: 12px;
 }
 .help-card--link .help-link-btn {
   margin-top: 0;
 }
 .help-card-title {
-  margin: 0 0 6px;
-  font-size: 14.5px;
+  margin: 0 0 4px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
 }
 .help-card-text {
   margin: 0;
-  font-size: 12.5px;
-  line-height: 1.4;
+  font-size: 11.5px;
+  line-height: 1.35;
   color: var(--text-dim);
 }
 .help-link-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  margin-top: 10px;
-  padding: 13px 16px;
+  margin-top: 8px;
+  padding: 10px 12px;
   border: none;
-  border-radius: 14px;
+  border-radius: 10px;
   background: linear-gradient(90deg, #ec4899 0%, #a855f7 55%, #8b5cf6 100%);
   color: #fff;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
-  box-shadow: 0 6px 18px rgba(168, 85, 247, 0.28);
+  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.25);
   font-family: inherit;
 }
 .help-link-btn:active { transform: scale(0.98); opacity: 0.95; }
