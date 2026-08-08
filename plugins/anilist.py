@@ -490,16 +490,16 @@ class AniListSource(AnimeSource):
         return bool(genres & {"hentai", "yaoi", "yuri", "ecchi"})
 
     def search(self, query: str, page: int = 1) -> dict:
-        """Search adult anime (hentai). Always merges isAdult:true results
-        with a broader search filtered client-side so mis-tagged titles
-        still surface.
+        """Search ALL anime on AniList (no isAdult filter).
+
+        Returns every matching anime title so search surfaces hentai,
+        regular anime, and everything else.
         """
         results = []
         seen = set()
         has_next = False
-
         try:
-            data = self._post(SEARCH_QUERY, {"search": query, "page": page})
+            data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
             for m in data["Page"]["media"]:
                 mid = m["id"]
                 if mid in seen:
@@ -509,30 +509,14 @@ class AniListSource(AnimeSource):
             has_next = data["Page"]["pageInfo"]["hasNextPage"]
         except Exception:
             pass
-
-        # Always also run the broader search so titles that AniList did not
-        # flag isAdult (or that use Ecchi / other adult genres) still appear.
-        try:
-            broad = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
-            for m in broad["Page"]["media"]:
-                if not self._is_adult_result(m):
-                    continue
-                mid = m["id"]
-                if mid in seen:
-                    continue
-                seen.add(mid)
-                results.append(self._map_search_item(m, "ANIME"))
-            has_next = has_next or broad["Page"]["pageInfo"]["hasNextPage"]
-        except Exception:
-            pass
-
         return {"results": results, "has_next": has_next}
 
     def search_all(self, query: str, page: int = 1) -> dict:
-        """Search adult anime (hentai) + adult manga/manhwa/novel (pornhwa).
+        """Search ALL AniList anime + manga/manhwa/manhua/novels together.
 
-        Each side is independent so a failure/rate-limit on anime still
-        returns manga hits (and vice versa).
+        No adult-only filter — every matching title is returned so the
+        search page shows pornhwa, hentai, novels, manhua, manhwa, and
+        regular titles in one list.
         """
         anime = {"results": [], "has_next": False}
         manga = {"results": [], "has_next": False}
@@ -806,18 +790,16 @@ class AniListSource(AnimeSource):
         return self.get_airing_manga(page)
 
     def search_manga(self, query: str, page: int = 1) -> dict:
-        """Search adult manga / manhwa / manhua / novels (pornhwa).
+        """Search ALL manga / manhwa / manhua / novels on AniList (no isAdult filter).
 
-        Always merges isAdult:true results with a broader search filtered
-        for adult / Ecchi / Yaoi / Yuri so mis-tagged titles still appear.
-        Covers H-Manga, H-Manhwa, H-Manhua and Novels (AniList format NOVEL).
+        Returns every matching title so pornhwa, manhwa, manhua, novels,
+        and regular manga all appear in search.
         """
         results = []
         seen = set()
         has_next = False
-
         try:
-            data = self._post(MANGA_SEARCH_QUERY, {"search": query, "page": page})
+            data = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
             for m in data["Page"]["media"]:
                 mid = m["id"]
                 if mid in seen:
@@ -827,23 +809,6 @@ class AniListSource(AnimeSource):
             has_next = data["Page"]["pageInfo"]["hasNextPage"]
         except Exception:
             pass
-
-        # Always run broader search so manhwa/manhua/novels that AniList
-        # did not flag isAdult still surface when they have adult genres.
-        try:
-            broad = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
-            for m in broad["Page"]["media"]:
-                if not self._is_adult_result(m):
-                    continue
-                mid = m["id"]
-                if mid in seen:
-                    continue
-                seen.add(mid)
-                results.append(self._map_search_item(m, "MANGA"))
-            has_next = has_next or broad["Page"]["pageInfo"]["hasNextPage"]
-        except Exception:
-            pass
-
         return {"results": results, "has_next": has_next}
 
     def browse_genre(self, genre: str, page: int = 1, media_type: str = "ANIME") -> dict:
