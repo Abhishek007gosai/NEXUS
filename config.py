@@ -72,7 +72,6 @@ MESSAGES = {
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SEARCH_PHOTO": "",
     "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", "https://i.ibb.co/0R9k9x4M/tmpbtpr7q0.jpg"),
-    "INDEX_PHOTO": os.getenv("INDEX_PHOTO", "") or os.getenv("BANNER_IMAGE_URL", ""),
 }
 
 
