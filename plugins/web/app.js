@@ -1675,22 +1675,87 @@
   // ---------------------------------------------------------------------
   // Data loading
   // ---------------------------------------------------------------------
+  // Client-side AniList GraphQL — runs on the user's phone/network so
+  // Koyeb datacenter IP blocks never empty the Home catalog.
+  const ANILIST_GQL = "https://graphql.anilist.co";
+  const DISCOVER_GQL = `
+    query ($sort: [MediaSort], $page: Int, $status: MediaStatus) {
+      Page(page: $page, perPage: 10) {
+        pageInfo { hasNextPage }
+        media(type: ANIME, sort: $sort, status: $status) {
+          id
+          title { romaji english }
+          coverImage { extraLarge large }
+          averageScore
+          genres
+          episodes
+          description(asHtml: false)
+        }
+      }
+    }`;
+
+  function _mapAniMedia(m) {
+    const score = m.averageScore;
+    const title = (m.title && (m.title.english || m.title.romaji)) || "Untitled";
+    const cover = (m.coverImage && (m.coverImage.extraLarge || m.coverImage.large)) || "";
+    let synopsis = (m.description || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/?i>/gi, "").trim();
+    if (synopsis.length > 140) synopsis = synopsis.slice(0, 140);
+    return {
+      title,
+      poster_url: cover,
+      rating: score ? Math.round((score / 10) * 10) / 10 : null,
+      anilist_id: m.id,
+      genres: (m.genres || []).slice(0, 3),
+      episodes: m.episodes,
+      synopsis,
+    };
+  }
+
+  async function clientAniList(sort, page, status) {
+    const variables = { sort: [sort], page: page || 1 };
+    if (status) variables.status = status;
+    const res = await fetch(ANILIST_GQL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: DISCOVER_GQL, variables }),
+    });
+    if (!res.ok) throw new Error("AniList HTTP " + res.status);
+    const payload = await res.json();
+    if (payload.errors && !payload.data) throw new Error(JSON.stringify(payload.errors[0]));
+    const pageData = payload.data && payload.data.Page;
+    const media = (pageData && pageData.media) || [];
+    return {
+      results: media.map(_mapAniMedia),
+      has_next: !!(pageData && pageData.pageInfo && pageData.pageInfo.hasNextPage),
+      source: "client",
+    };
+  }
+
   async function loadDiscover() {
     renderSkeletonRow(trendingRow, 4);
     renderSkeletonRow(topAiringList, 4);
     renderSkeletonRow(popularGridList, 6);
 
-    async function safeCatalog(path) {
+    async function safeCatalog(path, clientFn) {
       try {
-        return await api(path);
-      } catch (e) {
-        return { results: [], has_next: false, error: String(e && e.message || e) };
+        const data = await api(path);
+        if (data && Array.isArray(data.results) && data.results.length) return data;
+      } catch (e) { /* fall through to client */ }
+      // Server empty / failed → fetch AniList from the user's device
+      try {
+        if (typeof clientFn === "function") return await clientFn();
+      } catch (e2) {
+        return { results: [], has_next: false, error: String(e2 && e2.message || e2) };
       }
+      return { results: [], has_next: false };
     }
 
-    // Progressive paint: each section appears as soon as its data is ready
+    // Progressive paint
     try {
-      const trendingData = await safeCatalog("/api/catalog/trending");
+      const trendingData = await safeCatalog(
+        "/api/catalog/trending",
+        () => clientAniList("TRENDING_DESC", 1, null)
+      );
       trending = Array.isArray(trendingData.results) ? trendingData.results : [];
       renderTrending();
     } catch (e) {
@@ -1699,7 +1764,10 @@
     }
 
     try {
-      const popularData = await safeCatalog("/api/catalog/popular");
+      const popularData = await safeCatalog(
+        "/api/catalog/popular",
+        () => clientAniList("POPULARITY_DESC", 1, "RELEASING")
+      );
       popular = Array.isArray(popularData.results) ? popularData.results : [];
       popularHasNext = !!popularData.has_next;
       popularPage = 1;
@@ -1711,7 +1779,10 @@
     }
 
     try {
-      const mostPopularData = await safeCatalog("/api/catalog/most-popular");
+      const mostPopularData = await safeCatalog(
+        "/api/catalog/most-popular",
+        () => clientAniList("POPULARITY_DESC", 1, null)
+      );
       mostPopular = Array.isArray(mostPopularData.results) ? mostPopularData.results : [];
       mostPopularHasNext = !!mostPopularData.has_next;
       mostPopularPage = 1;
@@ -1723,11 +1794,8 @@
     }
 
     if (!trending.length && !popular.length && !mostPopular.length) {
-      if (typeof showToast === "function") {
-        showToast("AniList unavailable — will retry in 8s");
-      }
-      // Auto-retry once after a short delay (covers cold start / rate limit)
-      setTimeout(() => { loadDiscover(); }, 8000);
+      if (typeof showToast === "function") showToast("AniList unavailable — retrying…");
+      setTimeout(() => { loadDiscover(); }, 10000);
     }
   }
 
