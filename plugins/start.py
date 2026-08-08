@@ -419,15 +419,17 @@ async def start_command(client: Client, message: Message):
         buttons = []
 
         # Open Index button (INDEX_URL, falls back to WEBAPP_URL)
+        # Only add if URL is a valid http(s) link — invalid URL causes BUTTON_URL_INVALID
         index_url = (INDEX_URL or WEBAPP_URL or "").strip()
         if index_url.startswith("https://"):
             buttons.append([
                 styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=index_url))
             ])
-        elif index_url:
+        elif index_url.startswith("http://"):
             buttons.append([
                 styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=index_url)
             ])
+        # else: skip button if URL missing or invalid (avoids BUTTON_URL_INVALID crash)
 
         buttons.append([
             styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"),

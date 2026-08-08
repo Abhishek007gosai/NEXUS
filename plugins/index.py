@@ -78,7 +78,10 @@ def _webapp_button(label: str | None = None) -> InlineKeyboardButton:
     url = (INDEX_URL or WEBAPP_URL or "").strip()
     if url.startswith("https://"):
         return styled_button(label, style="success", web_app=WebAppInfo(url=url))
-    return styled_button(label, style="success", url=url or "https://telegram.org")
+    if url.startswith("http://"):
+        return styled_button(label, style="success", url=url)
+    # Invalid / missing URL — safe placeholder so the button still works
+    return styled_button(label, style="success", url="https://telegram.org")
 
 
 def _open_post_button(anime: dict) -> InlineKeyboardButton | None:
