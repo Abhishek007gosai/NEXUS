@@ -389,8 +389,21 @@
     }
   }
 
+  function _emptyNote(text) {
+    const p = document.createElement("p");
+    p.className = "empty-note";
+    p.style.padding = "8px 4px";
+    p.textContent = text;
+    return p;
+  }
+
   function renderTrending() {
+    if (!trendingRow) return;
     trendingRow.innerHTML = "";
+    if (!trending.length) {
+      trendingRow.appendChild(_emptyNote("No trending titles yet — retrying…"));
+      return;
+    }
     const availIndex = buildAvailableIndex();
     trending.forEach((item) => {
       const matched = availIndex.match(item);
@@ -400,7 +413,12 @@
   }
 
   function renderTopAiring() {
+    if (!topAiringList) return;
     topAiringList.innerHTML = "";
+    if (!popular.length) {
+      topAiringList.appendChild(_emptyNote("No airing titles yet — retrying…"));
+      return;
+    }
     const availIndex = buildAvailableIndex();
     popular.forEach((item) => {
       const matched = availIndex.match(item);
@@ -436,7 +454,13 @@
   }, 150));
 
   function renderPopularGrid() {
+    if (!popularGridList) return;
     popularGridList.innerHTML = "";
+    if (!mostPopular.length) {
+      popularGridList.appendChild(_emptyNote("No popular titles yet — retrying…"));
+      if (popularGridLoadMoreBtn) popularGridLoadMoreBtn.classList.add("hidden");
+      return;
+    }
     const availIndex = buildAvailableIndex();
     mostPopular.forEach((item) => {
       const matched = availIndex.match(item);
@@ -1700,8 +1724,10 @@
 
     if (!trending.length && !popular.length && !mostPopular.length) {
       if (typeof showToast === "function") {
-        showToast("AniList is temporarily unavailable. Try again in a moment.");
+        showToast("AniList unavailable — will retry in 8s");
       }
+      // Auto-retry once after a short delay (covers cold start / rate limit)
+      setTimeout(() => { loadDiscover(); }, 8000);
     }
   }
 
