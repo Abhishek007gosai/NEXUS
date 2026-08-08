@@ -2,7 +2,7 @@ from helper.helper_func import *
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import humanize
-from config import OWNER_ID, WEBAPP_URL
+from config import OWNER_ID, WEBAPP_URL, INDEX_URL
 from plugins.shortner import get_short
 from helper.helper_func import (
     get_messages,
@@ -418,15 +418,15 @@ async def start_command(client: Client, message: Message):
         # (+ SETTINGS for admins)
         buttons = []
 
-        # Web mini-app button (Anime Index)
-        webapp = (WEBAPP_URL or "").strip()
-        if webapp.startswith("https://"):
+        # Open Index button (INDEX_URL, falls back to WEBAPP_URL)
+        index_url = (INDEX_URL or WEBAPP_URL or "").strip()
+        if index_url.startswith("https://"):
             buttons.append([
-                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=webapp))
+                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=index_url))
             ])
-        elif webapp:
+        elif index_url:
             buttons.append([
-                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=webapp)
+                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=index_url)
             ])
 
         buttons.append([

@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardMarkup, WebAppInfo
-from config import MSG_EFFECT, OWNER_ID, WEBAPP_URL
+from config import MSG_EFFECT, OWNER_ID, WEBAPP_URL, INDEX_URL
 from helper.pyro_listen import ListenerTimeout
 from helper.helper_func import styled_button, safe_edit_text
 
@@ -288,11 +288,12 @@ async def home(client: Client, query: CallbackQuery):
     except Exception:
         pass
     buttons = []
-    if WEBAPP_URL:
-        if WEBAPP_URL.startswith("https://"):
-            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=WEBAPP_URL))])
+    index_url = (INDEX_URL or WEBAPP_URL or "").strip()
+    if index_url:
+        if index_url.startswith("https://"):
+            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=index_url))])
         else:
-            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=WEBAPP_URL)])
+            buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=index_url)])
     buttons.append([styled_button("Help", style="danger", callback_data="about"), styled_button("Close", style="danger", callback_data="close")])
     if query.from_user.id in client.admins:
         buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])

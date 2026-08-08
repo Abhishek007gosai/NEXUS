@@ -31,6 +31,7 @@ from config import (
     TOKEN,
     BRAND_NAME,
     WEBAPP_URL,
+    INDEX_URL,
     ADMINS,
     MESSAGES,
 )
@@ -72,11 +73,12 @@ def new_session(**kwargs) -> str:
 
 
 def _webapp_button(label: str | None = None) -> InlineKeyboardButton:
-    """/anidex — open the Anime Index mini app."""
+    """/anidex — open the Anime Index (uses INDEX_URL, falls back to WEBAPP_URL)."""
     label = label or "ᴏᴘᴇɴ ɪɴᴅᴇx"
-    if WEBAPP_URL.startswith("https://"):
-        return styled_button(label, style="success", web_app=WebAppInfo(url=WEBAPP_URL))
-    return styled_button(label, style="success", url=WEBAPP_URL or "https://telegram.org")
+    url = (INDEX_URL or WEBAPP_URL or "").strip()
+    if url.startswith("https://"):
+        return styled_button(label, style="success", web_app=WebAppInfo(url=url))
+    return styled_button(label, style="success", url=url or "https://telegram.org")
 
 
 def _open_post_button(anime: dict) -> InlineKeyboardButton | None:
