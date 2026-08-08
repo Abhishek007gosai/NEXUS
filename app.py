@@ -64,19 +64,37 @@ except Exception as e:
 
 
 def _warm_catalog_cache():
-    """Pre-fill AniList cache in the background so first Home open is fast."""
+    """Pre-fill Home catalog (memory + disk) and keep it warm periodically."""
+    src = SOURCES.get("anilist")
+    if not src:
+        return
     try:
-        SOURCES["anilist"].get_trending()
-        SOURCES["anilist"].get_popular()
-        SOURCES["anilist"].get_most_popular()
+        if hasattr(src, "warm_home"):
+            src.warm_home(pages=2)
+        else:
+            src.get_trending()
+            src.get_popular()
+            src.get_most_popular()
         print("[catalog] cache warmed")
     except Exception as e:
         print(f"[catalog] warm failed: {e}")
 
 
+def _catalog_rewarm_loop():
+    """Re-warm Home feeds every ~20 minutes so soft TTL rarely expires cold."""
+    import time as _t
+    while True:
+        _t.sleep(20 * 60)
+        try:
+            _warm_catalog_cache()
+        except Exception:
+            pass
+
+
 try:
     import threading
-    threading.Thread(target=_warm_catalog_cache, daemon=True).start()
+    threading.Thread(target=_warm_catalog_cache, daemon=True, name="catalog-warm").start()
+    threading.Thread(target=_catalog_rewarm_loop, daemon=True, name="catalog-rewarm").start()
 except Exception:
     pass
 
@@ -353,9 +371,13 @@ def healthz():
     # Best-effort: a slow/unreachable AniList must never fail the health
     # check itself, so failures here are swallowed.
     try:
-        SOURCES["anilist"].get_trending()
-        SOURCES["anilist"].get_popular()
-        SOURCES["anilist"].get_most_popular()
+        src = SOURCES.get("anilist")
+        if src and hasattr(src, "warm_home"):
+            src.warm_home(pages=1)
+        elif src:
+            src.get_trending()
+            src.get_popular()
+            src.get_most_popular()
     except Exception:
         pass
     return jsonify(status="ok")
@@ -367,7 +389,8 @@ def api_trending():
     try:
         data = SOURCES["anilist"].get_trending(page)
         resp = jsonify(data)
-        resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
+        # Browser may reuse for 5 min; allow stale while revalidating for 1 h
+        resp.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
         return resp
     except Exception as e:
         app.logger.warning("catalog/trending failed: %s", e)
@@ -380,7 +403,7 @@ def api_popular():
     try:
         data = SOURCES["anilist"].get_popular(page)
         resp = jsonify(data)
-        resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
+        resp.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
         return resp
     except Exception as e:
         app.logger.warning("catalog/popular failed: %s", e)
@@ -393,7 +416,7 @@ def api_most_popular():
     try:
         data = SOURCES["anilist"].get_most_popular(page)
         resp = jsonify(data)
-        resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
+        resp.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
         return resp
     except Exception as e:
         app.logger.warning("catalog/most-popular failed: %s", e)

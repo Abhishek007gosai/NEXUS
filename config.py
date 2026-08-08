@@ -44,7 +44,17 @@ LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
 SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
-ANILIST_ENDPOINT = "https://graphql.anilist.co"
+# AniList GraphQL (set ANILIST_ENDPOINT to your own proxy URL if needed)
+ANILIST_ENDPOINT = os.getenv("ANILIST_ENDPOINT", "https://graphql.anilist.co").rstrip("/")
+# Outbound HTTP proxy for server → AniList (Koyeb datacenter IP may be rate-limited)
+# Example: ANILIST_PROXY=http://user:pass@host:8080
+ANILIST_PROXY = (
+    os.getenv("ANILIST_PROXY", "").strip()
+    or os.getenv("HTTPS_PROXY", "").strip()
+    or os.getenv("HTTP_PROXY", "").strip()
+)
+# If server catalog is empty, WebApp fetches AniList from the user's device
+ANILIST_CLIENT_FALLBACK = os.getenv("ANILIST_CLIENT_FALLBACK", "true").lower() in ("1", "true", "yes")
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # ──────────────────────────────────────────────
