@@ -25,113 +25,190 @@ __Use the appropriate button below to add or remove an admin based on your needs
 
 #===============================================================#
 
+def _bar(percent: float, width: int = 10) -> str:
+    """Simple text progress bar."""
+    try:
+        p = max(0.0, min(100.0, float(percent)))
+    except (TypeError, ValueError):
+        p = 0.0
+    filled = int(round(p / 100.0 * width))
+    return "█" * filled + "░" * (width - filled)
+
+
+def _status_dot(percent: float) -> str:
+    if percent < 70:
+        return "🟢 OK"
+    if percent < 90:
+        return "🟡 HIGH"
+    return "🔴 CRITICAL"
+
+
+def _fmt_bytes(n: float) -> str:
+    """Human-readable size from bytes."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while n >= 1024 and i < len(units) - 1:
+        n /= 1024.0
+        i += 1
+    if i == 0:
+        return f"{int(n)} {units[i]}"
+    return f"{n:.2f} {units[i]}"
+
+
+def _fmt_uptime(seconds: int) -> str:
+    days, rem = divmod(max(0, int(seconds)), 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h {minutes}m"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
 @Client.on_message(filters.command("stats"))
 async def usage_cmd(client: Client, message: Message):
-    if not message.from_user.id in client.admins:
-        return await message.reply("✗ ᴛʜɪs ᴄᴀɴ ᴏɴʟʏ ʙᴇ ᴜsᴇᴅ ʙʏ ᴀᴅᴍɪɴs!")
-    
-    reply = await message.reply("<blockquote>›› ᴇxᴛʀᴀᴄᴛɪɴɢ ᴜsᴀɢᴇ ᴅᴀᴛᴀ...</blockquote>")
+    if message.from_user.id not in client.admins:
+        return await message.reply("✗ This can only be used by admins!")
 
-    # Get total users from database
+    reply = await message.reply("📊 Collecting stats...")
+
+    from datetime import datetime
+    from config import DB_NAME, DB_URI
+    from urllib.parse import urlparse
+
+    # ── Bot ──
     try:
-        total_users_list = await client.mongodb.full_userbase()
-        total_users = len(total_users_list)
-    except Exception as e:
-        total_users = "ᴇʀʀᴏʀ"
+        total_users = len(await client.mongodb.full_userbase())
+    except Exception:
+        total_users = 0
 
-    # Bot uptime calculation
-    from datetime import datetime, timedelta
-    uptime_duration = datetime.now() - getattr(client, 'uptime', datetime.now())
-    days = uptime_duration.days
-    hours, remainder = divmod(uptime_duration.seconds, 3600)
-    minutes, _ = divmod(remainder, 60)
-    uptime_str = f"{days}ᴅ {hours}ʜ {minutes}ᴍ"
+    uptime_seconds = (datetime.now() - getattr(client, "uptime", datetime.now())).total_seconds()
+    uptime_str = _fmt_uptime(uptime_seconds)
+    admins_count = len(client.admins)
 
-    # System stats
-    total, used, free = shutil.disk_usage("/")
-    total_gb = total / (1024**3)
-    used_gb = used / (1024**3)
-    free_gb = free / (1024**3)
-    disk_percent = (used / total) * 100
-
-    ram = psutil.virtual_memory()
-    total_ram = ram.total / (1024**3)
-    used_ram = ram.used / (1024**3)
-    free_ram = ram.available / (1024**3)
-    ram_percent = ram.percent
-
-    swap = psutil.swap_memory()
-    total_swap = swap.total / (1024**3)
-    used_swap = swap.used / (1024**3)
-    free_swap = swap.free / (1024**3)
-    swap_percent = swap.percent
-
-    cpu_usage = psutil.cpu_percent(interval=1)
-
-    # Network stats with error handling
-    try:
-        net_io = psutil.net_io_counters()
-        bytes_sent = net_io.bytes_sent / (1024**2)
-        bytes_recv = net_io.bytes_recv / (1024**2)
-        network_status = "✓ ᴀᴠᴀɪʟᴀʙʟᴇ"
-        net_section = f"""<blockquote>›› **ᴜᴘʟᴏᴀᴅᴇᴅ:** `{bytes_sent:.2f} ᴍʙ`
-›› **ᴅᴏᴡɴʟᴏᴀᴅᴇᴅ:** `{bytes_recv:.2f} ᴍʙ`</blockquote>"""
-    except PermissionError:
-        network_status = "✗ ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ"
-        net_section = "<blockquote>›› **sᴛᴀᴛᴜs:** `ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ᴏɴ ᴘʀᴏᴏᴛ`</blockquote>"
-
-    # Bot process usage
     try:
         process = psutil.Process()
-        bot_cpu_usage = process.cpu_percent(interval=1)
-        bot_memory_usage = process.memory_info().rss / (1024**2)
-        bot_status = "✓ ʀᴜɴɴɪɴɢ"
+        bot_cpu = process.cpu_percent(interval=0.3)
+        bot_ram_mb = process.memory_info().rss / (1024 ** 2)
+        bot_status = "🟢 Running"
     except Exception:
-        bot_cpu_usage = 0.0
-        bot_memory_usage = 0.0
-        bot_status = "✗ ᴇʀʀᴏʀ"
+        bot_cpu, bot_ram_mb, bot_status = 0.0, 0.0, "🔴 Error"
 
-    # Status indicators based on usage levels
-    disk_status = "✓ ɴᴏʀᴍᴀʟ" if disk_percent < 80 else "✗ ʜɪɢʜ" if disk_percent < 95 else "✗ ᴄʀɪᴛɪᴄᴀʟ"
-    ram_status = "✓ ɴᴏʀᴍᴀʟ" if ram_percent < 80 else "✗ ʜɪɢʜ" if ram_percent < 95 else "✗ ᴄʀɪᴛɪᴄᴀʟ"
-    cpu_status = "✓ ɴᴏʀᴍᴀʟ" if cpu_usage < 80 else "✗ ʜɪɢʜ" if cpu_usage < 95 else "✗ ᴄʀɪᴛɪᴄᴀʟ"
+    # ── Server ──
+    total_disk, used_disk, free_disk = shutil.disk_usage("/")
+    disk_pct = (used_disk / total_disk) * 100 if total_disk else 0
 
-    # Final message construction with enhanced UI
-    msg = f"""<blockquote>✦ sʏsᴛᴇᴍ ᴜsᴀɢᴇ sᴛᴀᴛs</blockquote>
+    ram = psutil.virtual_memory()
+    ram_pct = ram.percent
+    cpu_usage = psutil.cpu_percent(interval=0.5)
 
-<blockquote><u>**≡ ʙᴏᴛ sᴛᴀᴛɪsᴛɪᴄs:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ ᴜsᴇʀs:** `{total_users}`
-›› **ʙᴏᴛ sᴛᴀᴛᴜs:** {bot_status}
-›› **ᴜᴘᴛɪᴍᴇ:** `{uptime_str}`
-›› **ᴀᴅᴍɪɴs:** `{len(client.admins)}`</blockquote>
+    try:
+        net_io = psutil.net_io_counters()
+        sent = net_io.bytes_sent
+        recv = net_io.bytes_recv
+    except Exception:
+        sent = recv = 0
 
-<blockquote><u>**≡ ᴅɪsᴋ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ:** `{total_gb:.2f} ɢʙ`
-›› **ᴜsᴇᴅ:** `{used_gb:.2f} ɢʙ` ({disk_percent:.1f}%)
-›› **ꜰʀᴇᴇ:** `{free_gb:.2f} ɢʙ`
-›› **sᴛᴀᴛᴜs:** {disk_status}</blockquote>
+    # ── MongoDB ──
+    db_host = "unknown"
+    db_used = 0
+    db_limit = 512 * 1024 * 1024  # Atlas free-tier default display
+    db_docs = 0
+    db_name = DB_NAME or "cluster0"
+    try:
+        uris = DB_URI if isinstance(DB_URI, (list, tuple)) else [DB_URI]
+        raw_uri = (uris[0] if uris else "") or getattr(client.mongodb, "uri", "") or ""
+        if raw_uri:
+            host = urlparse(raw_uri.replace("mongodb+srv://", "https://").replace("mongodb://", "https://")).hostname
+            if host:
+                db_host = host
+        # dbstats
+        stats = await client.mongodb.db.command("dbstats")
+        db_used = float(stats.get("dataSize", 0) or 0) + float(stats.get("indexSize", 0) or 0)
+        db_docs = int(stats.get("objects", 0) or 0)
+        # storageSize can be more accurate for "used"
+        if stats.get("storageSize"):
+            db_used = max(db_used, float(stats["storageSize"]))
+    except Exception:
+        pass
 
-<blockquote><u>**≡ ʀᴀᴍ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ:** `{total_ram:.2f} ɢʙ`
-›› **ᴜsᴇᴅ:** `{used_ram:.2f} ɢʙ` ({ram_percent:.1f}%)
-›› **ꜰʀᴇᴇ:** `{free_ram:.2f} ɢʙ`
-›› **sᴛᴀᴛᴜs:** {ram_status}</blockquote>
+    db_pct = (db_used / db_limit) * 100 if db_limit else 0
+    db_free = max(0, db_limit - db_used)
 
-<blockquote><u>**≡ sᴡᴀᴘ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴛᴏᴛᴀʟ:** `{total_swap:.2f} ɢʙ`
-›› **ᴜsᴇᴅ:** `{used_swap:.2f} ɢʙ` ({swap_percent:.1f}%)
-›› **ꜰʀᴇᴇ:** `{free_swap:.2f} ɢʙ`</blockquote>
+    # ── Mini Web App (Anime Index) ──
+    web_storage = 0
+    titles = web_users = searches = search_hits = requests_n = reports = visits = 0
+    pages = api_hits = 0
+    try:
+        from helper import database as adb
+        adb.init_db()
+        titles = adb.anime_col.count_documents({})
+        web_users = adb.users_col.count_documents({})
+        searches = adb.searches_col.count_documents({})
+        # sum of hit counts if present
+        try:
+            agg = list(adb.searches_col.aggregate([{"$group": {"_id": None, "hits": {"$sum": "$count"}}}]))
+            search_hits = int(agg[0]["hits"]) if agg else 0
+        except Exception:
+            search_hits = 0
+        requests_n = adb.requests_col.count_documents({})
+        reports = adb.reports_col.count_documents({})
+        # approximate storage from collection stats
+        for col_name in ("anime", "users", "searches", "requests", "reports", "counters"):
+            try:
+                cs = adb._db.command("collStats", col_name)
+                web_storage += float(cs.get("storageSize", 0) or 0) + float(cs.get("totalIndexSize", 0) or 0)
+            except Exception:
+                pass
+        # visits counters if stored
+        try:
+            vdoc = adb.counters_col.find_one({"_id": "web_visits"}) or {}
+            visits = int(vdoc.get("seq", 0) or 0)
+            pages = int(vdoc.get("pages", 0) or 0)
+            api_hits = int(vdoc.get("api", 0) or 0)
+        except Exception:
+            pass
+        if not web_users and total_users:
+            web_users = total_users
+    except Exception:
+        pass
 
-<blockquote><u>**≡ ᴄᴘᴜ & ɴᴇᴛᴡᴏʀᴋ:**</u></blockquote>
-<blockquote>›› **ᴄᴘᴜ ᴜsᴀɢᴇ:** `{cpu_usage:.2f}%` {cpu_status}
-›› **ɴᴇᴛᴡᴏʀᴋ:** {network_status}</blockquote>
-{net_section}
+    # ── Build message ──
+    msg = f"""📊 <b>Bot Stats</b>
 
-<blockquote><u>**≡ ʙᴏᴛ ʀᴇsᴏᴜʀᴄᴇ ᴜsᴀɢᴇ:**</u></blockquote>
-<blockquote>›› **ᴄᴘᴜ:** `{bot_cpu_usage:.2f}%`
-›› **ᴍᴇᴍᴏʀʏ:** `{bot_memory_usage:.2f} ᴍʙ`</blockquote>
+🤖 <b>Bot</b>
+Status: {bot_status}
+Users: <code>{total_users}</code>
+Uptime: <code>{uptime_str}</code>
+Admins: <code>{admins_count}</code>
+Bot RAM: <code>{bot_ram_mb:.2f} MB</code>  ·  Bot CPU: <code>{bot_cpu:.0f}%</code>
 
-<blockquote>**• ᴜsᴇ ᴛʜɪs ɪɴꜰᴏʀᴍᴀᴛɪᴏɴ ᴛᴏ ᴍᴏɴɪᴛᴏʀ ʏᴏᴜʀ ʙᴏᴛ's ᴘᴇʀꜰᴏʀᴍᴀɴᴄᴇ!**</blockquote>"""
+🗄 <b>Database (MongoDB)</b>
+DB #1 • active (<code>{db_name}</code>)
+Host: <code>{db_host}</code>
+Used: <code>{_fmt_bytes(db_used)}</code> / <code>{_fmt_bytes(db_limit)}</code>
+<code>{_bar(db_pct)}</code> {db_pct:.0f}%  {_status_dot(db_pct)}
+Free left: <code>{_fmt_bytes(db_free)}</code>  ·  Docs: <code>{db_docs:,}</code>
+
+🌐 <b>Mini Web App</b>
+Storage: <code>{_fmt_bytes(web_storage)}</code>
+Titles: <code>{titles}</code>  ·  Web users: <code>{web_users}</code>
+Searches: <code>{searches}</code> ({search_hits} hits)  ·  Requests: <code>{requests_n}</code>
+Reports: <code>{reports}</code>
+Visits: <code>{visits}</code>  (pages <code>{pages}</code> · api <code>{api_hits}</code>)
+
+💻 <b>Server</b>
+Disk: <code>{_fmt_bytes(used_disk)}</code> / <code>{_fmt_bytes(total_disk)}</code>  ({disk_pct:.0f}%)  {_status_dot(disk_pct)}
+<code>{_bar(disk_pct)}</code>
+RAM:  <code>{_fmt_bytes(ram.used)}</code> / <code>{_fmt_bytes(ram.total)}</code>  ({ram_pct:.0f}%)  {_status_dot(ram_pct)}
+<code>{_bar(ram_pct)}</code>
+CPU:  <code>{cpu_usage:.0f}%</code>  {_status_dot(cpu_usage)}
+Net:  Sent <code>{_fmt_bytes(sent)}</code>  ·  Recv <code>{_fmt_bytes(recv)}</code>"""
 
     await reply.edit_text(msg)
 #===============================================================#
