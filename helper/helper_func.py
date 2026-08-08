@@ -632,3 +632,55 @@ async def batch_auto_del_notification(bot_username, messages, delay_time, transf
             await notification_msg.edit_text(f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ</b>")
     except Exception as e:
         print(f"Error updating notification message: {e}")
+
+
+#===============================================================#
+# Flood-wait helpers used by plugins/start.py
+#===============================================================#
+
+async def retry_on_flood(coro_factory, max_retries: int = 5, logger=None, label: str = ""):
+    """Run an async callable, retrying on FloodWait up to max_retries times.
+
+    coro_factory: zero-arg callable that returns an awaitable
+                  (e.g. lambda: client.get_messages(...))
+    """
+    last_err = None
+    for attempt in range(max_retries + 1):
+        try:
+            return await coro_factory()
+        except FloodWait as e:
+            last_err = e
+            wait = getattr(e, "value", None) or getattr(e, "x", 5) or 5
+            if logger:
+                logger.warning(
+                    f"FloodWait {wait}s on {label or 'op'} "
+                    f"(attempt {attempt + 1}/{max_retries + 1})"
+                )
+            await asyncio.sleep(wait + 1)
+        except Exception:
+            raise
+    if last_err:
+        raise last_err
+    return None
+
+
+# Small delay between copies to reduce FloodWait when sending many files
+_COPY_PACE_SECONDS = 0.35
+
+
+async def paced_copy(msg, **kwargs):
+    """Copy a message to a user with FloodWait retry and light pacing."""
+    chat_id = kwargs.pop("chat_id", None)
+    if chat_id is None:
+        raise ValueError("paced_copy requires chat_id")
+
+    async def _do_copy():
+        return await msg.copy(chat_id=chat_id, **kwargs)
+
+    result = await retry_on_flood(
+        _do_copy,
+        max_retries=5,
+        label=f"copy:{getattr(msg, 'id', '?')}->{chat_id}",
+    )
+    await asyncio.sleep(_COPY_PACE_SECONDS)
+    return result
