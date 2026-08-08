@@ -1700,14 +1700,15 @@
 
   function searchTypeLabel(item) {
     const t = (item.media_type || "").toUpperCase();
+    const adult = !!item.isAdult;
     if (t === "MANGA") {
       const c = (item.countryOfOrigin || "").toUpperCase();
-      if (c === "KR") return "H-Manhwa";
-      if (c === "CN") return "H-Manhua";
-      if ((item.format || "").toUpperCase() === "NOVEL") return "Novel";
-      return "H-Manga";
+      if ((item.format || "").toUpperCase() === "NOVEL") return adult ? "H-Novel" : "Novel";
+      if (c === "KR") return adult ? "H-Manhwa" : "Manhwa";
+      if (c === "CN") return adult ? "H-Manhua" : "Manhua";
+      return adult ? "H-Manga" : "Manga";
     }
-    if (t === "ANIME") return "H-Anime";
+    if (t === "ANIME") return adult ? "H-Anime" : "Anime";
     return item.format || "";
   }
 
@@ -1811,7 +1812,7 @@
       });
       const empty = searchResultsGroups.children.length === 0;
       searchResultsEmpty.textContent = empty
-        ? "No pornhwa / hentai / manhwa / manhua / novel found for that title."
+        ? "No anime / manga / manhwa / manhua / novel found for that title."
         : searchResultsEmpty.textContent;
       searchResultsEmpty.classList.toggle("hidden", !empty);
     } catch (err) {
