@@ -62,6 +62,24 @@ try:
 except Exception as e:
     print(f"[anime_db] init deferred / failed: {e}")
 
+
+def _warm_catalog_cache():
+    """Pre-fill AniList cache in the background so first Home open is fast."""
+    try:
+        SOURCES["anilist"].get_trending()
+        SOURCES["anilist"].get_popular()
+        SOURCES["anilist"].get_most_popular()
+        print("[catalog] cache warmed")
+    except Exception as e:
+        print(f"[catalog] warm failed: {e}")
+
+
+try:
+    import threading
+    threading.Thread(target=_warm_catalog_cache, daemon=True).start()
+except Exception:
+    pass
+
 GENRES = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Romance", "Sci-Fi", "Horror"]
 
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
@@ -347,33 +365,39 @@ def healthz():
 def api_trending():
     page = request.args.get("page", 1, type=int)
     try:
-        resp = jsonify(SOURCES["anilist"].get_trending(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
+        data = SOURCES["anilist"].get_trending(page)
+        resp = jsonify(data)
+        resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
+        return resp
+    except Exception as e:
+        app.logger.warning("catalog/trending failed: %s", e)
+        return jsonify({"results": [], "has_next": False, "error": str(e)[:200]}), 200
 
 
 @app.get("/api/catalog/popular")
 def api_popular():
     page = request.args.get("page", 1, type=int)
     try:
-        resp = jsonify(SOURCES["anilist"].get_popular(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
+        data = SOURCES["anilist"].get_popular(page)
+        resp = jsonify(data)
+        resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
+        return resp
+    except Exception as e:
+        app.logger.warning("catalog/popular failed: %s", e)
+        return jsonify({"results": [], "has_next": False, "error": str(e)[:200]}), 200
 
 
 @app.get("/api/catalog/most-popular")
 def api_most_popular():
     page = request.args.get("page", 1, type=int)
     try:
-        resp = jsonify(SOURCES["anilist"].get_most_popular(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
+        data = SOURCES["anilist"].get_most_popular(page)
+        resp = jsonify(data)
+        resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
+        return resp
+    except Exception as e:
+        app.logger.warning("catalog/most-popular failed: %s", e)
+        return jsonify({"results": [], "has_next": False, "error": str(e)[:200]}), 200
 
 
 @app.post("/api/search/track")
