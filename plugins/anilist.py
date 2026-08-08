@@ -3,12 +3,20 @@ AniList adapter — public GraphQL API, no API key required.
 https://anilist.gitbook.io/anilist-apiv2-docs/
 """
 
+import json
+import os
+import threading
 import time
+from pathlib import Path
 
 import requests
 
 from config import ANILIST_ENDPOINT, CATALOG_CACHE_TTL
 from plugins.base import AnimeSource
+
+# Persist catalog snapshots so cold starts (Koyeb sleep/restart) still serve
+# Home instantly even before a live AniList round-trip finishes.
+_DISK_CACHE_DIR = Path(os.getenv("CATALOG_CACHE_DIR", "/tmp/nexus_catalog_cache"))
 
 SEARCH_QUERY = """
 query ($search: String, $page: Int) {
@@ -121,30 +129,54 @@ class AniListSource(AnimeSource):
 
     def __init__(self):
         self._cache: dict[str, tuple[float, dict]] = {}
+        self._lock = threading.Lock()
+        try:
+            _DISK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    def _disk_path(self, key: str) -> Path:
+        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in key)
+        return _DISK_CACHE_DIR / f"{safe}.json"
+
+    def _read_disk(self, key: str):
+        try:
+            p = self._disk_path(key)
+            if not p.is_file():
+                return None
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and "results" in data:
+                return data
+        except Exception:
+            return None
+        return None
+
+    def _write_disk(self, key: str, value: dict):
+        try:
+            p = self._disk_path(key)
+            p.write_text(json.dumps(value), encoding="utf-8")
+        except Exception:
+            pass
 
     def _post(self, query: str, variables: dict) -> dict:
-        # AniList's public API rate-limits aggressively. When several
-        # requests land in the same burst (e.g. fetching all genre
-        # thumbnails in parallel), a few commonly come back 429. Retry
-        # those with a short backoff instead of surfacing a failure for
-        # what's really just "try again in a moment".
+        # AniList rate-limits aggressively. Retry 429/5xx with backoff.
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "NexusAnimeIndex/1.0 (+https://github.com/nexus)",
+            "User-Agent": "Mozilla/5.0 (compatible; NexusAnimeIndex/1.0)",
         }
         last_exc = None
-        for attempt in range(5):
+        for attempt in range(4):
             try:
                 resp = requests.post(
                     ANILIST_ENDPOINT,
                     json={"query": query, "variables": variables},
                     headers=headers,
-                    timeout=20,
+                    timeout=12,
                 )
             except requests.RequestException as e:
                 last_exc = e
-                time.sleep(0.8 * (attempt + 1))
+                time.sleep(0.5 * (attempt + 1))
                 continue
             if resp.status_code == 429:
                 last_exc = requests.HTTPError(
@@ -152,33 +184,32 @@ class AniListSource(AnimeSource):
                 )
                 retry_after = resp.headers.get("Retry-After")
                 try:
-                    delay = float(retry_after) if retry_after else 1.0 * (attempt + 1)
+                    delay = float(retry_after) if retry_after else 1.2 * (attempt + 1)
                 except (TypeError, ValueError):
-                    delay = 1.0 * (attempt + 1)
-                time.sleep(delay)
+                    delay = 1.2 * (attempt + 1)
+                time.sleep(min(delay, 8))
                 continue
             if resp.status_code >= 500:
                 last_exc = requests.HTTPError(
                     f"{resp.status_code} server error (attempt {attempt + 1})", response=resp
                 )
-                time.sleep(0.8 * (attempt + 1))
+                time.sleep(0.6 * (attempt + 1))
                 continue
             try:
                 resp.raise_for_status()
                 payload = resp.json()
             except Exception as e:
                 last_exc = e
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.4 * (attempt + 1))
                 continue
-            # GraphQL can return 200 with an "errors" array
             if payload.get("errors") and not payload.get("data"):
                 last_exc = RuntimeError(str(payload["errors"][:1]))
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.4 * (attempt + 1))
                 continue
             data = payload.get("data")
             if data is None:
                 last_exc = RuntimeError("AniList returned empty data")
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.4 * (attempt + 1))
                 continue
             return data
         if last_exc:
@@ -267,32 +298,47 @@ class AniListSource(AnimeSource):
     # -- Extra: powers Home's Trending/Top Airing feeds (not part of the shared interface) --
 
     def _cached(self, key: str, fetch):
-        """Fresh cache → instant. Stale cache → return old data immediately
-        and refresh in a background thread so Home stays fast after TTL."""
+        """Memory → disk → live AniList. Stale entries are returned instantly
+        while a background refresh runs (stale-while-revalidate)."""
         now = time.time()
-        cached = self._cache.get(key)
+        with self._lock:
+            cached = self._cache.get(key)
         if cached:
             age = now - cached[0]
             if age < CATALOG_CACHE_TTL:
                 return cached[1]
-            # Stale-while-revalidate
+            # Stale memory — serve it and refresh in background
+            self._bg_refresh(key, fetch)
+            return cached[1]
+
+        # Cold memory: try disk snapshot from previous process
+        disk = self._read_disk(key)
+        if disk and disk.get("results"):
+            with self._lock:
+                self._cache[key] = (now - CATALOG_CACHE_TTL - 1, disk)  # mark stale
+            self._bg_refresh(key, fetch)
+            return disk
+
+        # True cold start — must hit AniList
+        value = fetch()
+        with self._lock:
+            self._cache[key] = (time.time(), value)
+        if value and value.get("results"):
+            self._write_disk(key, value)
+        return value
+
+    def _bg_refresh(self, key: str, fetch):
+        def _run():
             try:
-                import threading
-
-                def _refresh():
-                    try:
-                        value = fetch()
+                value = fetch()
+                if value and value.get("results"):
+                    with self._lock:
                         self._cache[key] = (time.time(), value)
-                    except Exception:
-                        pass
-
-                threading.Thread(target=_refresh, daemon=True).start()
-                return cached[1]
+                    self._write_disk(key, value)
             except Exception:
                 pass
-        value = fetch()
-        self._cache[key] = (time.time(), value)
-        return value
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _discover(self, sort: str, page: int = 1, query: str = DISCOVER_QUERY, cache_prefix: str = "") -> dict:
         def fetch():
