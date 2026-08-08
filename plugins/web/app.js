@@ -1655,29 +1655,54 @@
     renderSkeletonRow(trendingRow, 4);
     renderSkeletonRow(topAiringList, 4);
     renderSkeletonRow(popularGridList, 6);
+
+    async function safeCatalog(path) {
+      try {
+        return await api(path);
+      } catch (e) {
+        return { results: [], has_next: false, error: String(e && e.message || e) };
+      }
+    }
+
+    // Progressive paint: each section appears as soon as its data is ready
     try {
-      const [trendingData, popularData, mostPopularData] = await Promise.all([
-        api("/api/catalog/trending"),
-        api("/api/catalog/popular"),
-        api("/api/catalog/most-popular"),
-      ]);
-      trending = trendingData.results;
-      popular = popularData.results;
-      popularHasNext = popularData.has_next;
-      popularPage = 1;
-      mostPopular = mostPopularData.results;
-      mostPopularHasNext = mostPopularData.has_next;
-      mostPopularPage = 1;
-    } catch (err) {
+      const trendingData = await safeCatalog("/api/catalog/trending");
+      trending = Array.isArray(trendingData.results) ? trendingData.results : [];
+      renderTrending();
+    } catch (e) {
       trending = [];
+      renderTrending();
+    }
+
+    try {
+      const popularData = await safeCatalog("/api/catalog/popular");
+      popular = Array.isArray(popularData.results) ? popularData.results : [];
+      popularHasNext = !!popularData.has_next;
+      popularPage = 1;
+      renderTopAiring();
+    } catch (e) {
       popular = [];
       popularHasNext = false;
+      renderTopAiring();
+    }
+
+    try {
+      const mostPopularData = await safeCatalog("/api/catalog/most-popular");
+      mostPopular = Array.isArray(mostPopularData.results) ? mostPopularData.results : [];
+      mostPopularHasNext = !!mostPopularData.has_next;
+      mostPopularPage = 1;
+      renderPopularGrid();
+    } catch (e) {
       mostPopular = [];
       mostPopularHasNext = false;
+      renderPopularGrid();
     }
-    renderTrending();
-    renderTopAiring();
-    renderPopularGrid();
+
+    if (!trending.length && !popular.length && !mostPopular.length) {
+      if (typeof showToast === "function") {
+        showToast("AniList is temporarily unavailable. Try again in a moment.");
+      }
+    }
   }
 
   async function loadAvailable() {
