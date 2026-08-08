@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 
-from config import ANILIST_ENDPOINT, CATALOG_CACHE_TTL
+from config import ANILIST_ENDPOINT, ANILIST_PROXY, CATALOG_CACHE_TTL
 from plugins.base import AnimeSource
 
 # Persist catalog snapshots so cold starts (Koyeb sleep/restart) still serve
@@ -127,13 +127,30 @@ def _best_title(title_obj: dict) -> str:
 class AniListSource(AnimeSource):
     name = "anilist"
 
+    # Home feeds change slowly — keep them longer than generic search/details.
+    # Soft TTL: serve from memory without refresh.
+    # Hard TTL: still serve stale, but force a background refresh.
+    HOME_SOFT_TTL = max(CATALOG_CACHE_TTL, 1800)       # ≥ 30 min
+    HOME_HARD_TTL = max(CATALOG_CACHE_TTL * 4, 7200)    # ≥ 2 h (stale-ok)
+    DEFAULT_SOFT_TTL = CATALOG_CACHE_TTL                # 10 min default
+    DEFAULT_HARD_TTL = max(CATALOG_CACHE_TTL * 3, 1800)
+
     def __init__(self):
+        # key -> (stored_at, value)
         self._cache: dict[str, tuple[float, dict]] = {}
         self._lock = threading.Lock()
+        # Single-flight: one in-flight refresh per key (no stampede)
+        self._inflight: dict[str, threading.Event] = {}
         try:
             _DISK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
+
+    def _ttls_for(self, key: str) -> tuple[float, float]:
+        """Return (soft_ttl, hard_ttl) seconds for this cache key."""
+        if key.startswith(("TRENDING", "airing:", "popular-all:")):
+            return float(self.HOME_SOFT_TTL), float(self.HOME_HARD_TTL)
+        return float(self.DEFAULT_SOFT_TTL), float(self.DEFAULT_HARD_TTL)
 
     def _disk_path(self, key: str) -> Path:
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in key)
@@ -144,9 +161,13 @@ class AniListSource(AnimeSource):
             p = self._disk_path(key)
             if not p.is_file():
                 return None
-            data = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and "results" in data:
-                return data
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            # New format: {"t": epoch, "v": payload}
+            if isinstance(raw, dict) and "v" in raw and isinstance(raw["v"], dict):
+                return float(raw.get("t") or 0), raw["v"]
+            # Legacy format: bare payload
+            if isinstance(raw, dict) and "results" in raw:
+                return 0.0, raw
         except Exception:
             return None
         return None
@@ -154,17 +175,25 @@ class AniListSource(AnimeSource):
     def _write_disk(self, key: str, value: dict):
         try:
             p = self._disk_path(key)
-            p.write_text(json.dumps(value), encoding="utf-8")
+            p.write_text(
+                json.dumps({"t": time.time(), "v": value}, separators=(",", ":")),
+                encoding="utf-8",
+            )
         except Exception:
             pass
 
     def _post(self, query: str, variables: dict) -> dict:
         # AniList rate-limits aggressively. Retry 429/5xx with backoff.
+        # Optional ANILIST_PROXY routes via residential/static proxy when
+        # Koyeb datacenter IPs are blocked or throttled by Cloudflare/AniList.
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; NexusAnimeIndex/1.0)",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
+        proxies = None
+        if ANILIST_PROXY:
+            proxies = {"http": ANILIST_PROXY, "https": ANILIST_PROXY}
         last_exc = None
         for attempt in range(4):
             try:
@@ -173,6 +202,7 @@ class AniListSource(AnimeSource):
                     json={"query": query, "variables": variables},
                     headers=headers,
                     timeout=12,
+                    proxies=proxies,
                 )
             except requests.RequestException as e:
                 last_exc = e
@@ -297,48 +327,125 @@ class AniListSource(AnimeSource):
 
     # -- Extra: powers Home's Trending/Top Airing feeds (not part of the shared interface) --
 
+    def _store(self, key: str, value: dict):
+        if not value:
+            return
+        with self._lock:
+            self._cache[key] = (time.time(), value)
+        if value.get("results") is not None or value.get("title") is not None:
+            self._write_disk(key, value)
+
     def _cached(self, key: str, fetch):
-        """Memory → disk → live AniList. Stale entries are returned instantly
-        while a background refresh runs (stale-while-revalidate)."""
+        """Optimized catalog cache:
+
+        1. Fresh memory (age < soft TTL)  → return immediately
+        2. Soft-stale memory              → return + single-flight bg refresh
+        3. Disk snapshot                  → hydrate memory, return + bg refresh
+        4. Cold                           → blocking fetch, then store
+
+        Home keys use longer TTLs so Koyeb restarts / rate limits rarely
+        force users to wait on live AniList.
+        """
+        soft_ttl, hard_ttl = self._ttls_for(key)
         now = time.time()
+
         with self._lock:
             cached = self._cache.get(key)
         if cached:
             age = now - cached[0]
-            if age < CATALOG_CACHE_TTL:
+            if age < soft_ttl:
                 return cached[1]
-            # Stale memory — serve it and refresh in background
-            self._bg_refresh(key, fetch)
-            return cached[1]
+            # Soft-stale or hard-stale: still serve, refresh in background
+            if cached[1]:
+                self._bg_refresh(key, fetch)
+                return cached[1]
 
-        # Cold memory: try disk snapshot from previous process
+        # Cold memory → try disk (survives process restart)
         disk = self._read_disk(key)
-        if disk and disk.get("results"):
-            with self._lock:
-                self._cache[key] = (now - CATALOG_CACHE_TTL - 1, disk)  # mark stale
-            self._bg_refresh(key, fetch)
-            return disk
+        if disk:
+            disk_t, disk_v = disk
+            if disk_v:
+                with self._lock:
+                    # Keep original disk timestamp so soft/hard logic stays honest
+                    self._cache[key] = (disk_t or (now - soft_ttl - 1), disk_v)
+                age = now - (disk_t or 0)
+                if age >= soft_ttl:
+                    self._bg_refresh(key, fetch)
+                return disk_v
 
-        # True cold start — must hit AniList
-        value = fetch()
+        # True cold start — block on live AniList (single-flight)
+        return self._blocking_fetch(key, fetch)
+
+    def _blocking_fetch(self, key: str, fetch):
+        """Ensure only one thread hits AniList for a cold key."""
         with self._lock:
-            self._cache[key] = (time.time(), value)
-        if value and value.get("results"):
-            self._write_disk(key, value)
-        return value
+            ev = self._inflight.get(key)
+            if ev is None:
+                ev = threading.Event()
+                self._inflight[key] = ev
+                leader = True
+            else:
+                leader = False
+
+        if not leader:
+            # Wait briefly for the leader; fall through to own fetch if timeout
+            ev.wait(timeout=15)
+            with self._lock:
+                cached = self._cache.get(key)
+            if cached and cached[1]:
+                return cached[1]
+            # Leader failed — try ourselves
+            value = fetch()
+            self._store(key, value)
+            return value
+
+        try:
+            value = fetch()
+            self._store(key, value)
+            return value
+        finally:
+            with self._lock:
+                self._inflight.pop(key, None)
+            ev.set()
 
     def _bg_refresh(self, key: str, fetch):
+        """Single-flight background refresh — skips if already in-flight."""
+        with self._lock:
+            if key in self._inflight:
+                return
+            ev = threading.Event()
+            self._inflight[key] = ev
+
         def _run():
             try:
                 value = fetch()
-                if value and value.get("results"):
-                    with self._lock:
-                        self._cache[key] = (time.time(), value)
-                    self._write_disk(key, value)
+                if value:
+                    self._store(key, value)
             except Exception:
                 pass
+            finally:
+                with self._lock:
+                    self._inflight.pop(key, None)
+                ev.set()
 
-        threading.Thread(target=_run, daemon=True).start()
+        threading.Thread(target=_run, daemon=True, name=f"anilist-refresh:{key[:24]}").start()
+
+    def warm_home(self, pages: int = 2):
+        """Preload Home feeds (and a couple of pages) for instant first paint."""
+        pages = max(1, min(int(pages or 1), 3))
+        for p in range(1, pages + 1):
+            try:
+                self.get_trending(p)
+            except Exception:
+                pass
+            try:
+                self.get_popular(p)
+            except Exception:
+                pass
+            try:
+                self.get_most_popular(p)
+            except Exception:
+                pass
 
     def _discover(self, sort: str, page: int = 1, query: str = DISCOVER_QUERY, cache_prefix: str = "") -> dict:
         def fetch():
