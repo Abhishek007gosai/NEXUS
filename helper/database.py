@@ -1220,8 +1220,15 @@ def list_available() -> list[dict]:
 
 
 def search_local(query: str) -> list[dict]:
+    """Search local library by title or alt_title (case-insensitive)."""
+    q = (query or "").strip()
+    if not q:
+        return []
+    # Match against title OR alt_title so alt names / original-language
+    # titles still hit.
+    regex = {"$regex": q, "$options": "i"}
     docs = (
-        anime_col.find({"title": {"$regex": query, "$options": "i"}})
+        anime_col.find({"$or": [{"title": regex}, {"alt_title": regex}]})
         .collation({"locale": "en", "strength": 2})
         .sort("title", ASCENDING)
     )
