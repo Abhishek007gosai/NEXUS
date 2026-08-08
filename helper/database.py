@@ -3,23 +3,57 @@ from datetime import datetime, timedelta
 import time
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
-from config import WEB_DB_URI, WEB_DB_NAME
+from config import DB_URI, DB_NAME
+
+
+def _normalize_uris(uri) -> list:
+    """Accept a string or list of MongoDB URIs and return a clean list."""
+    if isinstance(uri, (list, tuple)):
+        return [u.strip() for u in uri if u and str(u).strip()]
+    if isinstance(uri, str) and uri.strip():
+        return [u for u in uri.split() if u.strip()]
+    return []
+
+
+def _pick_working_uri(uris: list) -> str:
+    """Try each URI with a short sync ping; return the first that works (or first/fallback)."""
+    for u in uris:
+        try:
+            c = MongoClient(u, serverSelectionTimeoutMS=5000)
+            c.admin.command("ping")
+            c.close()
+            return u
+        except Exception:
+            continue
+    return uris[0] if uris else "mongodb://localhost:27017"
+
+
+def _connect_motor(uris: list, db_name: str):
+    """Pick a working URI then return (motor client, db, used_uri)."""
+    used = _pick_working_uri(uris)
+    client = motor.motor_asyncio.AsyncIOMotorClient(used, serverSelectionTimeoutMS=8000)
+    return client, client[db_name], used
+
 
 class MongoDB:
     _instances = {}
 
-    def __new__(cls, uri: str, db_name: str):
-        if (uri, db_name) not in cls._instances:
+    def __new__(cls, uri, db_name: str):
+        uris = _normalize_uris(uri)
+        key = (tuple(uris) if uris else ("",), db_name)
+        if key not in cls._instances:
             instance = super().__new__(cls)
-            instance.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
-            instance.db = instance.client[db_name]
+            client, db, used = _connect_motor(uris, db_name)
+            instance.client = client
+            instance.db = db
+            instance.uri = used
             instance.user_data = instance.db["users"]
             instance.channel_data = instance.db["channels"]
             instance.premium_users = instance.db['pros']
             instance.fsub_status = instance.db['fsub_status']  # New collection for fsub status tracking
             instance.request_sub = instance.db['request_sub']  # New collection for join request tracking
-            cls._instances[(uri, db_name)] = instance
-        return cls._instances[(uri, db_name)]
+            cls._instances[key] = instance
+        return cls._instances[key]
 
     async def set_channels(self, channels: list[int]):
         await self.user_data.update_one(
@@ -750,21 +784,23 @@ class MongoDB:
 
 class LinkShareDB:
     """
-    Separate MongoDB connection dedicated to the Link Share Menu.
-    Kept fully independent from the file-store MongoDB class above so the
-    two features can point at two different MongoDB databases (or even
-    two different clusters).
+    Link Share Menu storage. Uses the same DB_URI / DB_NAME as the main bot
+    (with multi-URI failover).
     """
     _instances = {}
 
-    def __new__(cls, uri: str, db_name: str):
-        if (uri, db_name) not in cls._instances:
+    def __new__(cls, uri, db_name: str):
+        uris = _normalize_uris(uri)
+        key = (tuple(uris) if uris else ("",), db_name)
+        if key not in cls._instances:
             instance = super().__new__(cls)
-            instance.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
-            instance.db = instance.client[db_name]
+            client, db, used = _connect_motor(uris, db_name)
+            instance.client = client
+            instance.db = db
+            instance.uri = used
             instance.link_share_data = instance.db["link_share_data"]
-            cls._instances[(uri, db_name)] = instance
-        return cls._instances[(uri, db_name)]
+            cls._instances[key] = instance
+        return cls._instances[key]
 
     # ===============================================================
     # LINK SHARE MENU FUNCTIONS
@@ -839,7 +875,7 @@ class LinkShareDB:
 
 
 # =============================================================================
-# Anime Index / Mini App (sync pymongo — separate WEB_DB_URI / WEB_DB_NAME)
+# Anime Index / Mini App (sync pymongo — same DB_URI / DB_NAME, multi-URI failover)
 # =============================================================================
 
 _client = None
@@ -863,9 +899,10 @@ def _ensure():
     global _client, _db
     if _client is not None:
         return
-    uri = WEB_DB_URI or "mongodb://localhost:27017"
-    _client = MongoClient(uri, serverSelectionTimeoutMS=8000)
-    _db = _client[WEB_DB_NAME]
+    uris = _normalize_uris(DB_URI)
+    used = _pick_working_uri(uris)
+    _client = MongoClient(used, serverSelectionTimeoutMS=8000)
+    _db = _client[DB_NAME]
 
 
 anime_col = _LazyCol("anime")
