@@ -485,24 +485,47 @@ class AniListSource(AnimeSource):
         if m.get("isAdult"):
             return True
         genres = {str(g).strip().lower() for g in (m.get("genres") or [])}
-        return bool(genres & {"hentai", "yaoi", "yuri"})
+        # Include common adult-adjacent genres so mis-tagged pornhwa / hentai
+        # (and novels) still appear in search.
+        return bool(genres & {"hentai", "yaoi", "yuri", "ecchi"})
 
     def search(self, query: str, page: int = 1) -> dict:
-        data = self._post(SEARCH_QUERY, {"search": query, "page": page})
-        media = data["Page"]["media"]
-        results = [self._map_search_item(m, "ANIME") for m in media]
-        # Fallback: broader search if adult-only returned nothing
-        if not results:
-            try:
-                broad = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
-                for m in broad["Page"]["media"]:
-                    if self._is_adult_result(m):
-                        results.append(self._map_search_item(m, "ANIME"))
-                has_next = broad["Page"]["pageInfo"]["hasNextPage"]
-            except Exception:
-                has_next = data["Page"]["pageInfo"]["hasNextPage"]
-        else:
+        """Search adult anime (hentai). Always merges isAdult:true results
+        with a broader search filtered client-side so mis-tagged titles
+        still surface.
+        """
+        results = []
+        seen = set()
+        has_next = False
+
+        try:
+            data = self._post(SEARCH_QUERY, {"search": query, "page": page})
+            for m in data["Page"]["media"]:
+                mid = m["id"]
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                results.append(self._map_search_item(m, "ANIME"))
             has_next = data["Page"]["pageInfo"]["hasNextPage"]
+        except Exception:
+            pass
+
+        # Always also run the broader search so titles that AniList did not
+        # flag isAdult (or that use Ecchi / other adult genres) still appear.
+        try:
+            broad = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
+            for m in broad["Page"]["media"]:
+                if not self._is_adult_result(m):
+                    continue
+                mid = m["id"]
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                results.append(self._map_search_item(m, "ANIME"))
+            has_next = has_next or broad["Page"]["pageInfo"]["hasNextPage"]
+        except Exception:
+            pass
+
         return {"results": results, "has_next": has_next}
 
     def search_all(self, query: str, page: int = 1) -> dict:
@@ -783,22 +806,44 @@ class AniListSource(AnimeSource):
         return self.get_airing_manga(page)
 
     def search_manga(self, query: str, page: int = 1) -> dict:
-        data = self._post(MANGA_SEARCH_QUERY, {"search": query, "page": page})
-        media = data["Page"]["media"]
-        results = [self._map_search_item(m, "MANGA") for m in media]
-        # Fallback: broader search if adult-only returned nothing (covers
-        # manhwa/manhua/novels that AniList did not flag isAdult).
-        if not results:
-            try:
-                broad = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
-                for m in broad["Page"]["media"]:
-                    if self._is_adult_result(m):
-                        results.append(self._map_search_item(m, "MANGA"))
-                has_next = broad["Page"]["pageInfo"]["hasNextPage"]
-            except Exception:
-                has_next = data["Page"]["pageInfo"]["hasNextPage"]
-        else:
+        """Search adult manga / manhwa / manhua / novels (pornhwa).
+
+        Always merges isAdult:true results with a broader search filtered
+        for adult / Ecchi / Yaoi / Yuri so mis-tagged titles still appear.
+        Covers H-Manga, H-Manhwa, H-Manhua and Novels (AniList format NOVEL).
+        """
+        results = []
+        seen = set()
+        has_next = False
+
+        try:
+            data = self._post(MANGA_SEARCH_QUERY, {"search": query, "page": page})
+            for m in data["Page"]["media"]:
+                mid = m["id"]
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                results.append(self._map_search_item(m, "MANGA"))
             has_next = data["Page"]["pageInfo"]["hasNextPage"]
+        except Exception:
+            pass
+
+        # Always run broader search so manhwa/manhua/novels that AniList
+        # did not flag isAdult still surface when they have adult genres.
+        try:
+            broad = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
+            for m in broad["Page"]["media"]:
+                if not self._is_adult_result(m):
+                    continue
+                mid = m["id"]
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                results.append(self._map_search_item(m, "MANGA"))
+            has_next = has_next or broad["Page"]["pageInfo"]["hasNextPage"]
+        except Exception:
+            pass
+
         return {"results": results, "has_next": has_next}
 
     def browse_genre(self, genre: str, page: int = 1, media_type: str = "ANIME") -> dict:
