@@ -128,22 +128,62 @@ class AniListSource(AnimeSource):
         # thumbnails in parallel), a few commonly come back 429. Retry
         # those with a short backoff instead of surfacing a failure for
         # what's really just "try again in a moment".
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "NexusAnimeIndex/1.0 (+https://github.com/nexus)",
+        }
         last_exc = None
-        for attempt in range(3):
-            resp = requests.post(
-                ANILIST_ENDPOINT,
-                json={"query": query, "variables": variables},
-                timeout=10,
-            )
+        for attempt in range(5):
+            try:
+                resp = requests.post(
+                    ANILIST_ENDPOINT,
+                    json={"query": query, "variables": variables},
+                    headers=headers,
+                    timeout=20,
+                )
+            except requests.RequestException as e:
+                last_exc = e
+                time.sleep(0.8 * (attempt + 1))
+                continue
             if resp.status_code == 429:
-                last_exc = requests.HTTPError(f"429 rate limited (attempt {attempt + 1})", response=resp)
+                last_exc = requests.HTTPError(
+                    f"429 rate limited (attempt {attempt + 1})", response=resp
+                )
                 retry_after = resp.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after else 0.6 * (attempt + 1)
+                try:
+                    delay = float(retry_after) if retry_after else 1.0 * (attempt + 1)
+                except (TypeError, ValueError):
+                    delay = 1.0 * (attempt + 1)
                 time.sleep(delay)
                 continue
-            resp.raise_for_status()
-            return resp.json()["data"]
-        raise last_exc
+            if resp.status_code >= 500:
+                last_exc = requests.HTTPError(
+                    f"{resp.status_code} server error (attempt {attempt + 1})", response=resp
+                )
+                time.sleep(0.8 * (attempt + 1))
+                continue
+            try:
+                resp.raise_for_status()
+                payload = resp.json()
+            except Exception as e:
+                last_exc = e
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            # GraphQL can return 200 with an "errors" array
+            if payload.get("errors") and not payload.get("data"):
+                last_exc = RuntimeError(str(payload["errors"][:1]))
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            data = payload.get("data")
+            if data is None:
+                last_exc = RuntimeError("AniList returned empty data")
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return data
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("AniList request failed")
 
     def search(self, query: str, page: int = 1) -> dict:
         data = self._post(SEARCH_QUERY, {"search": query, "page": page})
@@ -227,12 +267,31 @@ class AniListSource(AnimeSource):
     # -- Extra: powers Home's Trending/Top Airing feeds (not part of the shared interface) --
 
     def _cached(self, key: str, fetch):
+        """Fresh cache → instant. Stale cache → return old data immediately
+        and refresh in a background thread so Home stays fast after TTL."""
         now = time.time()
         cached = self._cache.get(key)
-        if cached and now - cached[0] < CATALOG_CACHE_TTL:
-            return cached[1]
+        if cached:
+            age = now - cached[0]
+            if age < CATALOG_CACHE_TTL:
+                return cached[1]
+            # Stale-while-revalidate
+            try:
+                import threading
+
+                def _refresh():
+                    try:
+                        value = fetch()
+                        self._cache[key] = (time.time(), value)
+                    except Exception:
+                        pass
+
+                threading.Thread(target=_refresh, daemon=True).start()
+                return cached[1]
+            except Exception:
+                pass
         value = fetch()
-        self._cache[key] = (now, value)
+        self._cache[key] = (time.time(), value)
         return value
 
     def _discover(self, sort: str, page: int = 1, query: str = DISCOVER_QUERY, cache_prefix: str = "") -> dict:
