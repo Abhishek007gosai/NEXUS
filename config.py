@@ -12,7 +12,7 @@ PORT = int(os.getenv("PORT", "5010"))
 # Telegram
 # ──────────────────────────────────────────────
 SESSION = os.getenv("SESSION", "Kaya")
-TOKEN = os.getenv("TOKEN", "") or os.getenv("BOT_TOKEN", "")
+TOKEN = os.getenv("TOKEN", "")
 API_ID = int(os.getenv("API_ID", "29245477"))
 API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
 WORKERS = int(os.getenv("WORKERS", "5"))
@@ -35,8 +35,8 @@ DB_NAME = os.getenv("DB_NAME", "cluster0")
 # ──────────────────────────────────────────────
 # Anime Index branding
 # ──────────────────────────────────────────────
-BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
-BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
+BRAND_NAME = os.getenv("BRAND_NAME", "ETERNALS")
+BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ETERNALS")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 # Custom URL for the "Open Index" button (falls back to WEBAPP_URL if empty)
 INDEX_URL = os.getenv("INDEX_URL", "").rstrip("/")
@@ -67,7 +67,7 @@ SHORT_TUT = os.getenv("SHORT_TUT", "")
 # ──────────────────────────────────────────────
 # Channels / Force Sub / Bot settings
 # ──────────────────────────────────────────────
-DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1002497924209"))
+DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1003928914916"))
 FSUBS = [[-1002369123167, True, 5]]
 AUTO_DEL = os.getenv("AUTO_DEL", "300")
 DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
