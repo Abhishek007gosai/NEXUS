@@ -137,6 +137,61 @@ async def start_command(client: Client, message: Message):
             original_payload = text.split(" ", 1)[1]
             base64_string = original_payload
 
+            # ── Link Share deep-link: /start ls_<token> ──────────────────
+            # Generates a fresh invite link for the channel stored against
+            # the token and sends it to the user. Must run before base64
+            # decoding, otherwise the token is treated as a file-store
+            # payload and fails with "Invalid or expired link."
+            if original_payload.startswith("ls_"):
+                token = original_payload[3:]  # strip "ls_"
+                token_data = await client.linkshare_db.get_link_share_token(token)
+                if not token_data:
+                    return await message.reply("⚠️ Invalid or expired link.")
+
+                channel_id = token_data.get("channel_id")
+                is_request = bool(token_data.get("is_request", False))
+                expires_at = token_data.get("expires_at")
+
+                if expires_at:
+                    try:
+                        if isinstance(expires_at, str):
+                            expires_at = datetime.fromisoformat(expires_at)
+                        if datetime.utcnow() > expires_at:
+                            await client.linkshare_db.delete_link_share_token(token)
+                            return await message.reply("⚠️ Invalid or expired link.")
+                    except Exception:
+                        pass
+
+                channel_info = await client.linkshare_db.get_link_share_channel(channel_id)
+                channel_name = (channel_info or {}).get("name", str(channel_id))
+
+                try:
+                    invite = await client.create_chat_invite_link(
+                        chat_id=channel_id,
+                        creates_join_request=is_request,
+                    )
+                    invite_link = invite.invite_link
+                except Exception as e:
+                    client.LOGGER(__name__, client.name).warning(
+                        f"Link Share invite creation failed for {channel_id}: {e}"
+                    )
+                    return await message.reply(
+                        f"⚠️ Unable to generate invite link for <b>{channel_name}</b>.\n"
+                        "Make sure the bot is an admin with invite permissions."
+                    )
+
+                link_type = "Request" if is_request else "Normal"
+                await message.reply(
+                    f"<b>📢 {link_type} Invite Link</b>\n\n"
+                    f"<b>Channel:</b> {channel_name}\n\n"
+                    f"<a href='{invite_link}'>{invite_link}</a>",
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton(f"Join {channel_name}", url=invite_link)]]
+                    ),
+                    disable_web_page_preview=True,
+                )
+                return
+
             is_short_link = False
             if base64_string.startswith("yu3elk"):
                 base64_string = base64_string[6:-1]
