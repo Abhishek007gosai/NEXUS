@@ -844,7 +844,8 @@ class LinkShareDB:
                 "token": token,
                 "channel_id": channel_id,
                 "is_request": is_request,
-                "expires_at": expires_at
+                "expires_at": expires_at,
+                "created_at": datetime.utcnow(),
             }},
             upsert=True
         )
@@ -857,6 +858,24 @@ class LinkShareDB:
 
     async def delete_link_share_token(self, token: str):
         await self.link_share_data.delete_one({"_id": f"link_share_token:{token}"})
+
+    async def update_link_share_token_expiry(self, token: str, expires_at):
+        """Update expires_at on an existing token document."""
+        await self.link_share_data.update_one(
+            {"_id": f"link_share_token:{token}"},
+            {"$set": {"expires_at": expires_at}},
+        )
+
+    async def cleanup_expired_link_share_tokens(self) -> int:
+        """Delete all expired link-share token documents. Returns count removed."""
+        now = datetime.utcnow()
+        result = await self.link_share_data.delete_many(
+            {
+                "_id": {"$regex": r"^link_share_token:"},
+                "expires_at": {"$ne": None, "$lte": now},
+            }
+        )
+        return getattr(result, "deleted_count", 0) or 0
 
     # Persistent per-channel Link Share tokens (one stable token per
     # channel per kind, so the Normal/Request Links pages can show a
@@ -871,6 +890,35 @@ class LinkShareDB:
             {"_id": "link_share_channel_tokens"},
             {"$set": {f"tokens.{channel_id}:{kind}": token}},
             upsert=True
+        )
+
+    async def clear_link_share_channel_token(self, channel_id: int, kind: str = None):
+        """Remove the stable token mapping for a channel (one kind or both)."""
+        data = await self.link_share_data.find_one({"_id": "link_share_channel_tokens"})
+        tokens = data.get("tokens", {}) if data else {}
+        if kind is None:
+            tokens.pop(f"{channel_id}:normal", None)
+            tokens.pop(f"{channel_id}:request", None)
+        else:
+            tokens.pop(f"{channel_id}:{kind}", None)
+        await self.link_share_data.update_one(
+            {"_id": "link_share_channel_tokens"},
+            {"$set": {"tokens": tokens}},
+            upsert=True,
+        )
+
+    async def get_link_share_token_ttl(self) -> int:
+        """Global Link Share token TTL in minutes (0 = never expire)."""
+        data = await self.link_share_data.find_one({"_id": "link_share_settings"})
+        if data and "token_ttl_minutes" in data:
+            return int(data["token_ttl_minutes"])
+        return 0
+
+    async def set_link_share_token_ttl(self, minutes: int):
+        await self.link_share_data.update_one(
+            {"_id": "link_share_settings"},
+            {"$set": {"token_ttl_minutes": max(0, int(minutes))}},
+            upsert=True,
         )
 
 
