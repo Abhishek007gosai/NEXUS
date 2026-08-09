@@ -219,12 +219,14 @@ async def start_command(client: Client, message: Message):
                     chat_id,
                     "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
                     reply_markup=button,
+                    protect_content=True,
                 )
 
                 note_msg = await client.send_message(
                     chat_id,
                     "<blockquote><b>Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ɪɴ ғᴇᴡ ᴍɪɴᴜᴛᴇs. "
                     "Iғ ᴛʜᴇ ʟɪɴᴋ ɪs ᴇxᴘɪʀᴇᴅ so ᴛʀʏ ᴀɢᴀɪɴ.</b></blockquote>",
+                    protect_content=True,
                 )
 
                 async def _delete_after(msg, delay: int):
