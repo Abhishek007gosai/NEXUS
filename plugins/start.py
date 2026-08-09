@@ -138,36 +138,51 @@ async def start_command(client: Client, message: Message):
             base64_string = original_payload
 
             # ── Link Share deep-link: /start ls_<token> ──────────────────
-            # Generates a fresh invite link for the channel stored against
-            # the token and sends it to the user. Must run before base64
-            # decoding, otherwise the token is treated as a file-store
-            # payload and fails with "Invalid or expired link."
+            # Kafka-style: "HERE IS YOUR LINK" + green CLICK HERE button
+            # + auto-delete note. Must run before base64 file-store decode.
             if original_payload.startswith("ls_"):
                 token = original_payload[3:]  # strip "ls_"
                 token_data = await client.linkshare_db.get_link_share_token(token)
                 if not token_data:
-                    return await message.reply("⚠️ Invalid or expired link.")
+                    return await message.reply(
+                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
+                    )
 
                 channel_id = token_data.get("channel_id")
                 is_request = bool(token_data.get("is_request", False))
                 expires_at = token_data.get("expires_at")
 
-                if expires_at:
+                # Normalize + enforce deep-link token expiry
+                exp_dt = None
+                if expires_at is not None:
                     try:
                         if isinstance(expires_at, str):
-                            expires_at = datetime.fromisoformat(expires_at)
-                        if datetime.utcnow() > expires_at:
-                            await client.linkshare_db.delete_link_share_token(token)
-                            return await message.reply("⚠️ Invalid or expired link.")
+                            exp_dt = datetime.fromisoformat(expires_at)
+                        elif isinstance(expires_at, datetime):
+                            exp_dt = expires_at
+                    except Exception:
+                        exp_dt = None
+
+                if exp_dt is not None and datetime.utcnow() > exp_dt:
+                    await client.linkshare_db.delete_link_share_token(token)
+                    kind = "request" if is_request else "normal"
+                    try:
+                        await client.linkshare_db.clear_link_share_channel_token(channel_id, kind)
                     except Exception:
                         pass
+                    return await message.reply(
+                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
+                    )
 
-                channel_info = await client.linkshare_db.get_link_share_channel(channel_id)
-                channel_name = (channel_info or {}).get("name", str(channel_id))
+                # Invite link expires in 5 minutes (Kafka behaviour)
+                invite_expire = datetime.utcnow() + timedelta(minutes=5)
+                if exp_dt is not None and exp_dt < invite_expire:
+                    invite_expire = exp_dt
 
                 try:
                     invite = await client.create_chat_invite_link(
                         chat_id=channel_id,
+                        expire_date=invite_expire,
                         creates_join_request=is_request,
                     )
                     invite_link = invite.invite_link
@@ -176,20 +191,52 @@ async def start_command(client: Client, message: Message):
                         f"Link Share invite creation failed for {channel_id}: {e}"
                     )
                     return await message.reply(
-                        f"⚠️ Unable to generate invite link for <b>{channel_name}</b>.\n"
-                        "Make sure the bot is an admin with invite permissions."
+                        "<b><blockquote expandable>Failed to generate invite link. Please try again later.</blockquote></b>"
                     )
 
-                link_type = "Request" if is_request else "Normal"
-                await message.reply(
-                    f"<b>📢 {link_type} Invite Link</b>\n\n"
-                    f"<b>Channel:</b> {channel_name}\n\n"
-                    f"<a href='{invite_link}'>{invite_link}</a>",
-                    reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton(f"Join {channel_name}", url=invite_link)]]
-                    ),
-                    disable_web_page_preview=True,
+                # Brief wait (Kafka UX)
+                wait_msg = await message.reply(
+                    "<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>"
                 )
+                await asyncio.sleep(0.5)
+                try:
+                    await wait_msg.delete()
+                except Exception:
+                    pass
+
+                # Green "• CLICK HERE •" button (ButtonStyle.SUCCESS)
+                button = InlineKeyboardMarkup(
+                    [[styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="success", url=invite_link)]]
+                )
+
+                link_share_msg = await message.reply(
+                    "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
+                    reply_markup=button,
+                )
+
+                note_msg = await message.reply(
+                    "<blockquote><b>Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ɪɴ ғᴇᴡ ᴍɪɴᴜᴛᴇs. "
+                    "Iғ ᴛʜᴇ ʟɪɴᴋ ɪs ᴇxᴘɪʀᴇᴅ so ᴛʀʏ ᴀɢᴀɪɴ.</b></blockquote>"
+                )
+
+                async def _delete_after(msg, delay: int):
+                    await asyncio.sleep(delay)
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+
+                async def _revoke_invite_after(delay: int, chat_id: int, link: str):
+                    await asyncio.sleep(delay)
+                    try:
+                        await client.revoke_chat_invite_link(chat_id, link)
+                    except Exception:
+                        pass
+
+                # Note: 5 min · Link message: 15 min · Invite: revoke after 5 min
+                asyncio.create_task(_delete_after(note_msg, 300))
+                asyncio.create_task(_delete_after(link_share_msg, 900))
+                asyncio.create_task(_revoke_invite_after(300, channel_id, invite_link))
                 return
 
             is_short_link = False

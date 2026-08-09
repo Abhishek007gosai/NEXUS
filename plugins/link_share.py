@@ -1,6 +1,6 @@
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ChatMemberStatus
@@ -16,6 +16,61 @@ def is_admin(client, user_id):
     return user_id == OWNER_ID or user_id in client.admins
 
 
+def _parse_expires_at(value):
+    """Normalize expires_at from DB (datetime | iso str | None) → datetime | None."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except Exception:
+            return None
+    return None
+
+
+def _is_expired(expires_at) -> bool:
+    exp = _parse_expires_at(expires_at)
+    if exp is None:
+        return False
+    return datetime.utcnow() > exp
+
+
+async def _resolve_token_ttl(client) -> int:
+    """Effective TTL in minutes from DB (0 = never expire)."""
+    try:
+        ttl = await client.linkshare_db.get_link_share_token_ttl()
+        if ttl is not None:
+            return max(0, int(ttl))
+    except Exception:
+        pass
+    return 0
+
+
+async def _compute_expires_at(client):
+    """Return expires_at datetime or None (never) based on configured TTL."""
+    ttl = await _resolve_token_ttl(client)
+    if ttl <= 0:
+        return None
+    return datetime.utcnow() + timedelta(minutes=ttl)
+
+
+def _format_expires(expires_at) -> str:
+    exp = _parse_expires_at(expires_at)
+    if exp is None:
+        return "Never"
+    if _is_expired(exp):
+        return f"Expired ({exp.strftime('%Y-%m-%d %H:%M')} UTC)"
+    remaining = exp - datetime.utcnow()
+    mins = int(remaining.total_seconds() // 60)
+    if mins < 60:
+        left = f"{mins}m left"
+    elif mins < 1440:
+        left = f"{mins // 60}h {mins % 60}m left"
+    else:
+        left = f"{mins // 1440}d left"
+    return f"{exp.strftime('%Y-%m-%d %H:%M')} UTC ({left})"
 
 
 async def _edit_query_message(query, text, **kwargs):
@@ -24,20 +79,25 @@ async def _edit_query_message(query, text, **kwargs):
         return await safe_edit_caption(query.message, text, **kwargs)
     return await safe_edit_text(query.message, text, **kwargs)
 
+
 async def _show_link_share_home(client, query):
     """Render the Link Share home screen in the Kafka-style layout."""
+    ttl = await _resolve_token_ttl(client)
+    ttl_label = "Never" if ttl <= 0 else f"{ttl} min"
     buttons = [
         [styled_button("ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ", style="primary", callback_data="ls_add"),
          styled_button("ᴅᴇʟᴇᴛᴇ ᴄʜᴀɴɴᴇʟ", style="primary", callback_data="ls_delete")],
         [styled_button("ɴᴏʀᴍᴀʟ", style="primary", callback_data="ls_normal"),
          styled_button("ʀᴇǫᴜᴇsᴛ", style="primary", callback_data="ls_request")],
         [styled_button("ᴄʜᴀɴɴᴇʟs ʟɪsᴛ", style="primary", callback_data="ls_list")],
+        [styled_button("ᴛᴏᴋᴇɴ sᴇᴛᴛɪɴɢs", style="primary", callback_data="ls_token_settings")],
         [styled_button("ʙᴀᴄᴋ", style="primary", callback_data="settings")]
     ]
     markup = InlineKeyboardMarkup(buttons)
     caption = (
         "<b>ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ</b>\n\n"
-        "<blockquote>In this you can change and view your channels...!!</blockquote>"
+        "<blockquote>In this you can change and view your channels...!!</blockquote>\n\n"
+        f"<b>Token TTL:</b> <code>{ttl_label}</code>"
     )
     photo = getattr(client, "messages", {}).get("START_PHOTO")
     try:
@@ -114,21 +174,55 @@ async def link_share_delete_confirm(client, query):
     if not is_admin(client, query.from_user.id):
         return await query.answer("Only admins can delete channels!", show_alert=True)
     channel_id = int(query.data.split(":", 1)[1])
+    # Invalidate any stable tokens for this channel
+    for kind in ("normal", "request"):
+        old = await client.linkshare_db.get_link_share_channel_token(channel_id, kind)
+        if old:
+            await client.linkshare_db.delete_link_share_token(old)
+    await client.linkshare_db.clear_link_share_channel_token(channel_id)
     removed = await client.linkshare_db.remove_link_share_channel(channel_id)
     await query.answer("Channel deleted." if removed else "Channel not found.", show_alert=True)
     await _show_link_share_home(client, query)
 
 
 async def _get_channel_link(client, channel_id: int, is_request: bool) -> str:
-    """Get (or create) a permanent Link Share token for a channel and
-    build its deep link. The token never changes once created, so the
-    button for a given channel always points to the same URL."""
+    """Get (or create) a Link Share token for a channel and build its deep link.
+
+    - Reuses the stable per-channel token while it is still valid.
+    - If the stored token is missing or expired, issues a new one using the
+      configured TTL (0 = never expire) and updates the channel mapping.
+    """
     kind = "request" if is_request else "normal"
     token = await client.linkshare_db.get_link_share_channel_token(channel_id, kind)
-    if not token:
-        token = secrets.token_urlsafe(16)
-        await client.linkshare_db.create_link_share_token(token, channel_id, is_request, None)
-        await client.linkshare_db.set_link_share_channel_token(channel_id, kind, token)
+
+    if token:
+        token_data = await client.linkshare_db.get_link_share_token(token)
+        if token_data and not _is_expired(token_data.get("expires_at")):
+            return f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
+        # Stale / expired mapping → drop it so we can mint a fresh token
+        if token_data:
+            await client.linkshare_db.delete_link_share_token(token)
+        await client.linkshare_db.clear_link_share_channel_token(channel_id, kind)
+
+    token = secrets.token_urlsafe(16)
+    expires_at = await _compute_expires_at(client)
+    await client.linkshare_db.create_link_share_token(token, channel_id, is_request, expires_at)
+    await client.linkshare_db.set_link_share_channel_token(channel_id, kind, token)
+    return f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
+
+
+async def _regenerate_channel_token(client, channel_id: int, kind: str) -> str:
+    """Force-mint a new token for a channel/kind and return the deep link."""
+    old = await client.linkshare_db.get_link_share_channel_token(channel_id, kind)
+    if old:
+        await client.linkshare_db.delete_link_share_token(old)
+    await client.linkshare_db.clear_link_share_channel_token(channel_id, kind)
+
+    is_request = kind == "request"
+    token = secrets.token_urlsafe(16)
+    expires_at = await _compute_expires_at(client)
+    await client.linkshare_db.create_link_share_token(token, channel_id, is_request, expires_at)
+    await client.linkshare_db.set_link_share_channel_token(channel_id, kind, token)
     return f"https://t.me/{client.username}?start={LINK_SHARE_PREFIX}{token}"
 
 
@@ -216,6 +310,169 @@ async def link_share_list(client, query):
     if not channels:
         text = "<b>No Link Share channels configured.</b>"
     else:
-        text = "<b>Link Share Channels</b>\n\n" + "\n\n".join(f"• <b>{data.get('name', 'Unknown')}</b>\n  <code>{cid}</code>" for cid, data in channels.items())
-    await _edit_query_message(query, text, reply_markup=InlineKeyboardMarkup([[styled_button("back", style="primary", callback_data="link_share")]]))
+        lines = []
+        for cid, data in channels.items():
+            name = data.get("name", "Unknown")
+            parts = [f"• <b>{name}</b>\n  <code>{cid}</code>"]
+            for kind, label in (("normal", "Normal"), ("request", "Request")):
+                tok = await client.linkshare_db.get_link_share_channel_token(int(cid), kind)
+                if not tok:
+                    parts.append(f"  {label}: <i>no token</i>")
+                    continue
+                td = await client.linkshare_db.get_link_share_token(tok)
+                if not td:
+                    parts.append(f"  {label}: <i>missing</i>")
+                else:
+                    parts.append(f"  {label}: {_format_expires(td.get('expires_at'))}")
+            lines.append("\n".join(parts))
+        text = "<b>Link Share Channels</b>\n\n" + "\n\n".join(lines)
+    await _edit_query_message(
+        query,
+        text,
+        reply_markup=InlineKeyboardMarkup([[styled_button("back", style="primary", callback_data="link_share")]]),
+    )
     await query.answer()
+
+
+# ──────────────────────────────────────────────────────────────
+# Token settings: TTL + regenerate
+# ──────────────────────────────────────────────────────────────
+
+@Client.on_callback_query(filters.regex(r"^ls_token_settings$"))
+async def link_share_token_settings(client, query):
+    if not is_admin(client, query.from_user.id):
+        return await query.answer("Only admins can access this!", show_alert=True)
+    await query.answer()
+    ttl = await _resolve_token_ttl(client)
+    ttl_label = "Never (permanent)" if ttl <= 0 else f"{ttl} minutes"
+    text = (
+        "<b>🔑 Token Settings</b>\n\n"
+        f"<b>Current TTL:</b> <code>{ttl_label}</code>\n\n"
+        "<blockquote>"
+        "• <b>TTL</b> controls how long a Link Share deep-link stays valid.\n"
+        "• <code>0</code> = tokens never expire.\n"
+        "• Changing TTL only affects <b>newly created / regenerated</b> tokens.\n"
+        "• Use <b>Regenerate</b> to invalidate old links and mint fresh ones."
+        "</blockquote>"
+    )
+    buttons = [
+        [styled_button("sᴇᴛ ᴛᴛʟ", style="primary", callback_data="ls_set_ttl")],
+        [styled_button("ʀᴇɢᴇɴᴇʀᴀᴛᴇ ᴛᴏᴋᴇɴs", style="primary", callback_data="ls_regen_menu")],
+        [styled_button("ᴄʟᴇᴀɴ ᴇxᴘɪʀᴇᴅ", style="primary", callback_data="ls_cleanup")],
+        [styled_button("‹ Bᴀᴄᴋ", style="primary", callback_data="link_share")],
+    ]
+    await _edit_query_message(query, text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+@Client.on_callback_query(filters.regex(r"^ls_set_ttl$"))
+async def link_share_set_ttl(client, query):
+    if not is_admin(client, query.from_user.id):
+        return await query.answer("Only admins can access this!", show_alert=True)
+    back = InlineKeyboardMarkup([[styled_button("‹ Bᴀᴄᴋ", style="primary", callback_data="ls_token_settings")]])
+    await _edit_query_message(
+        query,
+        "<b>Send the new Token TTL in <u>minutes</u>.</b>\n\n"
+        "• <code>0</code> = never expire\n"
+        "• Example: <code>60</code> (1 hour), <code>1440</code> (1 day)\n\n"
+        "/cancel to cancel.",
+        reply_markup=back,
+    )
+    try:
+        msg = await client.listen(chat_id=query.message.chat.id, filters=filters.text, timeout=120)
+    except Exception:
+        return
+    if msg.text.strip().lower() == "/cancel":
+        return await msg.reply("Cancelled.", reply_markup=back)
+    raw = msg.text.strip()
+    if not raw.isdigit():
+        return await msg.reply("<b>Invalid value. Send a non-negative integer.</b>", reply_markup=back)
+    minutes = int(raw)
+    await client.linkshare_db.set_link_share_token_ttl(minutes)
+    label = "Never (permanent)" if minutes <= 0 else f"{minutes} minutes"
+    await msg.reply(
+        f"<b>Token TTL updated to:</b> <code>{label}</code>\n\n"
+        "Existing tokens keep their old expiry. Use <b>Regenerate</b> to apply the new TTL.",
+        reply_markup=back,
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^ls_cleanup$"))
+async def link_share_cleanup(client, query):
+    if not is_admin(client, query.from_user.id):
+        return await query.answer("Only admins can access this!", show_alert=True)
+    removed = await client.linkshare_db.cleanup_expired_link_share_tokens()
+    await query.answer(f"Removed {removed} expired token(s).", show_alert=True)
+    # Re-render settings
+    query.data = "ls_token_settings"
+    await link_share_token_settings(client, query)
+
+
+@Client.on_callback_query(filters.regex(r"^ls_regen_menu$"))
+async def link_share_regen_menu(client, query):
+    if not is_admin(client, query.from_user.id):
+        return await query.answer("Only admins can access this!", show_alert=True)
+    channels = await client.linkshare_db.get_link_share_channels()
+    if not channels:
+        return await _edit_query_message(
+            query,
+            "<b>No Link Share channels found.</b>",
+            reply_markup=InlineKeyboardMarkup(
+                [[styled_button("‹ Bᴀᴄᴋ", style="primary", callback_data="ls_token_settings")]]
+            ),
+        )
+    buttons = []
+    for cid, data in channels.items():
+        name = data.get("name", str(cid))
+        buttons.append([
+            styled_button(f"{name} · N", style="primary", callback_data=f"ls_regen:{cid}:normal"),
+            styled_button(f"{name} · R", style="primary", callback_data=f"ls_regen:{cid}:request"),
+        ])
+    buttons.append([styled_button("ʀᴇɢᴇɴᴇʀᴀᴛᴇ ᴀʟʟ", style="primary", callback_data="ls_regen_all")])
+    buttons.append([styled_button("‹ Bᴀᴄᴋ", style="primary", callback_data="ls_token_settings")])
+    await _edit_query_message(
+        query,
+        "<b>Regenerate Tokens</b>\n\n"
+        "N = Normal · R = Request\n"
+        "Regenerating invalidates the old deep-link immediately.",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    await query.answer()
+
+
+@Client.on_callback_query(filters.regex(r"^ls_regen:-100\d+:(normal|request)$"))
+async def link_share_regen_one(client, query):
+    if not is_admin(client, query.from_user.id):
+        return await query.answer("Only admins can access this!", show_alert=True)
+    _, cid_str, kind = query.data.split(":", 2)
+    channel_id = int(cid_str)
+    link = await _regenerate_channel_token(client, channel_id, kind)
+    await query.answer("Token regenerated.", show_alert=True)
+    channel_info = await client.linkshare_db.get_link_share_channel(channel_id)
+    name = (channel_info or {}).get("name", str(channel_id))
+    td = await client.linkshare_db.get_link_share_token(link.split("ls_", 1)[-1])
+    exp_label = _format_expires((td or {}).get("expires_at"))
+    await _edit_query_message(
+        query,
+        f"<b>✅ Regenerated {kind.title()} token</b>\n\n"
+        f"<b>Channel:</b> {name}\n"
+        f"<b>Expires:</b> {exp_label}\n\n"
+        f"<code>{link}</code>",
+        reply_markup=InlineKeyboardMarkup(
+            [[styled_button("‹ Bᴀᴄᴋ", style="primary", callback_data="ls_regen_menu")]]
+        ),
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^ls_regen_all$"))
+async def link_share_regen_all(client, query):
+    if not is_admin(client, query.from_user.id):
+        return await query.answer("Only admins can access this!", show_alert=True)
+    channels = await client.linkshare_db.get_link_share_channels()
+    count = 0
+    for cid in channels.keys():
+        for kind in ("normal", "request"):
+            await _regenerate_channel_token(client, int(cid), kind)
+            count += 1
+    await query.answer(f"Regenerated {count} token(s).", show_alert=True)
+    query.data = "ls_token_settings"
+    await link_share_token_settings(client, query)
