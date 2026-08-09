@@ -143,9 +143,12 @@ async def start_command(client: Client, message: Message):
             if original_payload.startswith("ls_"):
                 token = original_payload[3:]  # strip "ls_"
                 token_data = await client.linkshare_db.get_link_share_token(token)
+                chat_id = message.chat.id
+
                 if not token_data:
-                    return await message.reply(
-                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
+                    return await client.send_message(
+                        chat_id,
+                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>",
                     )
 
                 channel_id = token_data.get("channel_id")
@@ -170,8 +173,9 @@ async def start_command(client: Client, message: Message):
                         await client.linkshare_db.clear_link_share_channel_token(channel_id, kind)
                     except Exception:
                         pass
-                    return await message.reply(
-                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
+                    return await client.send_message(
+                        chat_id,
+                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>",
                     )
 
                 # Invite link expires in 5 minutes (Kafka behaviour)
@@ -190,13 +194,15 @@ async def start_command(client: Client, message: Message):
                     client.LOGGER(__name__, client.name).warning(
                         f"Link Share invite creation failed for {channel_id}: {e}"
                     )
-                    return await message.reply(
-                        "<b><blockquote expandable>Failed to generate invite link. Please try again later.</blockquote></b>"
+                    return await client.send_message(
+                        chat_id,
+                        "<b><blockquote expandable>Failed to generate invite link. Please try again later.</blockquote></b>",
                     )
 
-                # Brief wait (Kafka UX)
-                wait_msg = await message.reply(
-                    "<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>"
+                # Brief wait (Kafka UX) — plain message, no reply quote
+                wait_msg = await client.send_message(
+                    chat_id,
+                    "<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>",
                 )
                 await asyncio.sleep(0.5)
                 try:
@@ -209,14 +215,16 @@ async def start_command(client: Client, message: Message):
                     [[styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="success", url=invite_link)]]
                 )
 
-                link_share_msg = await message.reply(
+                link_share_msg = await client.send_message(
+                    chat_id,
                     "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
                     reply_markup=button,
                 )
 
-                note_msg = await message.reply(
+                note_msg = await client.send_message(
+                    chat_id,
                     "<blockquote><b>Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ɪɴ ғᴇᴡ ᴍɪɴᴜᴛᴇs. "
-                    "Iғ ᴛʜᴇ ʟɪɴᴋ ɪs ᴇxᴘɪʀᴇᴅ so ᴛʀʏ ᴀɢᴀɪɴ.</b></blockquote>"
+                    "Iғ ᴛʜᴇ ʟɪɴᴋ ɪs ᴇxᴘɪʀᴇᴅ so ᴛʀʏ ᴀɢᴀɪɴ.</b></blockquote>",
                 )
 
                 async def _delete_after(msg, delay: int):
