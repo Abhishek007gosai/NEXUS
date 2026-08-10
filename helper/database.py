@@ -1,5 +1,6 @@
 import motor.motor_asyncio
 from datetime import datetime, timedelta
+import re
 import time
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -966,6 +967,7 @@ def init_db():
     _ensure()
     anime_col.create_index([("source", ASCENDING), ("source_id", ASCENDING)], unique=True)
     anime_col.create_index([("title", ASCENDING)])
+    anime_col.create_index([("alt_title", ASCENDING)])
     anime_col.create_index([("status", ASCENDING)])
     anime_col.create_index([("airing_day", ASCENDING)])
     requests_col.create_index([("key", ASCENDING), ("requested_by", ASCENDING)])
@@ -1241,13 +1243,55 @@ def list_available() -> list[dict]:
     return [_to_anime(d) for d in docs]
 
 
-def search_local(query: str) -> list[dict]:
-    docs = (
-        anime_col.find({"title": {"$regex": query, "$options": "i"}})
-        .collation({"locale": "en", "strength": 2})
-        .sort("title", ASCENDING)
-    )
-    return [_to_anime(d) for d in docs]
+def search_local(query: str, limit: int = 40) -> list[dict]:
+    """Fast MongoDB search across title + alt_title (case-insensitive).
+
+    Escapes regex special chars so user input like "JoJo's" is safe.
+    Prefers titles that start with the query, then substring matches.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    # Escape regex metacharacters
+    escaped = re.sub(r"([.\\^$*+?{}[\]|()])", r"\\\1", q)
+    pattern = {"$regex": escaped, "$options": "i"}
+    filt = {
+        "$or": [
+            {"title": pattern},
+            {"alt_title": pattern},
+        ]
+    }
+    try:
+        docs = list(
+            anime_col.find(filt)
+            .collation({"locale": "en", "strength": 2})
+            .sort("title", ASCENDING)
+            .limit(max(1, min(int(limit or 40), 100)))
+        )
+    except Exception:
+        # Collation may fail on some Atlas tiers — retry plain
+        docs = list(
+            anime_col.find(filt)
+            .sort("title", ASCENDING)
+            .limit(max(1, min(int(limit or 40), 100)))
+        )
+    q_lower = q.lower()
+    ranked = []
+    for d in docs:
+        a = _to_anime(d)
+        if not a:
+            continue
+        title = (a.get("title") or "").lower()
+        alt = (a.get("alt_title") or "").lower()
+        if title.startswith(q_lower) or alt.startswith(q_lower):
+            rank = 0
+        elif q_lower in title or q_lower in alt:
+            rank = 1
+        else:
+            rank = 2
+        ranked.append((rank, a))
+    ranked.sort(key=lambda x: (x[0], (x[1].get("title") or "").lower()))
+    return [a for _, a in ranked]
 
 
 def update_link(anime_id: int, link: str):
