@@ -594,7 +594,9 @@
   }
 
   function ongoingList() {
-    return primaryAvailableList().filter((a) => isOngoing(a));
+    // Do NOT franchise-collapse ongoing — long-runners (One Piece, Conan,
+    // Pokemon) must each stay visible even if other franchise titles exist.
+    return available.filter((a) => isOngoing(a));
   }
 
   function lettersWithData() {
@@ -647,6 +649,17 @@
     if (!dayBar) return;
     dayBar.innerHTML = "";
     const has = daysWithData();
+    // ALL | Sun | Mon | ...
+    const allBtn = document.createElement("button");
+    allBtn.className = "letter-btn" + (activeDay == null ? " active" : "");
+    allBtn.textContent = "ALL";
+    allBtn.addEventListener("click", () => {
+      libraryQuery = "";
+      activeDay = null;
+      renderLibraryTab();
+    });
+    dayBar.appendChild(allBtn);
+
     WEEKDAYS.forEach((d) => {
       const btn = document.createElement("button");
       btn.className = "letter-btn" + (activeDay === d ? " active" : "");
@@ -654,7 +667,7 @@
       btn.disabled = !has.has(d);
       btn.addEventListener("click", () => {
         libraryQuery = "";
-        activeDay = activeDay === d ? null : d;
+        activeDay = d;
         renderLibraryTab();
       });
       dayBar.appendChild(btn);
@@ -995,82 +1008,51 @@
       plus.addEventListener("click", () => openLinkSheet(anime));
       row.appendChild(plus);
 
-      // Assign weekday for Home → Ongoing
-      const dayWrap = document.createElement("div");
-      dayWrap.style.cssText = "width:100%;margin-top:10px;";
-      const dayLabel = document.createElement("p");
-      dayLabel.className = "empty-note";
-      dayLabel.style.cssText = "text-align:left;padding:0 0 6px;margin:0;";
-      dayLabel.textContent = "Ongoing day (Home tab)";
-      const daySelect = document.createElement("select");
-      daySelect.className = "edit-link-input link-input-full";
-      daySelect.style.cssText = "width:100%;padding:10px;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);";
-      const opts = [["", "— Not ongoing / TBA —"]].concat(
-        WEEKDAYS.map((d) => [d, d.charAt(0).toUpperCase() + d.slice(1)])
-      );
-      opts.forEach(([val, lab]) => {
-        const o = document.createElement("option");
-        o.value = val;
-        o.textContent = lab;
-        if ((anime.airing_day || "") === val) o.selected = true;
-        daySelect.appendChild(o);
-      });
-      daySelect.addEventListener("change", async () => {
-        try {
-          const result = await api(`/api/anime/${anime.id}/airing-day`, {
-            method: "PATCH",
-            body: JSON.stringify({ day: daySelect.value || null }),
-          });
-          const updated = result.anime || {};
-          anime.airing_day = updated.airing_day || null;
-          // Refresh local available cache entry
-          const idx = available.findIndex((a) => a.id === anime.id);
-          if (idx >= 0) available[idx] = { ...available[idx], airing_day: anime.airing_day, status: updated.status || available[idx].status };
-          showToast(anime.airing_day ? `Set to ${anime.airing_day}` : "Cleared ongoing day");
-          renderLibraryTab();
-        } catch (err) {
-          showToast(err.message || "Couldn't save day");
-        }
-      });
-      dayWrap.appendChild(dayLabel);
-      dayWrap.appendChild(daySelect);
-      detailActionArea.appendChild(dayWrap);
-
-      // Solo vs group seasons (Finished tab)
+      // Solo vs group seasons — styled toggle (no native select)
       const modeWrap = document.createElement("div");
-      modeWrap.style.cssText = "width:100%;margin-top:10px;";
+      modeWrap.className = "display-mode-wrap";
       const modeLabel = document.createElement("p");
-      modeLabel.className = "empty-note";
-      modeLabel.style.cssText = "text-align:left;padding:0 0 6px;margin:0;";
+      modeLabel.className = "display-mode-label";
       modeLabel.textContent = "Finished display";
-      const modeSelect = document.createElement("select");
-      modeSelect.className = "edit-link-input link-input-full";
-      modeSelect.style.cssText = "width:100%;padding:10px;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);";
-      [["group", "Group all seasons (one card)"], ["solo", "Solo (this title only)"]].forEach(([val, lab]) => {
-        const o = document.createElement("option");
-        o.value = val;
-        o.textContent = lab;
-        if ((anime.display_mode || "group") === val) o.selected = true;
-        modeSelect.appendChild(o);
-      });
-      modeSelect.addEventListener("change", async () => {
+      const modeRow = document.createElement("div");
+      modeRow.className = "display-mode-row";
+
+      async function saveDisplayMode(mode, btnGroup, btnSolo) {
         try {
           const result = await api(`/api/anime/${anime.id}/display-mode`, {
             method: "PATCH",
-            body: JSON.stringify({ mode: modeSelect.value }),
+            body: JSON.stringify({ mode }),
           });
           const updated = result.anime || {};
           anime.display_mode = updated.display_mode || "group";
           const idx = available.findIndex((a) => a.id === anime.id);
           if (idx >= 0) available[idx] = { ...available[idx], display_mode: anime.display_mode };
+          btnGroup.classList.toggle("active", anime.display_mode === "group");
+          btnSolo.classList.toggle("active", anime.display_mode === "solo");
           showToast(anime.display_mode === "solo" ? "Solo card" : "Grouped with seasons");
           renderLibraryTab();
         } catch (err) {
           showToast(err.message || "Couldn't save display mode");
         }
-      });
+      }
+
+      const btnGroup = document.createElement("button");
+      btnGroup.type = "button";
+      btnGroup.className = "display-mode-btn";
+      btnGroup.textContent = "Group seasons";
+      const btnSolo = document.createElement("button");
+      btnSolo.type = "button";
+      btnSolo.className = "display-mode-btn";
+      btnSolo.textContent = "Solo only";
+      const cur = (anime.display_mode || "group");
+      btnGroup.classList.toggle("active", cur === "group");
+      btnSolo.classList.toggle("active", cur === "solo");
+      btnGroup.addEventListener("click", () => saveDisplayMode("group", btnGroup, btnSolo));
+      btnSolo.addEventListener("click", () => saveDisplayMode("solo", btnGroup, btnSolo));
+      modeRow.appendChild(btnGroup);
+      modeRow.appendChild(btnSolo);
       modeWrap.appendChild(modeLabel);
-      modeWrap.appendChild(modeSelect);
+      modeWrap.appendChild(modeRow);
       detailActionArea.appendChild(modeWrap);
     }
 
@@ -1621,7 +1603,7 @@
         const supportBtn = document.createElement("button");
         supportBtn.type = "button";
         supportBtn.className = "profile-support-btn";
-        supportBtn.textContent = "Support Chat";
+        supportBtn.textContent = "sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ\u{1F4AD}";
         supportBtn.addEventListener("click", () => {
           if (supportUrl) {
             openExternalLink(supportUrl);

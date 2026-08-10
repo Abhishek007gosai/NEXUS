@@ -1417,3 +1417,37 @@ html, body {
   max-width: 85vw;
   text-align: center;
 }
+
+
+/* Admin finished display toggle */
+.display-mode-wrap {
+  width: 100%;
+  margin-top: 12px;
+}
+.display-mode-label {
+  text-align: left;
+  padding: 0 0 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.display-mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.display-mode-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.display-mode-btn.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #0b120e;
+}
