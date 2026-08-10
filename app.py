@@ -818,28 +818,30 @@ def api_set_airing_day(anime_id):
 
 @app.post("/api/admin/refresh-airing-days")
 def api_refresh_airing_days():
-    """Admin: pull airing_day from AniList for every posted ongoing title
-    that is missing one (or all of them if force=true).
-    Only updates the airing_day field — never overwrites other metadata.
+    """Pull airing_day from AniList for posted titles missing one.
+    Used by the mini-app Ongoing tab (silent auto-fill). Any authenticated
+    user may call it — it only writes the display-day field.
     """
     user = current_user()
-    if not is_admin(user):
-        abort(403)
+    if not user:
+        abort(401)
     payload = request.get_json(force=True, silent=True) or {}
     force = bool(payload.get("force"))
 
     all_posts = db.list_available()
     candidates = []
     for a in all_posts:
-        st = (a.get("status") or "").upper()
-        # Match frontend isOngoing(): RELEASING or already has a day
-        is_ongoing = st in ("RELEASING", "NOT_YET_RELEASED") or bool(a.get("airing_day"))
-        if not is_ongoing:
-            continue
         if not force and a.get("airing_day"):
             continue
-        if not a.get("source_id") or a.get("source") != "anilist":
+        # Accept any AniList-sourced title that is still considered ongoing
+        # on the client (RELEASING / NOT_YET_RELEASED) OR has no status yet.
+        st = (a.get("status") or "").upper()
+        if st in ("FINISHED", "CANCELLED"):
             continue
+        sid = a.get("source_id")
+        if not sid:
+            continue
+        # source may be missing on very old rows — still try AniList
         candidates.append(a)
 
     updated = 0
@@ -856,12 +858,14 @@ def api_refresh_airing_days():
             day = (details.get("airing_day") or "").strip().lower() or None
             if day:
                 db.update_airing_day(a["id"], day)
-                # Also refresh status so future filters stay accurate
-                if details.get("status"):
-                    try:
-                        db.upsert_anime(details)  # keeps airing_day we just set
-                    except Exception:
-                        pass
+                # Refresh status/metadata so filters stay accurate
+                try:
+                    db.upsert_anime(details)
+                    # Ensure the day we just resolved is kept (upsert may
+                    # have written the same value from details).
+                    db.update_airing_day(a["id"], day)
+                except Exception:
+                    pass
                 updated += 1
                 results.append({"id": a["id"], "title": a.get("title"), "day": day})
             else:
@@ -875,7 +879,7 @@ def api_refresh_airing_days():
         skipped=skipped,
         failed=failed,
         total_candidates=len(candidates),
-        results=results[:50],  # sample for UI feedback
+        results=results[:50],
     )
 
 
