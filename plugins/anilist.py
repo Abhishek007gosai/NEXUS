@@ -309,26 +309,32 @@ class AniListSource(AnimeSource):
         raise RuntimeError("AniList request failed")
 
     def search(self, query: str, page: int = 1) -> dict:
-        data = self._post(SEARCH_QUERY, {"search": query, "page": page})
-        media = data["Page"]["media"]
-        results = []
-        for m in media:
-            score = m.get("averageScore")
-            titles = m.get("title") or {}
-            results.append({
-                "source_id": m["id"],
-                "anilist_id": m["id"],
-                "title": _best_title(titles),
-                "alt_title": titles.get("romaji") or titles.get("native"),
-                "year": (m.get("startDate") or {}).get("year"),
-                "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
-                "rating": round(score / 10, 1) if score else None,
-                "genres": (m.get("genres") or [])[:3],
-                "format": m.get("format"),
-                "episodes": m.get("episodes"),
-                "status": m.get("status"),
-            })
-        return {"results": results, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
+        """Search AniList; results are cached in memory + MongoDB catalog_cache."""
+        key = f"search:{(query or '').strip().lower()}:{int(page or 1)}"
+
+        def fetch():
+            data = self._post(SEARCH_QUERY, {"search": query, "page": page})
+            media = data["Page"]["media"]
+            results = []
+            for m in media:
+                score = m.get("averageScore")
+                titles = m.get("title") or {}
+                results.append({
+                    "source_id": m["id"],
+                    "anilist_id": m["id"],
+                    "title": _best_title(titles),
+                    "alt_title": titles.get("romaji") or titles.get("native"),
+                    "year": (m.get("startDate") or {}).get("year"),
+                    "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
+                    "rating": round(score / 10, 1) if score else None,
+                    "genres": (m.get("genres") or [])[:3],
+                    "format": m.get("format"),
+                    "episodes": m.get("episodes"),
+                    "status": m.get("status"),
+                })
+            return {"results": results, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
+
+        return self._cached(key, fetch)
 
     def get_details(self, source_id, use_cache: bool = True) -> dict:
         if use_cache:
