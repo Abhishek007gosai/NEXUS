@@ -656,6 +656,8 @@
 
   function filteredOngoing() {
     let list = ongoingList();
+    // Ongoing columns: only titles with a known airing day (no OTHER bucket)
+    list = list.filter((a) => !!effectiveAiringDay(a));
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
     } else if (activeDay) {
@@ -800,18 +802,14 @@
       renderDayBar();
       const list = filteredOngoing();
       if (!ongoingGroups) return;
-      // ALL: group by day (SUN…SAT). Skip empty TBA-only header when no day set —
-      // titles without airing_day still appear under a light "OTHER" bucket at the end.
+      // ALL: group by weekday only (SUN…SAT). No OTHER section.
       // Single day chip: only that day's titles under one section.
       renderGroupedGrid(
         ongoingGroups,
         ongoingEmpty,
         list,
-        (a) => (effectiveAiringDay(a) || "other").toLowerCase(),
-        (k) => {
-          if (k === "other" || k === "tba" || k === "all") return "OTHER";
-          return (WEEKDAY_LABELS[k] || k).toUpperCase();
-        }
+        (a) => effectiveAiringDay(a),
+        (k) => (WEEKDAY_LABELS[k] || k || "").toUpperCase()
       );
       // Kick off silent AniList backfill after first paint
       autoRefreshAiringDays();
