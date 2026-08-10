@@ -9,8 +9,6 @@ import humanize
 
 @Client.on_callback_query(filters.regex("^settings$"))
 async def settings(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     try:
         await query.answer()
     except Exception:
@@ -29,8 +27,6 @@ async def settings(client, query):
 
 @Client.on_callback_query(filters.regex("^settings_page_2$"))
 async def settings_page_2(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     try:
         await query.answer()
     except Exception:
@@ -94,9 +90,6 @@ Send <code>/remove</code> to disable the custom caption."""
 
 @Client.on_callback_query(filters.regex("^fsub$"))
 async def fsub(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
-    await query.answer()
     # Create a formatted list of channels with names and IDs
     if client.fsub_dict:
         channel_list = []
@@ -443,8 +436,6 @@ __Use the appropriate button below to add or remove an admin based on your needs
 
 @Client.on_callback_query(filters.regex("^photos$"))
 async def photos(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     msg = f"""<blockquote>**Photo Settings:**</blockquote>
 **Start Photo:** `{client.messages.get("START_PHOTO") or "None"}`
 **Force Sub Photo:** `{client.messages.get("FSUB_PHOTO") or "None"}`
@@ -477,8 +468,6 @@ __Set or remove images used by /start and force-sub.__
 
 @Client.on_callback_query(filters.regex("^protect$"))
 async def protect(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     client.protect = False if client.protect else True
     return await settings(client, query)
 
@@ -486,8 +475,6 @@ async def protect(client, query):
 
 @Client.on_callback_query(filters.regex("^disable_btn$"))
 async def disable_btn(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     client.disable_btn = False if client.disable_btn else True
     return await settings_page_2(client, query)
 
@@ -495,8 +482,6 @@ async def disable_btn(client, query):
 
 @Client.on_callback_query(filters.regex("^auto_del$"))
 async def auto_del(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     msg = f"""<blockquote>**Change Auto Delete Time:**</blockquote>
 **Current Timer:** `{client.auto_del}`
 
@@ -523,8 +508,6 @@ __Enter new integer value of auto delete timer, keep 0 to disable auto delete an
 
 @Client.on_callback_query(filters.regex("^texts$"))
 async def texts(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     msg = f"""<blockquote>**Text Configuration:**</blockquote>
 **Start Message:**
 <pre>{client.messages.get('START', 'Empty')}</pre>
@@ -547,8 +530,6 @@ async def texts(client, query):
 
 @Client.on_callback_query(filters.regex('^rm_start_photo$'))
 async def rm_start_photo(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     client.messages['START_PHOTO'] = ''
     await query.answer()
     await photos(client, query)
@@ -557,8 +538,6 @@ async def rm_start_photo(client, query):
 
 @Client.on_callback_query(filters.regex('^rm_fsub_photo$'))
 async def rm_fsub_photo(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     client.messages['FSUB_PHOTO'] = ''
     await query.answer()
     await photos(client, query)
@@ -567,8 +546,6 @@ async def rm_fsub_photo(client, query):
 
 @Client.on_callback_query(filters.regex("^add_start_photo$"))
 async def add_start_photo(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     msg = f"""<blockquote>**Change Start Image:**</blockquote>
 **Current Start Image:** `{client.messages.get('START_PHOTO', '')}`
 
@@ -594,8 +571,6 @@ __Enter new link of start image or send the photo, or wait for 60 second timeout
 
 @Client.on_callback_query(filters.regex("^add_fsub_photo$"))
 async def add_fsub_photo(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
     msg = f"""<blockquote>**Change Force Sub Image:**</blockquote>
 **Current Force Sub Image:** `{client.messages.get('FSUB_PHOTO', '')}`
 

@@ -216,8 +216,8 @@ Net:  Sent <code>{_fmt_bytes(sent)}</code>  ·  Recv <code>{_fmt_bytes(recv)}</c
 @Client.on_callback_query(filters.regex("^add_admin$"))
 async def add_new_admins(client: Client, query: CallbackQuery):
     await query.answer()
-    if query.from_user.id != client.owner:
-        return await query.answer("✗ Only the owner can manage admins!", show_alert=True)
+    if not query.from_user.id in client.admins:
+        return await client.send_message(query.from_user.id, client.reply_text)
     ids_msg = await client.ask(query.from_user.id, "Send user ids seperated by a space in the next 60 seconds!\nEg: `838278682 83622928 82789928`", filters=filters.text, timeout=60)
     ids = ids_msg.text.split()
     
@@ -236,15 +236,15 @@ async def add_new_admins(client: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex("^rm_admin$"))
 async def remove_admins(client: Client, query: CallbackQuery):
     await query.answer()
-    if query.from_user.id != client.owner:
-        return await query.answer("✗ Only the owner can manage admins!", show_alert=True)
+    if not query.from_user.id in client.admins:
+        return await client.send_message(query.from_user.id, client.reply_text)
     ids_msg = await client.ask(query.from_user.id, "Send user ids seperated by a space in the next 60 seconds!\nEg: `838278682 83622928 82789928`", filters=filters.text, timeout=60)
     ids = ids_msg.text.split()
     
     try:
         for identifier in ids:
             if int(identifier) == client.owner:
-                await client.send_message(query.from_user.id, "The owner can never be removed from the admin list.")
+                await client.send_message(query.from_user.id, "Nigga i can never remove the owner from the admin list!!")
                 continue
             if int(identifier) in client.admins:
                 client.admins.remove(int(identifier))
