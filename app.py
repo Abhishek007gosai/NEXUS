@@ -63,37 +63,38 @@ except Exception as e:
     print(f"[anime_db] init deferred / failed: {e}")
 
 
-def _warm_catalog_cache():
-    """Pre-fill Home catalog (memory + disk) and keep it warm periodically."""
+def _warm_catalog_cache(pages: int = 3):
+    """Pre-fill discovery catalog (memory + disk) fast after redeploy."""
     src = SOURCES.get("anilist")
     if not src:
         return
     try:
         if hasattr(src, "warm_home"):
-            src.warm_home(pages=2)
+            src.warm_home(pages=pages)
         else:
             src.get_trending()
             src.get_popular()
             src.get_most_popular()
-        print("[catalog] cache warmed")
+        print(f"[catalog] cache warmed (pages={pages})")
     except Exception as e:
         print(f"[catalog] warm failed: {e}")
 
 
 def _catalog_rewarm_loop():
-    """Re-warm Home feeds every ~20 minutes so soft TTL rarely expires cold."""
+    """Re-warm discovery feeds every ~12 minutes so soft TTL rarely expires cold."""
     import time as _t
     while True:
-        _t.sleep(20 * 60)
+        _t.sleep(12 * 60)
         try:
-            _warm_catalog_cache()
+            _warm_catalog_cache(pages=2)
         except Exception:
             pass
 
 
 try:
     import threading
-    threading.Thread(target=_warm_catalog_cache, daemon=True, name="catalog-warm").start()
+    # Fire warm immediately on process start (redeploy / cold boot)
+    threading.Thread(target=_warm_catalog_cache, kwargs={"pages": 3}, daemon=True, name="catalog-warm").start()
     threading.Thread(target=_catalog_rewarm_loop, daemon=True, name="catalog-rewarm").start()
 except Exception:
     pass
