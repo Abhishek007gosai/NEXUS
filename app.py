@@ -225,18 +225,44 @@ def _telegram_user_label(user: dict | None) -> str:
     return name or str(user.get("id"))
 
 
-def _bot_api(method: str, payload: dict):
-    token = TOKEN or TOKEN
-    if not token:
-        return
+def _log_chat_id():
+    """Return LOG_CHANNEL_ID as int when possible (Telegram prefers numeric chat_id)."""
+    raw = (LOG_CHANNEL_ID or "").strip()
+    if not raw:
+        return None
     try:
-        requests.post(f"https://api.telegram.org/bot{token}/{method}", json=payload, timeout=15)
-    except requests.RequestException:
-        pass
+        return int(raw)
+    except (TypeError, ValueError):
+        return raw
+
+
+def _bot_api(method: str, payload: dict):
+    token = TOKEN
+    if not token:
+        app.logger.warning("_bot_api: TOKEN is empty — cannot call %s", method)
+        return None
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/{method}",
+            json=payload,
+            timeout=15,
+        )
+        data = r.json() if r.content else {}
+        if not data.get("ok"):
+            app.logger.warning(
+                "_bot_api %s failed: %s", method, data.get("description") or r.text[:200]
+            )
+            return None
+        return data
+    except requests.RequestException as e:
+        app.logger.warning("_bot_api %s network error: %s", method, e)
+        return None
 
 
 def notify_new_report(title: str, reason: str, details: str, reporter_name: str):
-    if not LOG_CHANNEL_ID:
+    chat_id = _log_chat_id()
+    if not chat_id:
+        app.logger.warning("notify_new_report: LOG_CHANNEL_ID not set")
         return
     text = (
         f"\U0001f6a9 New Report\n"
@@ -245,16 +271,20 @@ def notify_new_report(title: str, reason: str, details: str, reporter_name: str)
         + (f"Details: {details}\n" if details else "")
         + f"By: {reporter_name}"
     )
-    _bot_api("sendMessage", {"chat_id": LOG_CHANNEL_ID, "text": text})
+    _bot_api("sendMessage", {"chat_id": chat_id, "text": text})
 
 
 def notify_new_request(request_id: int, title: str, requester_name: str, poster_url: str | None):
-    if not LOG_CHANNEL_ID:
+    chat_id = _log_chat_id()
+    if not chat_id:
+        app.logger.warning("notify_new_request: LOG_CHANNEL_ID not set — request #%s not logged", request_id)
         return
+
     text = (
-        f"\U0001f4dd New Request\n"
-        f"Anime: {title}\n"
-        f"By: {requester_name}"
+        f"\U0001f4dd <b>New Request</b>\n"
+        f"Anime: <b>{title}</b>\n"
+        f"By: {requester_name}\n"
+        f"ID: <code>{request_id}</code>"
     )
     keyboard = {
         "inline_keyboard": [[
@@ -262,9 +292,24 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
             {"text": "\u274c Reject", "callback_data": f"reqreject:{request_id}"},
         ]]
     }
+
+    # Prefer a photo log when we have a poster (matches rich log style)
+    if poster_url:
+        ok = _bot_api("sendPhoto", {
+            "chat_id": chat_id,
+            "photo": poster_url,
+            "caption": text,
+            "parse_mode": "HTML",
+            "reply_markup": keyboard,
+        })
+        if ok:
+            return
+        # Fall through to text if photo fails (bad URL, etc.)
+
     _bot_api("sendMessage", {
-        "chat_id": LOG_CHANNEL_ID,
+        "chat_id": chat_id,
         "text": text,
+        "parse_mode": "HTML",
         "reply_markup": keyboard,
     })
 
@@ -534,8 +579,11 @@ def api_request_anime():
             error=f"You've got {result['limit']} pending requests already — wait for one to be "
                   f"reviewed before requesting more."
         ), 429
-    if not result["already_requested"]:
-        notify_new_request(result["id"], title, _telegram_user_label(user), poster_url)
+    if not result["already_requested"] and result.get("id"):
+        try:
+            notify_new_request(result["id"], title, _telegram_user_label(user), poster_url)
+        except Exception as e:
+            app.logger.warning("notify_new_request failed for #%s: %s", result.get("id"), e)
     return jsonify(result)
 
 
