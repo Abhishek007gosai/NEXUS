@@ -716,6 +716,43 @@ def api_anime_detail(anime_id):
     anime = db.get_anime(anime_id)
     if not anime:
         abort(404)
+
+    # Enrich missing synopsis / related_ids from AniList so prequel/sequel + description work
+    needs_enrich = (
+        not (anime.get("description") or "").strip()
+        or not (anime.get("related_ids") or [])
+        or not anime.get("banner_url")
+    )
+    sid = anime.get("source_id")
+    if needs_enrich and sid and (anime.get("source") or "anilist") == "anilist":
+        try:
+            details = SOURCES["anilist"].get_details(int(sid), use_cache=True)
+            patch = {}
+            if not (anime.get("description") or "").strip() and details.get("description"):
+                patch["description"] = details["description"]
+            if not (anime.get("related_ids") or []) and details.get("related_ids"):
+                patch["related_ids"] = [str(x) for x in details["related_ids"]]
+                patch["relations"] = details.get("relations") or []
+            if not anime.get("banner_url") and details.get("banner_url"):
+                patch["banner_url"] = details["banner_url"]
+            if details.get("status"):
+                patch["status"] = details["status"]
+            if details.get("airing_day") and not anime.get("airing_day"):
+                patch["airing_day"] = details["airing_day"]
+            if patch:
+                try:
+                    from helper.database import anime_col
+                    import time as _time
+                    anime_col.update_one(
+                        {"_id": anime_id},
+                        {"$set": {**patch, "updated_at": _time.time()}},
+                    )
+                except Exception:
+                    pass
+                anime.update(patch)
+        except Exception as e:
+            print(f"[detail] enrich failed for {anime_id}: {e}")
+
     anime["related_posted"] = _related_posted(anime)
     return jsonify(anime)
 
@@ -728,8 +765,107 @@ def api_anilist_details(anilist_id):
         details = SOURCES["anilist"].get_details(anilist_id)
     except requests.RequestException:
         abort(502)
+    except Exception:
+        abort(502)
+    # Match local library links for join buttons
+    try:
+        matched = db.find_by_source_id("anilist", str(anilist_id))
+        if matched:
+            details["id"] = matched.get("id")
+            details["join_link"] = matched.get("join_link")
+            details["ongoing_link"] = matched.get("ongoing_link")
+            details["display_mode"] = matched.get("display_mode")
+    except Exception:
+        pass
     details["related_posted"] = _related_posted(details)
     return jsonify(details)
+
+
+@app.post("/api/catalog/sync-ongoing")
+def api_sync_ongoing():
+    """Scan Finished library franchises for newly airing seasons and add them
+    to MongoDB so they appear under Ongoing (with inherited finished link)."""
+    user = current_user()
+    # Allow any Telegram user to trigger a light sync; writes only create
+    # airing siblings of already-posted titles.
+    added = 0
+    updated = 0
+    checked = 0
+    try:
+        posts = [a for a in db.list_available() if a.get("join_link") or a.get("ongoing_link")]
+    except Exception as e:
+        return jsonify(error=str(e), added=0, updated=0), 500
+
+    src = SOURCES.get("anilist")
+    if not src:
+        return jsonify(added=0, updated=0, checked=0)
+
+    # Collect related ids from posted titles (limit work per request)
+    candidate_ids = []
+    seen = set()
+    for a in posts:
+        if (a.get("source") or "anilist") != "anilist":
+            continue
+        for rid in (a.get("related_ids") or [])[:12]:
+            rid = str(rid)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            candidate_ids.append((rid, a))
+        if len(candidate_ids) >= 60:
+            break
+
+    MAX_FETCH = 15
+    fetches = 0
+    for rid, parent in candidate_ids:
+        if fetches >= MAX_FETCH:
+            break
+        existing = db.find_by_source_id("anilist", rid)
+        # Skip solo highlights — they manage their own lifecycle
+        if existing and (existing.get("display_mode") or "group") == "solo":
+            continue
+        # If already in library and marked RELEASING with airing_day, skip fetch
+        if existing:
+            st = (existing.get("status") or "").upper()
+            if st in ("RELEASING", "NOT_YET_RELEASED") and existing.get("airing_day"):
+                checked += 1
+                continue
+        try:
+            details = src.get_details(int(rid), use_cache=True)
+            fetches += 1
+            checked += 1
+        except Exception:
+            continue
+        st = (details.get("status") or "").upper()
+        if st not in ("RELEASING", "NOT_YET_RELEASED"):
+            # Update status on existing finished-family members so they leave Ongoing
+            if existing and (existing.get("status") or "").upper() != st:
+                try:
+                    from helper.database import anime_col
+                    import time as _time
+                    anime_col.update_one(
+                        {"_id": existing["id"]},
+                        {"$set": {"status": details.get("status"), "updated_at": _time.time()}},
+                    )
+                    updated += 1
+                except Exception:
+                    pass
+            continue
+
+        inherited = parent.get("join_link") or parent.get("ongoing_link")
+        new_id = db.upsert_anime(details, added_by=(user or {}).get("id"))
+        if inherited and not (existing or {}).get("join_link"):
+            db.update_link(new_id, inherited)
+        try:
+            db.update_display_mode(new_id, "group")
+        except Exception:
+            pass
+        if existing:
+            updated += 1
+        else:
+            added += 1
+
+    return jsonify(status="ok", added=added, updated=updated, checked=checked, fetched=fetches)
 
 
 @app.post("/api/request")
@@ -880,89 +1016,156 @@ def api_profile_help_update():
 
 @app.patch("/api/anime/<int:anime_id>/link")
 def api_edit_link(anime_id):
-    """Set/clear finished (join_link) and ongoing (ongoing_link) independently.
+    """Set/clear independent links:
 
-    display_mode:
-      - "solo"  → only this title; clearing links deletes only this post
-      - "group" → All seasons; expand franchise + share finished join_link
+    - group_link  → All seasons (franchise shared finished URL)
+    - solo_link   → Solo (this title only, own card + own URL)
+    - ongoing_link → Ongoing tab URL
+    - legacy `link` + `display_mode` still accepted
     """
     user = current_user()
     if not is_admin(user):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
-    raw_link = (payload.get("link") or "").strip()
-    has_ongoing = "ongoing_link" in payload
-    raw_ongoing = (payload.get("ongoing_link") or "").strip() if has_ongoing else None
-    mode = (payload.get("display_mode") or "").strip().lower()
     anime = db.get_anime(anime_id)
     if not anime:
         abort(404)
-    if mode not in ("solo", "group"):
-        mode = (anime.get("display_mode") or "group")
+
+    has_group = "group_link" in payload or ("link" in payload and payload.get("display_mode") != "solo")
+    has_solo = "solo_link" in payload or ("link" in payload and payload.get("display_mode") == "solo")
+    has_ongoing = "ongoing_link" in payload
+
+    # Resolve raw strings
+    if "group_link" in payload:
+        raw_group = (payload.get("group_link") or "").strip()
+    elif "link" in payload and (payload.get("display_mode") or "group") != "solo":
+        raw_group = (payload.get("link") or "").strip()
+    else:
+        raw_group = None  # not sent
+
+    if "solo_link" in payload:
+        raw_solo = (payload.get("solo_link") or "").strip()
+    elif "link" in payload and payload.get("display_mode") == "solo":
+        raw_solo = (payload.get("link") or "").strip()
+    else:
+        raw_solo = None
+
+    raw_ongoing = (payload.get("ongoing_link") or "").strip() if has_ongoing else None
+
     try:
-        link = normalize_join_link(raw_link) if raw_link else ""
-        if has_ongoing:
-            ongoing_link = normalize_join_link(raw_ongoing) if raw_ongoing else ""
-        else:
-            ongoing_link = None
+        group_link = normalize_join_link(raw_group) if raw_group else ("" if raw_group is not None else None)
+        solo_link = normalize_join_link(raw_solo) if raw_solo else ("" if raw_solo is not None else None)
+        ongoing_link = normalize_join_link(raw_ongoing) if raw_ongoing else ("" if has_ongoing else None)
     except ValueError as e:
         return jsonify(error=str(e)), 400
 
-    existing_ongoing = (anime or {}).get("ongoing_link") or ""
+    existing_ongoing = anime.get("ongoing_link") or ""
     final_ongoing = ongoing_link if has_ongoing else existing_ongoing
 
-    # Both links empty → remove post(s)
-    if not link and not final_ongoing:
-        if mode == "solo":
+    # Nothing left on this title → delete appropriately
+    will_have_solo = bool(solo_link) if solo_link is not None else (
+        (anime.get("display_mode") or "group") == "solo" and bool(anime.get("join_link"))
+    )
+    will_have_group = bool(group_link) if group_link is not None else (
+        (anime.get("display_mode") or "group") != "solo" and bool(anime.get("join_link"))
+    )
+    # After this save, if solo explicitly cleared and group explicitly cleared and no ongoing
+    if solo_link == "" and group_link == "" and not final_ongoing:
+        # Clear franchise group links if this was the group anchor; always delete this solo if any
+        if (anime.get("display_mode") or "group") == "solo":
             db.delete_anime(anime_id)
             return jsonify(status="deleted", link="", ongoing_link="", propagated=0)
         propagated = db.delete_anime_family(anime_id)
         return jsonify(status="deleted", link="", ongoing_link="", propagated=propagated)
 
-    # Persist display mode first
-    try:
-        db.update_display_mode(anime_id, mode)
-    except Exception:
-        pass
-
-    db.update_link(anime_id, link or None)
-    if has_ongoing:
-        db.update_ongoing_link(anime_id, ongoing_link or None)
-
     propagated = 0
-    if link and mode == "group":
-        # All seasons: pull full franchise from AniList into MongoDB + share link
+
+    # --- All seasons (group) ---
+    if group_link is not None and group_link != "":
+        # Apply group link to this title first (may be overwritten by solo below)
+        if solo_link is None or solo_link == "":
+            db.update_link(anime_id, group_link)
+            try:
+                db.update_display_mode(anime_id, "group")
+            except Exception:
+                pass
         try:
-            propagated = propagate_link_full_franchise(anime_id, link)
+            propagated = propagate_link_full_franchise(anime_id, group_link)
         except Exception as e:
             print(f"[link] full franchise expand failed: {e}")
             try:
-                propagated = db.propagate_join_link(anime_id, link)
+                propagated = db.propagate_join_link(anime_id, group_link)
             except Exception:
                 pass
-        # Mark non-solo family members that share this link as group
         try:
             import time as _time
             from helper.database import anime_col
-            doc = db.get_anime(anime_id)
-            if doc:
-                anime_col.update_many(
-                    {
-                        "source": doc["source"],
-                        "join_link": link,
-                        "display_mode": {"$ne": "solo"},
-                    },
-                    {"$set": {"display_mode": "group", "updated_at": _time.time()}},
-                )
+            anime_col.update_many(
+                {
+                    "source": anime.get("source") or "anilist",
+                    "join_link": group_link,
+                    "display_mode": {"$ne": "solo"},
+                },
+                {"$set": {"display_mode": "group", "updated_at": _time.time()}},
+            )
         except Exception:
             pass
-    # solo: do not share finished link across franchise
+    elif group_link == "":
+        # Clear group links on non-solo family members that shared this title's old group link
+        old = anime.get("join_link") if (anime.get("display_mode") or "group") != "solo" else None
+        if old:
+            try:
+                from helper.database import anime_col
+                import time as _time
+                anime_col.update_many(
+                    {
+                        "source": anime.get("source") or "anilist",
+                        "join_link": old,
+                        "display_mode": {"$ne": "solo"},
+                        "_id": {"$ne": anime_id},
+                    },
+                    {"$set": {"join_link": None, "updated_at": _time.time()}},
+                )
+            except Exception:
+                pass
+
+    # --- Solo (this title only) ---
+    if solo_link is not None and solo_link != "":
+        db.update_link(anime_id, solo_link)
+        try:
+            db.update_display_mode(anime_id, "solo")
+        except Exception:
+            pass
+    elif solo_link == "":
+        # Removing solo: if group_link remains, convert to group; else clear this title's link
+        if group_link:
+            db.update_link(anime_id, group_link)
+            try:
+                db.update_display_mode(anime_id, "group")
+            except Exception:
+                pass
+        elif group_link == "":
+            pass  # handled by delete above if no ongoing
+        else:
+            # Solo cleared, keep group membership if family has links
+            try:
+                db.update_display_mode(anime_id, "group")
+            except Exception:
+                pass
+            if not group_link and not final_ongoing and not anime.get("join_link"):
+                db.delete_anime(anime_id)
+                return jsonify(status="deleted", link="", ongoing_link="", propagated=0)
+
+    if has_ongoing:
+        db.update_ongoing_link(anime_id, ongoing_link or None)
 
     try:
         db.accept_requests_for_title((anime or {}).get("title") or "")
     except Exception:
         pass
     updated = db.get_anime(anime_id)
+    if not updated:
+        return jsonify(status="deleted", link="", ongoing_link="", propagated=propagated)
     return jsonify(
         status="updated",
         link=(updated or {}).get("join_link") or "",
@@ -1077,25 +1280,23 @@ def api_refresh_airing_days():
 
 @app.post("/api/anime/link-anilist/<int:anilist_id>")
 def api_set_link_from_anilist(anilist_id):
-    """Set finished and/or ongoing join links for a title browsed from AniList
-    (Discover/Genre/Search). Creates a full MongoDB library entry so the title
-    appears under Finished (join_link) and/or Ongoing (ongoing_link)."""
+    """Create library entry from AniList with separate group/solo/ongoing links."""
     user = current_user()
     if not is_admin(user):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
-    raw_link = (payload.get("link") or "").strip()
+    raw_group = (payload.get("group_link") or payload.get("link") or "").strip()
+    raw_solo = (payload.get("solo_link") or "").strip()
     raw_ongoing = (payload.get("ongoing_link") or "").strip()
-    if not raw_link and not raw_ongoing:
-        return jsonify(error="A Finished or Ongoing join link is required."), 400
+    if not raw_group and not raw_solo and not raw_ongoing:
+        return jsonify(error="An All seasons, Solo, or Ongoing join link is required."), 400
     try:
-        link = normalize_join_link(raw_link) if raw_link else ""
+        group_link = normalize_join_link(raw_group) if raw_group else ""
+        solo_link = normalize_join_link(raw_solo) if raw_solo else ""
         ongoing_link = normalize_join_link(raw_ongoing) if raw_ongoing else ""
     except ValueError as e:
         return jsonify(error=str(e)), 400
 
-    # Prefer full AniList details; fall back to client-supplied fields so a
-    # temporary AniList outage never blocks adding to the Finished library.
     details = None
     try:
         details = SOURCES["anilist"].get_details(anilist_id, use_cache=True)
@@ -1121,43 +1322,43 @@ def api_set_link_from_anilist(anilist_id):
             "relations": [],
         }
 
-    # Ensure source fields are always set for MongoDB uniqueness
     details["source"] = details.get("source") or "anilist"
     details["source_id"] = details.get("source_id") or anilist_id
 
     anime_id = db.upsert_anime(details, added_by=user["id"])
-    mode = (payload.get("display_mode") or "group").strip().lower()
-    if mode not in ("solo", "group"):
-        mode = "group"
-    try:
-        db.update_display_mode(anime_id, mode)
-    except Exception:
-        pass
-
-    if link:
-        db.update_link(anime_id, link)
-    if ongoing_link:
-        db.update_ongoing_link(anime_id, ongoing_link)
-
     propagated = 0
-    if link and mode == "group":
-        try:
-            propagated = propagate_link_full_franchise(anime_id, link)
-        except Exception as e:
-            print(f"[link-anilist] full franchise expand failed: {e}")
+
+    if group_link:
+        if not solo_link:
+            db.update_link(anime_id, group_link)
             try:
-                propagated = db.propagate_join_link(anime_id, link)
+                db.update_display_mode(anime_id, "group")
             except Exception:
                 pass
         try:
-            import time as _time
-            from helper.database import anime_col
-            anime_col.update_many(
-                {"source": "anilist", "join_link": link, "display_mode": {"$ne": "solo"}},
-                {"$set": {"display_mode": "group", "updated_at": _time.time()}},
-            )
+            propagated = propagate_link_full_franchise(anime_id, group_link)
+        except Exception as e:
+            print(f"[link-anilist] full franchise expand failed: {e}")
+            try:
+                propagated = db.propagate_join_link(anime_id, group_link)
+            except Exception:
+                pass
+
+    if solo_link:
+        db.update_link(anime_id, solo_link)
+        try:
+            db.update_display_mode(anime_id, "solo")
         except Exception:
             pass
+    elif group_link and not solo_link:
+        try:
+            db.update_display_mode(anime_id, "group")
+        except Exception:
+            pass
+
+    if ongoing_link:
+        db.update_ongoing_link(anime_id, ongoing_link)
+
     try:
         db.accept_requests_for_title(details.get("title") or "")
     except Exception:
