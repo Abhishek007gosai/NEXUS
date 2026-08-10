@@ -196,10 +196,13 @@
                  placeholder="https://t.me/..." autocomplete="off" />
         </div>
         <div class="form-field">
-          <label class="form-label" for="ongoing-link-input">Ongoing URL (optional)</label>
-          <p class="form-hint">If set, Join on Ongoing tab uses this instead of the finished link</p>
-          <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
-                 placeholder="Leave empty to use Finished link" autocomplete="off" />
+          <label class="form-label">Ongoing link</label>
+          <p class="form-hint">Optional — only used on the Ongoing tab</p>
+          <button type="button" class="display-mode-btn link-ongoing-toggle-btn" id="link-ongoing-toggle">Add ongoing link</button>
+          <div id="ongoing-link-panel" class="hidden">
+            <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
+                   placeholder="https://t.me/..." autocomplete="off" />
+          </div>
         </div>
         <div class="form-field" id="link-display-mode-field">
           <label class="form-label">Finished display</label>

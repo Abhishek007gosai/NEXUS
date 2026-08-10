@@ -748,28 +748,19 @@
       renderDayBar();
       const list = filteredOngoing();
       if (!ongoingGroups) return;
-      ongoingGroups.innerHTML = "";
-      if (ongoingEmpty) ongoingEmpty.classList.toggle("hidden", list.length !== 0);
-      if (!list.length) {
-        // empty state only
-      } else if (activeDay) {
-        // Single day filter: one section labeled with that day
-        renderGroupedGrid(
-          ongoingGroups,
-          ongoingEmpty,
-          list,
-          () => activeDay,
-          (k) => (WEEKDAY_LABELS[k] || k).toUpperCase()
-        );
-      } else {
-        // ALL column: flat grid — no TBA / ALL / day section headers
-        const grid = document.createElement("div");
-        grid.className = "available-grid";
-        list.forEach((item) => {
-          grid.appendChild(simplePosterCard(item, () => openLocalDetail(item)));
-        });
-        ongoingGroups.appendChild(grid);
-      }
+      // ALL: group by day (SUN…SAT). Skip empty TBA-only header when no day set —
+      // titles without airing_day still appear under a light "OTHER" bucket at the end.
+      // Single day chip: only that day's titles under one section.
+      renderGroupedGrid(
+        ongoingGroups,
+        ongoingEmpty,
+        list,
+        (a) => (a.airing_day || "other").toLowerCase(),
+        (k) => {
+          if (k === "other" || k === "tba" || k === "all") return "OTHER";
+          return (WEEKDAY_LABELS[k] || k).toUpperCase();
+        }
+      );
     } else {
       renderLetterBar();
       const list = filteredFinished();
@@ -1117,11 +1108,23 @@
   // ---------------------------------------------------------------------
   let linkTargetAnime = null;
 
+  function setOngoingLinkPanel(open) {
+    const panel = el("ongoing-link-panel");
+    const toggle = el("link-ongoing-toggle");
+    if (panel) panel.classList.toggle("hidden", !open);
+    if (toggle) {
+      toggle.classList.toggle("active", !!open);
+      toggle.textContent = open ? "Ongoing link on" : "Add ongoing link";
+    }
+  }
+
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
     linkInput.value = anime.join_link || "";
     const ongoingInput = el("ongoing-link-input");
+    const hasOngoing = !!(anime.ongoing_link && String(anime.ongoing_link).trim());
     if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
+    setOngoingLinkPanel(hasOngoing);
     // Group / Solo lives inside the + sheet
     const mode = (anime.display_mode || "group");
     const btnGroup = el("link-mode-group");
@@ -1139,13 +1142,30 @@
   (function wireLinkDisplayMode() {
     const btnGroup = el("link-mode-group");
     const btnSolo = el("link-mode-solo");
-    if (!btnGroup || !btnSolo) return;
-    function setMode(mode) {
-      btnGroup.classList.toggle("active", mode === "group");
-      btnSolo.classList.toggle("active", mode === "solo");
+    if (btnGroup && btnSolo) {
+      function setMode(mode) {
+        btnGroup.classList.toggle("active", mode === "group");
+        btnSolo.classList.toggle("active", mode === "solo");
+      }
+      btnGroup.addEventListener("click", () => setMode("group"));
+      btnSolo.addEventListener("click", () => setMode("solo"));
     }
-    btnGroup.addEventListener("click", () => setMode("group"));
-    btnSolo.addEventListener("click", () => setMode("solo"));
+    const toggle = el("link-ongoing-toggle");
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        const panel = el("ongoing-link-panel");
+        const opening = panel && panel.classList.contains("hidden");
+        setOngoingLinkPanel(opening);
+        if (opening) {
+          const input = el("ongoing-link-input");
+          if (input) setTimeout(() => input.focus(), 50);
+        } else {
+          // Turning off clears the field so save removes ongoing_link
+          const input = el("ongoing-link-input");
+          if (input) input.value = "";
+        }
+      });
+    }
   })();
 
   function closeLinkSheet() {
@@ -1160,7 +1180,9 @@
     if (!linkTargetAnime || linkSaveBtn.disabled) return;
     let value = linkInput.value.trim();
     const ongoingInput = el("ongoing-link-input");
-    const ongoingValue = ongoingInput ? ongoingInput.value.trim() : "";
+    const ongoingPanel = el("ongoing-link-panel");
+    const ongoingEnabled = ongoingPanel && !ongoingPanel.classList.contains("hidden");
+    const ongoingValue = (ongoingEnabled && ongoingInput) ? ongoingInput.value.trim() : "";
     // Adding/editing ongoing URL must never wipe the finished link.
     // Only when BOTH fields are empty do we allow removing the post.
     if (!value && linkTargetAnime.join_link && ongoingValue) {

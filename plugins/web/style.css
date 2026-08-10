@@ -1,16 +1,21 @@
 :root {
-  --bg: #131310;
-  --surface: #1c1c17;
-  --surface-2: #28281f;
+  --bg: #12120f;
+  --surface: #1a1a15;
+  --surface-2: #25251e;
+  --surface-3: #2e2e26;
   --border: #3a392c;
+  --border-soft: rgba(58, 57, 44, 0.65);
   --text: #f2efe2;
   --text-dim: #b6b19c;
   --text-faint: #7f7a65;
-  --grad: linear-gradient(90deg, var(--green-dark), var(--green));
+  --muted: #8a8570;
+  --grad: linear-gradient(135deg, var(--green-dark), var(--green));
   --amber: #e8a317;
-  --green: #4b9a51;
-  --green-dark: #1d4f24;
+  --green: #52a858;
+  --green-dark: #1f5628;
   --hot: #e2597e;
+  --shadow-sheet: 0 24px 48px rgba(0, 0, 0, 0.55);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 * { box-sizing: border-box; }
@@ -631,33 +636,37 @@ html, body {
   font-family: inherit;
 }
 
-/* Ongoing day chips — segmented pill bar (matches FINISHED/ONGOING tabs) */
+/* Ongoing day chips — all visible in one row, no horizontal scroll */
 #day-bar {
-  gap: 0;
-  padding: 4px;
-  padding-bottom: 4px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 3px;
   margin-bottom: 14px;
   background: var(--surface-2);
   border-radius: 999px;
   border: 1px solid var(--border);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 #day-bar .letter-btn {
+  flex: 1 1 0;
   width: auto;
-  min-width: 42px;
-  height: 34px;
-  padding: 0 12px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 2px;
   margin: 0;
   border-radius: 999px;
   border: none;
   background: transparent;
   color: var(--text-dim);
-  font-size: 11.5px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.7px;
+  letter-spacing: 0.3px;
   text-transform: uppercase;
+  white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition:
@@ -674,7 +683,7 @@ html, body {
 #day-bar .letter-btn.active {
   background: var(--green-dark);
   color: #fff;
-  box-shadow: 0 2px 10px rgba(29, 79, 36, 0.35);
+  box-shadow: 0 2px 8px rgba(29, 79, 36, 0.3);
 }
 
 #day-bar .letter-btn:not(.active):hover {
@@ -1609,4 +1618,262 @@ html, body {
   cursor: pointer;
   padding: 4px 0;
   font-family: inherit;
+}
+
+.link-ongoing-toggle-btn {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+
+/* ==================== Aesthetic polish pass ==================== */
+
+.sheet {
+  background: linear-gradient(180deg, #1e1e18 0%, var(--surface) 40%);
+  border: 1px solid var(--border-soft);
+  border-radius: 22px;
+  box-shadow: var(--shadow-sheet);
+  animation: modal-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sheet-body {
+  padding: 18px 18px 16px;
+}
+
+.sheet-title {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+
+.form-field {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 7px;
+}
+
+.form-hint {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+  margin: -2px 0 8px;
+}
+
+.edit-link-input,
+.link-input-full {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 13px 14px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.edit-link-input:focus,
+.link-input-full:focus {
+  outline: none;
+  border-color: var(--amber);
+  background: var(--surface-3);
+  box-shadow: 0 0 0 3px rgba(232, 163, 23, 0.15);
+}
+
+.display-mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.display-mode-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border-radius: 14px;
+  padding: 12px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease,
+    transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.display-mode-btn:active { transform: scale(0.97); }
+
+.display-mode-btn.active {
+  background: var(--grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(31, 86, 40, 0.4);
+}
+
+.link-ongoing-toggle-btn {
+  width: 100%;
+  margin-bottom: 8px;
+  border-radius: 14px;
+}
+
+#ongoing-link-panel {
+  animation: fade-slide 0.18s ease;
+}
+
+@keyframes fade-slide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn {
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 13px 16px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.2s ease;
+}
+
+.btn:active { transform: scale(0.97); }
+
+.btn-primary {
+  background: var(--grad);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(31, 86, 40, 0.35);
+}
+
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.btn-row .btn { flex: 1; margin-bottom: 0; }
+
+/* Day bar — compact equal chips, one row */
+#day-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+#day-bar .letter-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 32px;
+  padding: 0 1px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#day-bar .letter-btn.active {
+  background: var(--grad);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(31, 86, 40, 0.35);
+}
+
+/* Pill tabs */
+.pill-tabs {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 16px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.pill-tab {
+  border-radius: 999px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pill-tab.active {
+  background: var(--grad);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(31, 86, 40, 0.35);
+}
+
+/* Letter / day group headers */
+.letter-group-header {
+  margin-bottom: 10px;
+}
+
+.letter-group-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--green);
+}
+
+.letter-group-line {
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+/* Poster cards soft lift */
+.poster-card {
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 0.15s ease;
+}
+
+.poster-card:active {
+  transform: scale(0.98);
+}
+
+.available-grid,
+.popular-grid {
+  gap: 12px 10px;
+}
+
+/* Overlay backdrop */
+.overlay {
+  background: rgba(8, 8, 6, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Toast */
+.toast {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  font-weight: 600;
 }
