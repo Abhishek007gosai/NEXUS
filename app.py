@@ -370,13 +370,12 @@ def normalize_join_link(raw: str) -> str:
         return raw
     if raw.startswith("t.me/") or raw.startswith("telegram.me/"):
         return "https://" + raw
-    # Deep-link start payload: ?start=XXX / start=XXX / t=XXX (truncated paste)
+    # Deep-link start payload — including truncated pastes from mobile:
+    #   ?start=XXX  start=XXX  t?start=XXX  me?start=XXX  Bot?start=XXX
     start_payload = None
-    m = re.match(r"^\?start=([A-Za-z0-9_\-]+)$", raw)
+    m = re.search(r"(?:\?start=|^start=)([A-Za-z0-9_\-]+)$", raw)
     if m:
         start_payload = m.group(1)
-    elif re.match(r"^start=([A-Za-z0-9_\-]+)$", raw):
-        start_payload = raw.split("=", 1)[1]
     elif re.match(r"^t=([A-Za-z0-9_\-]+)$", raw):
         # Truncated URL that only kept the end of ?start=...
         start_payload = raw.split("=", 1)[1]
@@ -1062,17 +1061,30 @@ def api_edit_link(anime_id):
     existing_ongoing = anime.get("ongoing_link") or ""
     final_ongoing = ongoing_link if has_ongoing else existing_ongoing
 
-    # Nothing left on this title → delete appropriately
-    will_have_solo = bool(solo_link) if solo_link is not None else (
-        (anime.get("display_mode") or "group") == "solo" and bool(anime.get("join_link"))
-    )
-    will_have_group = bool(group_link) if group_link is not None else (
-        (anime.get("display_mode") or "group") != "solo" and bool(anime.get("join_link"))
-    )
-    # After this save, if solo explicitly cleared and group explicitly cleared and no ongoing
-    if solo_link == "" and group_link == "" and not final_ongoing:
-        # Clear franchise group links if this was the group anchor; always delete this solo if any
-        if (anime.get("display_mode") or "group") == "solo":
+    # Determine whether any finished link remains after this save
+    mode_now = anime.get("display_mode") or "group"
+    if solo_link is not None and solo_link != "":
+        mode_now = "solo"
+    elif group_link is not None and group_link != "":
+        mode_now = "group"
+    elif solo_link == "" and group_link == "":
+        mode_now = mode_now  # both cleared
+
+    finished_remaining = False
+    if solo_link is not None:
+        finished_remaining = finished_remaining or bool(solo_link)
+    elif mode_now == "solo" and anime.get("join_link"):
+        finished_remaining = True
+    if group_link is not None:
+        finished_remaining = finished_remaining or bool(group_link)
+    elif mode_now != "solo" and anime.get("join_link"):
+        finished_remaining = True
+
+    # Both finished links cleared + no ongoing → remove from library
+    if not finished_remaining and not final_ongoing and (
+        (solo_link is not None and solo_link == "") or (group_link is not None and group_link == "")
+    ):
+        if mode_now == "solo" or (anime.get("display_mode") or "group") == "solo":
             db.delete_anime(anime_id)
             return jsonify(status="deleted", link="", ongoing_link="", propagated=0)
         propagated = db.delete_anime_family(anime_id)
