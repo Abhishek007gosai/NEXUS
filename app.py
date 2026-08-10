@@ -525,8 +525,10 @@ def api_search_anime():
         return jsonify({"results": [], "has_next": False})
     try:
         return jsonify(SOURCES["anilist"].search(q, page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
+    except requests.RequestException as e:
+        return jsonify({"results": [], "has_next": False, "error": str(e) or "AniList unavailable"}), 502
+    except Exception as e:
+        return jsonify({"results": [], "has_next": False, "error": str(e) or "Search failed"}), 500
 
 
 @app.get("/api/genres/<genre>")
@@ -746,24 +748,28 @@ def api_edit_link(anime_id):
     except ValueError as e:
         return jsonify(error=str(e)), 400
     if link:
-        # Setting a link is also the natural moment to refresh this post's
-        # cached AniList metadata (poster, genres, episode count, and
-        # critically its relations list) — not just the join_link field.
-        # Without this, a post created before the relations field existed
-        # (or one whose franchise has grown since it was posted) would be
-        # permanently stuck with stale/missing data and never show
-        # Prequel/Sequel cards, since nothing else ever re-fetches it.
+        # Fast path: write the link first, propagate only to already-posted
+        # franchise members in MongoDB (no AniList network walks). Metadata
+        # refresh uses cache when possible so Save stays responsive.
         anime = db.get_anime(anime_id)
-        try:
-            details = SOURCES[anime["source"]].get_details(anime["source_id"], use_cache=False)
-            db.upsert_anime(details)
-        except requests.RequestException:
-            pass  # AniList unreachable — keep whatever's cached, still set the link below
         db.update_link(anime_id, link)
         if has_ongoing:
             db.update_ongoing_link(anime_id, ongoing_link or None)
-        propagated = propagate_link_full_franchise(anime_id, link)
-        db.accept_requests_for_title(anime["title"])
+        # DB-only propagation — already-posted seasons/OVAs only (fast)
+        propagated = db.propagate_join_link(anime_id, link)
+        try:
+            db.accept_requests_for_title(anime["title"])
+        except Exception:
+            pass
+        # Best-effort cached metadata refresh (poster/relations/airing_day)
+        try:
+            details = SOURCES[anime["source"]].get_details(anime["source_id"], use_cache=True)
+            db.upsert_anime(details)
+            db.update_link(anime_id, link)  # upsert must not drop the link
+            if has_ongoing:
+                db.update_ongoing_link(anime_id, ongoing_link or None)
+        except Exception:
+            pass
         updated = db.get_anime(anime_id)
         return jsonify(status="updated", link=link, ongoing_link=updated.get("ongoing_link"), propagated=propagated, anime=updated)
     # Only ongoing_link update without touching/clearing the main link
