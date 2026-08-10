@@ -1226,6 +1226,41 @@ def update_link(anime_id: int, link: str):
     )
 
 
+
+def update_airing_day(anime_id: int, day: str | None):
+    """Set or clear the weekly airing day for an ongoing title.
+    day: one of sunday, monday, tuesday, wednesday, thursday, friday, saturday
+    or None / empty to clear (moves it out of day grouping).
+    """
+    allowed = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+    if day is not None:
+        day = str(day).strip().lower()
+        if day == "":
+            day = None
+        elif day not in allowed:
+            raise ValueError("day must be a weekday name (sunday…saturday) or empty")
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"airing_day": day, "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
+def update_display_mode(anime_id: int, mode: str):
+    """Admin: how this title appears on Home → Finished.
+    mode: "solo" = always its own card
+          "group" = merge with franchise seasons (default)
+    """
+    mode = (mode or "group").strip().lower()
+    if mode not in ("solo", "group"):
+        raise ValueError("mode must be 'solo' or 'group'")
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"display_mode": mode, "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
 def propagate_join_link(anime_id: int, link: str) -> int:
     """After setting (or clearing) anime_id's join link, apply the same
     value to every other already-posted title in the same franchise —
