@@ -132,6 +132,12 @@
   const letterBar = el("letter-bar");
   const availableGroups = el("available-groups");
   const availableEmpty = el("available-empty");
+  const dayBar = el("day-bar");
+  const ongoingGroups = el("ongoing-groups");
+  const ongoingEmpty = el("ongoing-empty");
+  const finishedPanel = el("finished-panel");
+  const ongoingPanel = el("ongoing-panel");
+  const libraryModeTabs = document.querySelectorAll("[data-library-mode]");
 
   const navBtns = document.querySelectorAll(".nav-btn");
 
@@ -188,7 +194,11 @@
   let mostPopularLoading = false;
   let available = [];
   let activeLetter = null;
+  let activeDay = null;
   let libraryQuery = "";
+  let libraryMode = "finished"; // "finished" | "ongoing"
+  const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const WEEKDAY_LABELS = { sunday: "Sun", monday: "Mon", tuesday: "Tue", wednesday: "Wed", thursday: "Thu", friday: "Fri", saturday: "Sat" };
   let profile = null;
 
   const ALL_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -329,15 +339,15 @@
   }
 
   function trendingCard(item, onOpen) {
-    return posterScrollCard(item, onOpen, "HOT", "hot-badge");
+    return posterScrollCard(item, onOpen, null, null);
   }
 
   function topAiringCard(item, onOpen) {
-    return posterScrollCard(item, onOpen, "NEW EP", "new-ep-badge");
+    return posterScrollCard(item, onOpen, null, null);
   }
 
   function popularGridCard(item, onOpen) {
-    return posterScrollCard(item, onOpen, "POPULAR", "popular-badge");
+    return posterScrollCard(item, onOpen, null, null);
   }
 
   function posterScrollCard(item, onOpen, badgeText, badgeClass) {
@@ -523,13 +533,9 @@
   // Render: Available/library tab (posted catalog, A–Z)
   // ---------------------------------------------------------------------
   function primaryAvailableList() {
-    // A franchise with many posted seasons/OVAs/movies would otherwise
-    // fill the Available grid with one row per title. Instead, group them
-    // by walking each title's relations (already on every available[]
-    // item) and show only one representative per franchise — the
-    // latest-released entry, e.g. the newest season — with the rest
-    // reachable via the Prequel/Sequel cards inside that title's detail
-    // view.
+    // Franchise grouping for Finished tab:
+    // - display_mode "solo" → always its own card
+    // - display_mode "group" (default) → one card per franchise (latest season)
     const bySourceId = new Map();
     available.forEach((a) => {
       if (a.source === "anilist" && a.source_id != null) bySourceId.set(String(a.source_id), a);
@@ -537,6 +543,14 @@
 
     const visited = new Set();
     const primaries = [];
+
+    // Solo titles always appear on their own
+    available.forEach((a) => {
+      if ((a.display_mode || "group") === "solo") {
+        primaries.push(a);
+        visited.add(String(a.id));
+      }
+    });
 
     available.forEach((start) => {
       const startKey = String(start.id);
@@ -547,6 +561,8 @@
       const localSeen = new Set([startKey]);
       while (frontier.length) {
         const cur = frontier.pop();
+        // Skip solo members — they already have their own card
+        if ((cur.display_mode || "group") === "solo") continue;
         group.push(cur);
         (cur.related_ids || []).forEach((rid) => {
           const relItem = bySourceId.get(String(rid));
@@ -558,6 +574,7 @@
       }
       group.forEach((g) => visited.add(String(g.id)));
 
+      if (!group.length) return;
       group.sort((x, y) => (y.year || 0) - (x.year || 0) || y.id - x.id);
       primaries.push(group[0]);
     });
@@ -565,12 +582,31 @@
     return primaries;
   }
 
-  function lettersWithData() {
-    return new Set(primaryAvailableList().map((a) => indexKeyFor(a.title)));
+  function isOngoing(a) {
+    const st = (a.status || "").toUpperCase();
+    if (st === "RELEASING") return true;
+    if (a.airing_day) return true;
+    return false;
   }
 
-  function filteredLibrary() {
-    let list = primaryAvailableList();
+  function finishedList() {
+    return primaryAvailableList().filter((a) => !isOngoing(a));
+  }
+
+  function ongoingList() {
+    return primaryAvailableList().filter((a) => isOngoing(a));
+  }
+
+  function lettersWithData() {
+    return new Set(finishedList().map((a) => indexKeyFor(a.title)));
+  }
+
+  function daysWithData() {
+    return new Set(ongoingList().map((a) => (a.airing_day || "").toLowerCase()).filter(Boolean));
+  }
+
+  function filteredFinished() {
+    let list = finishedList();
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
     } else if (activeLetter) {
@@ -579,7 +615,18 @@
     return [...list].sort((a, b) => a.title.localeCompare(b.title));
   }
 
+  function filteredOngoing() {
+    let list = ongoingList();
+    if (libraryQuery.trim()) {
+      list = list.filter((a) => matchesLibraryQuery(a.title));
+    } else if (activeDay) {
+      list = list.filter((a) => (a.airing_day || "").toLowerCase() === activeDay);
+    }
+    return [...list].sort((a, b) => a.title.localeCompare(b.title));
+  }
+
   function renderLetterBar() {
+    if (!letterBar) return;
     letterBar.innerHTML = "";
     const has = lettersWithData();
     INDEX_KEYS.forEach((l) => {
@@ -596,33 +643,101 @@
     });
   }
 
-  function renderLibraryTab() {
-    renderLetterBar();
-    availableGroups.innerHTML = "";
-    const list = filteredLibrary();
-    availableEmpty.classList.toggle("hidden", list.length !== 0);
+  function renderDayBar() {
+    if (!dayBar) return;
+    dayBar.innerHTML = "";
+    const has = daysWithData();
+    WEEKDAYS.forEach((d) => {
+      const btn = document.createElement("button");
+      btn.className = "letter-btn" + (activeDay === d ? " active" : "");
+      btn.textContent = WEEKDAY_LABELS[d];
+      btn.disabled = !has.has(d);
+      btn.addEventListener("click", () => {
+        libraryQuery = "";
+        activeDay = activeDay === d ? null : d;
+        renderLibraryTab();
+      });
+      dayBar.appendChild(btn);
+    });
+  }
+
+  function renderGroupedGrid(container, emptyEl, list, groupKeyFn, labelFn) {
+    if (!container) return;
+    container.innerHTML = "";
+    if (emptyEl) emptyEl.classList.toggle("hidden", list.length !== 0);
 
     const groups = {};
     list.forEach((a) => {
-      const l = indexKeyFor(a.title);
-      (groups[l] = groups[l] || []).push(a);
+      const k = groupKeyFn(a);
+      (groups[k] = groups[k] || []).push(a);
     });
 
-    Object.keys(groups).sort().forEach((letter) => {
+    const keys = Object.keys(groups).sort((a, b) => {
+      // Prefer weekday order when both are weekdays
+      const ia = WEEKDAYS.indexOf(a);
+      const ib = WEEKDAYS.indexOf(b);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      return a.localeCompare(b);
+    });
+
+    keys.forEach((key) => {
       const wrap = document.createElement("div");
       wrap.className = "letter-group";
       const header = document.createElement("div");
       header.className = "letter-group-header";
-      header.innerHTML = `<span class="letter-group-label">${letter}</span><span class="letter-group-line"></span>`;
+      header.innerHTML = `<span class="letter-group-label">${labelFn(key)}</span><span class="letter-group-line"></span>`;
       wrap.appendChild(header);
       const grid = document.createElement("div");
       grid.className = "available-grid";
-      groups[letter].forEach((item) => {
+      groups[key].forEach((item) => {
         grid.appendChild(simplePosterCard(item, () => openLocalDetail(item)));
       });
       wrap.appendChild(grid);
-      availableGroups.appendChild(wrap);
+      container.appendChild(wrap);
     });
+  }
+
+  function setLibraryMode(mode) {
+    libraryMode = mode === "ongoing" ? "ongoing" : "finished";
+    libraryModeTabs.forEach((b) => {
+      b.classList.toggle("active", b.dataset.libraryMode === libraryMode);
+    });
+    if (finishedPanel) finishedPanel.classList.toggle("hidden", libraryMode !== "finished");
+    if (ongoingPanel) ongoingPanel.classList.toggle("hidden", libraryMode !== "ongoing");
+    renderLibraryTab();
+  }
+
+  if (libraryModeTabs && libraryModeTabs.length) {
+    libraryModeTabs.forEach((b) => {
+      b.addEventListener("click", () => setLibraryMode(b.dataset.libraryMode));
+    });
+  }
+
+  function renderLibraryTab() {
+    if (libraryMode === "ongoing") {
+      renderDayBar();
+      const list = filteredOngoing();
+      // Group by day; unscheduled ongoing goes under "TBA"
+      renderGroupedGrid(
+        ongoingGroups,
+        ongoingEmpty,
+        list,
+        (a) => (a.airing_day || "tba").toLowerCase(),
+        (k) => (k === "tba" ? "TBA" : (WEEKDAY_LABELS[k] || k).toUpperCase())
+      );
+    } else {
+      renderLetterBar();
+      const list = filteredFinished();
+      renderGroupedGrid(
+        availableGroups,
+        availableEmpty,
+        list,
+        (a) => indexKeyFor(a.title),
+        (k) => k
+      );
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -879,6 +994,84 @@
       plus.setAttribute("aria-label", "Set join link");
       plus.addEventListener("click", () => openLinkSheet(anime));
       row.appendChild(plus);
+
+      // Assign weekday for Home → Ongoing
+      const dayWrap = document.createElement("div");
+      dayWrap.style.cssText = "width:100%;margin-top:10px;";
+      const dayLabel = document.createElement("p");
+      dayLabel.className = "empty-note";
+      dayLabel.style.cssText = "text-align:left;padding:0 0 6px;margin:0;";
+      dayLabel.textContent = "Ongoing day (Home tab)";
+      const daySelect = document.createElement("select");
+      daySelect.className = "edit-link-input link-input-full";
+      daySelect.style.cssText = "width:100%;padding:10px;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);";
+      const opts = [["", "— Not ongoing / TBA —"]].concat(
+        WEEKDAYS.map((d) => [d, d.charAt(0).toUpperCase() + d.slice(1)])
+      );
+      opts.forEach(([val, lab]) => {
+        const o = document.createElement("option");
+        o.value = val;
+        o.textContent = lab;
+        if ((anime.airing_day || "") === val) o.selected = true;
+        daySelect.appendChild(o);
+      });
+      daySelect.addEventListener("change", async () => {
+        try {
+          const result = await api(`/api/anime/${anime.id}/airing-day`, {
+            method: "PATCH",
+            body: JSON.stringify({ day: daySelect.value || null }),
+          });
+          const updated = result.anime || {};
+          anime.airing_day = updated.airing_day || null;
+          // Refresh local available cache entry
+          const idx = available.findIndex((a) => a.id === anime.id);
+          if (idx >= 0) available[idx] = { ...available[idx], airing_day: anime.airing_day, status: updated.status || available[idx].status };
+          showToast(anime.airing_day ? `Set to ${anime.airing_day}` : "Cleared ongoing day");
+          renderLibraryTab();
+        } catch (err) {
+          showToast(err.message || "Couldn't save day");
+        }
+      });
+      dayWrap.appendChild(dayLabel);
+      dayWrap.appendChild(daySelect);
+      detailActionArea.appendChild(dayWrap);
+
+      // Solo vs group seasons (Finished tab)
+      const modeWrap = document.createElement("div");
+      modeWrap.style.cssText = "width:100%;margin-top:10px;";
+      const modeLabel = document.createElement("p");
+      modeLabel.className = "empty-note";
+      modeLabel.style.cssText = "text-align:left;padding:0 0 6px;margin:0;";
+      modeLabel.textContent = "Finished display";
+      const modeSelect = document.createElement("select");
+      modeSelect.className = "edit-link-input link-input-full";
+      modeSelect.style.cssText = "width:100%;padding:10px;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);";
+      [["group", "Group all seasons (one card)"], ["solo", "Solo (this title only)"]].forEach(([val, lab]) => {
+        const o = document.createElement("option");
+        o.value = val;
+        o.textContent = lab;
+        if ((anime.display_mode || "group") === val) o.selected = true;
+        modeSelect.appendChild(o);
+      });
+      modeSelect.addEventListener("change", async () => {
+        try {
+          const result = await api(`/api/anime/${anime.id}/display-mode`, {
+            method: "PATCH",
+            body: JSON.stringify({ mode: modeSelect.value }),
+          });
+          const updated = result.anime || {};
+          anime.display_mode = updated.display_mode || "group";
+          const idx = available.findIndex((a) => a.id === anime.id);
+          if (idx >= 0) available[idx] = { ...available[idx], display_mode: anime.display_mode };
+          showToast(anime.display_mode === "solo" ? "Solo card" : "Grouped with seasons");
+          renderLibraryTab();
+        } catch (err) {
+          showToast(err.message || "Couldn't save display mode");
+        }
+      });
+      modeWrap.appendChild(modeLabel);
+      modeWrap.appendChild(modeSelect);
+      detailActionArea.appendChild(modeWrap);
     }
 
     detailActionArea.appendChild(row);

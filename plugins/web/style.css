@@ -504,13 +504,25 @@ html, body {
 
 .popular-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px 10px;
+  /* ~3 columns on phone; last incomplete row cards expand to fill width */
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px 8px;
   padding-bottom: 16px;
+  align-items: start;
 }
 
-.popular-grid .poster-card img {
-  height: 168px;
+.popular-grid .poster-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.popular-grid .poster-card img,
+.popular-grid .poster-card .generated-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
 }
 
 .popular-badge {
@@ -636,11 +648,22 @@ html, body {
 
 .available-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px 10px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px 8px;
+  align-items: start;
 }
-.available-grid .poster-card img {
-  height: 210px;
+.available-grid .poster-card {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.available-grid .poster-card img,
+.available-grid .poster-card .generated-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
 }
 
 /* ---------------- bottom nav ---------------- */
