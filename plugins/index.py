@@ -335,9 +335,14 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         try:
             request_id = int(parts[1])
         except (IndexError, ValueError):
-            await q.answer()
+            await q.answer("Invalid request.", show_alert=True)
             return
-        updated = await asyncio.to_thread(db.resolve_request_by_id, request_id, "accepted")
+        try:
+            updated = await asyncio.to_thread(db.resolve_request_by_id, request_id, "accepted")
+        except Exception as e:
+            await q.answer("Error while accepting.", show_alert=True)
+            print(f"[reqaccept] resolve failed #{request_id}: {e}")
+            return
         if updated is None:
             await q.answer("Already handled.", show_alert=True)
             return
@@ -348,8 +353,13 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
                 await safe_edit_caption(q.message, (q.message.caption or "") + label)
             else:
                 await safe_edit_text(q.message, (q.message.text or "") + label)
-        except Exception:
-            pass
+            # Remove buttons after decision
+            try:
+                await safe_edit_reply_markup(q.message, None)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[reqaccept] edit message failed: {e}")
         return
 
     if action == "reqreject":
@@ -364,8 +374,8 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         ]
         try:
             await safe_edit_reply_markup(q.message, InlineKeyboardMarkup(rows))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[reqreject] edit markup failed: {e}")
         return
 
     if action == "reqback":
@@ -377,8 +387,8 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         ]]
         try:
             await safe_edit_reply_markup(q.message, InlineKeyboardMarkup(rows))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[reqback] edit markup failed: {e}")
         return
 
     if action == "reqreason":
@@ -386,12 +396,17 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
             request_id = int(parts[1])
             reason_code = parts[2] if len(parts) > 2 else "other"
         except (IndexError, ValueError):
-            await q.answer()
+            await q.answer("Invalid request.", show_alert=True)
             return
         note = REJECT_REASONS.get(reason_code, REJECT_REASONS["other"])
-        updated = await asyncio.to_thread(
-            db.resolve_request_by_id, request_id, "rejected", note
-        )
+        try:
+            updated = await asyncio.to_thread(
+                db.resolve_request_by_id, request_id, "rejected", note
+            )
+        except Exception as e:
+            await q.answer("Error while rejecting.", show_alert=True)
+            print(f"[reqreason] resolve failed #{request_id}: {e}")
+            return
         if updated is None:
             await q.answer("Already handled.", show_alert=True)
             return
@@ -402,6 +417,10 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
                 await safe_edit_caption(q.message, (q.message.caption or "") + label)
             else:
                 await safe_edit_text(q.message, (q.message.text or "") + label)
-        except Exception:
-            pass
+            try:
+                await safe_edit_reply_markup(q.message, None)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[reqreason] edit message failed: {e}")
         return
