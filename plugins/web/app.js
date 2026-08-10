@@ -583,11 +583,10 @@
   }
 
   function isOngoing(a) {
+    // Ongoing tab: ONLY currently airing / not-yet-released titles.
+    // Finished series must never appear here, even if they have links or an old airing_day.
     const st = (a.status || "").toUpperCase();
-    if (st === "RELEASING" || st === "NOT_YET_RELEASED") return true;
-    if (a.airing_day) return true;
-    if (a.ongoing_link) return true;
-    return false;
+    return st === "RELEASING" || st === "NOT_YET_RELEASED";
   }
 
   // Title-based schedule fallback when AniList has no broadcast day
@@ -1574,9 +1573,14 @@
     searchResults.classList.remove("hidden");
     searchResultsGroups.innerHTML = "";
     searchResultsEmpty.classList.add("hidden");
+    searchResultsEmpty.textContent = "Searching AniList…";
 
+    const qLower = query.toLowerCase();
     const availIndex = buildAvailableIndex();
-    const localMatches = available.filter((a) => a.title.toLowerCase().includes(query.toLowerCase()));
+    const localMatches = available.filter((a) => {
+      const t = `${a.title || ""} ${a.alt_title || ""}`.toLowerCase();
+      return t.includes(qLower);
+    });
     localMatches.forEach((item) => {
       searchResultsGroups.appendChild(searchResultRow(item, () => {
         trackConfirmedSearch(item.title);
@@ -1588,21 +1592,37 @@
     searchLoading = true;
     try {
       const data = await api(`/api/search/anime?q=${encodeURIComponent(query)}&page=1`);
-      if (myToken !== searchToken) return; // a newer search superseded this one
-      searchHasNext = data.has_next;
-      const localTitles = new Set(localMatches.map((a) => a.title.toLowerCase()));
-      data.results.forEach((item) => {
-        if (localTitles.has(item.title.toLowerCase())) return; // already shown above
+      if (myToken !== searchToken) return;
+      searchHasNext = !!(data && data.has_next);
+      const seenIds = new Set(
+        localMatches.map((a) => String(a.source_id || a.anilist_id || a.id)).filter(Boolean)
+      );
+      const localTitles = new Set(localMatches.map((a) => (a.title || "").toLowerCase()));
+      (data.results || []).forEach((item) => {
+        const idKey = String(item.anilist_id || item.source_id || "");
+        if (idKey && seenIds.has(idKey)) return;
+        if (localTitles.has((item.title || "").toLowerCase())) return;
+        if (idKey) seenIds.add(idKey);
         const matched = availIndex.match(item);
-        item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+        if (matched) {
+          item.matchedJoinLink = matched.join_link || matched.ongoing_link || null;
+          item.id = matched.id;
+        }
         searchResultsGroups.appendChild(searchResultRow(item, () => {
           trackConfirmedSearch(item.title);
-          openDiscoverDetail(item);
+          if (matched) openLocalDetail({ ...matched, ...item });
+          else openDiscoverDetail(item);
         }));
       });
-      searchResultsEmpty.classList.toggle("hidden", searchResultsGroups.children.length !== 0);
+      const empty = searchResultsGroups.children.length === 0;
+      searchResultsEmpty.textContent = empty ? "No anime found on AniList." : "";
+      searchResultsEmpty.classList.toggle("hidden", !empty);
     } catch (err) {
-      searchResultsEmpty.classList.toggle("hidden", searchResultsGroups.children.length !== 0);
+      const empty = searchResultsGroups.children.length === 0;
+      searchResultsEmpty.textContent = empty
+        ? (err.message || "Search failed. Try again.")
+        : "";
+      searchResultsEmpty.classList.toggle("hidden", !empty);
     }
     searchLoading = false;
   }
