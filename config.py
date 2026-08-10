@@ -2,7 +2,6 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 
-
 # ──────────────────────────────────────────────
 # Logging / Server
 # ──────────────────────────────────────────────
@@ -14,15 +13,14 @@ PORT = int(os.getenv("PORT", "5010"))
 # ──────────────────────────────────────────────
 SESSION = os.getenv("SESSION", "Kaya")
 TOKEN = os.getenv("TOKEN", "")
-API_ID = int(os.getenv("API_ID", "0") or "0")
-API_HASH = os.getenv("API_HASH", "")
+API_ID = int(os.getenv("API_ID", "29245477"))
+API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
 WORKERS = int(os.getenv("WORKERS", "5"))
-OWNER_ID = int(os.getenv("OWNER_ID", "") or "0")
+OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
 MSG_EFFECT = 5046509860389126442
 
 
-# Comma-separated extra admin IDs on top of OWNER_ID, e.g. ADMINS="111 222"
-ADMINS = [int(a) for a in os.getenv("ADMINS", "").split() if a.strip().lstrip("-").isdigit()]
+ADMINS = [8771195193]
 
 # ──────────────────────────────────────────────
 # MongoDB
@@ -49,6 +47,13 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
 # AniList GraphQL (set ANILIST_ENDPOINT to your own proxy URL if needed)
 ANILIST_ENDPOINT = os.getenv("ANILIST_ENDPOINT", "https://graphql.anilist.co").rstrip("/")
+# Outbound HTTP proxy for server → AniList (Koyeb datacenter IP may be rate-limited)
+# Example: ANILIST_PROXY=http://user:pass@host:8080
+ANILIST_PROXY = (
+    os.getenv("ANILIST_PROXY", "").strip()
+    or os.getenv("HTTPS_PROXY", "").strip()
+    or os.getenv("HTTP_PROXY", "").strip()
+)
 # If server catalog is empty, WebApp fetches AniList from the user's device
 ANILIST_CLIENT_FALLBACK = os.getenv("ANILIST_CLIENT_FALLBACK", "true").lower() in ("1", "true", "yes")
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -63,10 +68,8 @@ SHORT_TUT = os.getenv("SHORT_TUT", "")
 # ──────────────────────────────────────────────
 # Channels / Force Sub / Bot settings
 # ──────────────────────────────────────────────
-DB_CHANNEL = int(os.getenv("DB_CHANNEL", "0") or "0")
-
-# Force-subscribe channels (managed dynamically via DB / settings; env optional)
-FSUBS = []
+DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1003928914916"))
+FSUBS = [[-1002369123167, True, 5]]
 AUTO_DEL = os.getenv("AUTO_DEL", "300")
 DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
 PROTECT = os.getenv("PROTECT", "False").lower() == "true"
