@@ -38,7 +38,12 @@ query ($search: String, $page: Int) {
 
 
 def _airing_day_from_media(m: dict) -> str | None:
-    """Map AniList broadcast / next airing timestamp to sunday…saturday."""
+    """Map AniList broadcast / next airing timestamp to sunday…saturday.
+
+    Prefer the explicit broadcast.day (already in local schedule language).
+    Fallback uses nextAiringEpisode in Asia/Tokyo so late-night JST slots
+    don't shift to the previous UTC day.
+    """
     day_map = {
         "sundays": "sunday", "mondays": "monday", "tuesdays": "tuesday",
         "wednesdays": "wednesday", "thursdays": "thursday",
@@ -51,13 +56,18 @@ def _airing_day_from_media(m: dict) -> str | None:
     raw = (b.get("day") or "").strip().lower()
     if raw in day_map:
         return day_map[raw]
-    # Fallback: next episode airing time (UTC → weekday name)
+    # Fallback: next episode airing time → weekday in Japan (JST)
     nae = m.get("nextAiringEpisode") or {}
     ts = nae.get("airingAt")
     if ts:
         try:
             import datetime as _dt
-            d = _dt.datetime.utcfromtimestamp(int(ts))
+            # Prefer zoneinfo; fall back to fixed +09:00 if unavailable
+            try:
+                from zoneinfo import ZoneInfo
+                d = _dt.datetime.fromtimestamp(int(ts), tz=ZoneInfo("Asia/Tokyo"))
+            except Exception:
+                d = _dt.datetime.utcfromtimestamp(int(ts)) + _dt.timedelta(hours=9)
             return ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][d.weekday()]
         except Exception:
             pass
