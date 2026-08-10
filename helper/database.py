@@ -1095,7 +1095,10 @@ def get_franchise_neighbors(details: dict) -> list[dict]:
     docs = list(anime_col.find({
         "source": source,
         "source_id": {"$in": list(family_ids)},
-        "join_link": {"$nin": [None, ""]},
+        "$or": [
+            {"join_link": {"$nin": [None, ""]}},
+            {"ongoing_link": {"$nin": [None, ""]}},
+        ],
     }))
     docs.append({
         "_id": None,
@@ -1118,15 +1121,30 @@ def get_franchise_neighbors(details: dict) -> list[dict]:
         )
 
     docs.sort(key=sort_key)
-    idx = next(i for i, d in enumerate(docs) if d["source_id"] == source_id)
+    try:
+        idx = next(i for i, d in enumerate(docs) if str(d.get("source_id")) == source_id)
+    except StopIteration:
+        return []
 
     out = []
     if idx > 0:
         p = docs[idx - 1]
-        out.append({"id": p["_id"], "title": p["title"], "poster_url": p.get("poster_url"), "relation_type": "PREQUEL"})
+        if p.get("_id") is not None:
+            out.append({
+                "id": p["_id"],
+                "title": p["title"],
+                "poster_url": p.get("poster_url"),
+                "relation_type": "PREQUEL",
+            })
     if idx < len(docs) - 1:
         s = docs[idx + 1]
-        out.append({"id": s["_id"], "title": s["title"], "poster_url": s.get("poster_url"), "relation_type": "SEQUEL"})
+        if s.get("_id") is not None:
+            out.append({
+                "id": s["_id"],
+                "title": s["title"],
+                "poster_url": s.get("poster_url"),
+                "relation_type": "SEQUEL",
+            })
     return out
 
 
