@@ -299,7 +299,7 @@ html, body {
 .search-input::placeholder { color: var(--text-faint); }
 .search-input[readonly] { cursor: pointer; caret-color: transparent; }
 
-/* ---------------- pill tabs (All / Available) ---------------- */
+/* ---------------- pill tabs (Finished / Ongoing) ---------------- */
 
 .pill-tabs {
   display: flex;
@@ -307,7 +307,18 @@ html, body {
   background: var(--surface-2);
   border-radius: 999px;
   padding: 4px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+}
+
+/* Sticky Finished / Ongoing bar while scrolling the library */
+#library-mode-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-bottom: 10px;
+  padding: 6px 4px;
+  background: var(--bg);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
 }
 
 .pill-tab {
@@ -621,6 +632,19 @@ html, body {
   scrollbar-width: none;
 }
 .letter-bar::-webkit-scrollbar { display: none; }
+
+/* Keep A–Z / day chips fixed under the Finished|Ongoing bar while scrolling */
+#letter-bar,
+#day-bar {
+  position: sticky;
+  top: 52px; /* sits under #library-mode-tabs */
+  z-index: 19;
+  background: var(--bg);
+  padding-top: 4px;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
 
 .letter-btn {
   flex: none;
@@ -1803,7 +1827,7 @@ html, body {
 
 .btn-row .btn { flex: 1; margin-bottom: 0; }
 
-/* Day bar — compact equal chips, one row */
+/* Day bar — compact equal chips, one row (sticky under mode tabs) */
 #day-bar {
   display: flex;
   flex-wrap: nowrap;
@@ -1817,6 +1841,9 @@ html, body {
   width: 100%;
   box-sizing: border-box;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  position: sticky;
+  top: 52px;
+  z-index: 19;
 }
 
 #day-bar .letter-btn {

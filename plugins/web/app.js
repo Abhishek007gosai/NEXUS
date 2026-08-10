@@ -1189,7 +1189,8 @@
       btnSolo.classList.toggle("active", mode === "solo");
     }
     const modeField = el("link-display-mode-field");
-    if (modeField) modeField.classList.toggle("hidden", !anime.id); // only for existing posts
+    // Always show Solo / All seasons so admin can choose on first save too
+    if (modeField) modeField.classList.remove("hidden");
     linkOverlay.classList.remove("hidden");
     linkInput.focus();
   }
@@ -1239,6 +1240,15 @@
     const ongoingEnabled = ongoingPanel && !ongoingPanel.classList.contains("hidden");
     // Only send ongoing_link when the panel is open; empty finished URL = remove post
     const ongoingValue = (ongoingEnabled && ongoingInput) ? ongoingInput.value.trim() : "";
+    const btnGroup = el("link-mode-group");
+    const chosenMode = (btnGroup && btnGroup.classList.contains("active")) ? "group" : "solo";
+
+    // New posts require a finished join URL
+    if (!linkTargetAnime.id && !value) {
+      showToast("Paste a join URL first");
+      return;
+    }
+
     linkSaveBtn.disabled = true;
     const originalLabel = linkSaveBtn.textContent;
     linkSaveBtn.textContent = "Saving…";
@@ -1250,7 +1260,6 @@
           method: "PATCH",
           body: JSON.stringify({
             link: value,
-            // Only include ongoing_link when user is managing that field
             ...(ongoingEnabled ? { ongoing_link: ongoingValue } : {}),
           }),
         });
@@ -1260,10 +1269,9 @@
           showToast(result.propagated
             ? `Removed from library (and ${result.propagated} related title(s))`
             : "Removed from library");
-          await loadAvailable();
+          loadAvailable().catch(() => {});
           return;
         }
-        // Prefer server values so an ongoing-only save never wipes finished link
         const saved = result.anime || {};
         linkTargetAnime.join_link = saved.join_link != null ? saved.join_link : (value || linkTargetAnime.join_link);
         linkTargetAnime.ongoing_link = saved.ongoing_link != null ? saved.ongoing_link : (ongoingValue || null);
@@ -1279,9 +1287,28 @@
             ongoing_link: linkTargetAnime.ongoing_link,
           };
         }
-        // Save All seasons / Solo from the + sheet
-        const btnGroup = el("link-mode-group");
-        const chosenMode = (btnGroup && btnGroup.classList.contains("active")) ? "group" : "solo";
+      } else {
+        // Discover/Genre post — create library entry with the link
+        const alId = linkTargetAnime.anilist_id || linkTargetAnime.source_id;
+        if (!alId) {
+          throw new Error("Missing AniList id — open the title again and retry");
+        }
+        result = await api(`/api/anime/link-anilist/${alId}`, {
+          method: "POST",
+          body: JSON.stringify({ link: value }),
+        });
+        linkTargetAnime.id = result.anime.id;
+        linkTargetAnime.join_link = result.anime.join_link;
+        linkTargetAnime.matchedJoinLink = result.anime.join_link;
+        if (currentDetail && (currentDetail.anilist_id === alId || currentDetail.source_id === alId)) {
+          currentDetail.id = result.anime.id;
+          currentDetail.join_link = result.anime.join_link;
+          currentDetail.matchedJoinLink = result.anime.join_link;
+        }
+      }
+
+      // Apply Solo / All seasons after the post exists
+      if (linkTargetAnime.id) {
         try {
           const modeRes = await api(`/api/anime/${linkTargetAnime.id}/display-mode`, {
             method: "PATCH",
@@ -1290,30 +1317,16 @@
           const dm = (modeRes.anime && modeRes.anime.display_mode) || chosenMode;
           linkTargetAnime.display_mode = dm;
           if (currentDetail && currentDetail.id === linkTargetAnime.id) currentDetail.display_mode = dm;
+          const aidx = available.findIndex((a) => a.id === linkTargetAnime.id);
           if (aidx >= 0) available[aidx] = { ...available[aidx], display_mode: dm };
         } catch (err) { /* non-fatal */ }
-      } else {
-        // Not in the local library yet (Discover/Genre post) — this creates
-        // the library entry with the link already set in one step.
-        result = await api(`/api/anime/link-anilist/${linkTargetAnime.anilist_id}`, {
-          method: "POST",
-          body: JSON.stringify({ link: value }),
-        });
-        linkTargetAnime.id = result.anime.id;
-        linkTargetAnime.join_link = result.anime.join_link;
-        linkTargetAnime.matchedJoinLink = result.anime.join_link;
-        if (currentDetail && currentDetail.anilist_id === linkTargetAnime.anilist_id) {
-          currentDetail.id = result.anime.id;
-          currentDetail.join_link = result.anime.join_link;
-          currentDetail.matchedJoinLink = result.anime.join_link;
-        }
       }
+
       if (currentDetail) renderDetailAction(currentDetail, currentContext);
       closeLinkSheet();
       showToast(result.propagated
         ? `Link saved — applied to ${result.propagated} related title(s) too`
         : "Link saved");
-      // Refresh catalog in background — don't block the Save UI
       loadAvailable().catch(() => {});
     } catch (err) {
       showToast(err.message || "Couldn't save link");
