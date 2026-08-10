@@ -993,7 +993,8 @@ def _to_anime(doc) -> dict | None:
     d = dict(doc)
     d["id"] = d.pop("_id")
     d["genres"] = d.get("genres") or []
-    d["available"] = bool(d.get("join_link"))
+    # Available if it has a finished join link and/or a dedicated ongoing link
+    d["available"] = bool(d.get("join_link") or d.get("ongoing_link"))
     return d
 
 
@@ -1226,6 +1227,15 @@ def update_link(anime_id: int, link: str):
         {"$set": {"join_link": link or None, "updated_at": time.time()}},
     )
 
+
+def update_ongoing_link(anime_id: int, link: str | None):
+    """Optional separate join link used while the title is ongoing.
+    Falls back to join_link in the client when empty."""
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"ongoing_link": (link or None), "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
 
 
 def update_airing_day(anime_id: int, day: str | None):
