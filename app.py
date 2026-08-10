@@ -575,16 +575,89 @@ def api_search_clear():
 
 @app.get("/api/search/anime")
 def api_search_anime():
+    """Search local MongoDB first (fast), then AniList (cached in Mongo).
+
+    Merges local posted titles with AniList results so search works even
+    when AniList is rate-limited or slow.
+    """
     q = (request.args.get("q") or "").strip()
     page = request.args.get("page", 1, type=int)
     if not q:
         return jsonify({"results": [], "has_next": False})
+
+    local_hits = []
     try:
-        return jsonify(SOURCES["anilist"].search(q, page))
-    except requests.RequestException as e:
-        return jsonify({"results": [], "has_next": False, "error": str(e) or "AniList unavailable"}), 502
+        local_hits = db.search_local(q, limit=40)
     except Exception as e:
-        return jsonify({"results": [], "has_next": False, "error": str(e) or "Search failed"}), 500
+        print(f"[search] local failed: {e}")
+
+    # Normalize local docs to the same shape as AniList search rows
+    results = []
+    seen_ids = set()
+    for a in local_hits:
+        sid = str(a.get("source_id") or a.get("anilist_id") or a.get("id") or "")
+        if sid:
+            seen_ids.add(sid)
+        results.append({
+            "id": a.get("id"),
+            "source_id": a.get("source_id") or a.get("anilist_id"),
+            "anilist_id": a.get("anilist_id") or a.get("source_id"),
+            "title": a.get("title"),
+            "alt_title": a.get("alt_title"),
+            "year": a.get("year"),
+            "poster_url": a.get("poster_url"),
+            "rating": a.get("rating"),
+            "genres": (a.get("genres") or [])[:3],
+            "format": a.get("format"),
+            "episodes": a.get("episodes"),
+            "status": a.get("status"),
+            "join_link": a.get("join_link"),
+            "ongoing_link": a.get("ongoing_link"),
+            "matchedJoinLink": a.get("join_link") or a.get("ongoing_link"),
+            "from_library": True,
+        })
+
+    # AniList (page 1 merges with local; later pages are AniList-only)
+    al_error = None
+    has_next = False
+    try:
+        al = SOURCES["anilist"].search(q, page)
+        has_next = bool(al.get("has_next"))
+        for item in al.get("results") or []:
+            sid = str(item.get("anilist_id") or item.get("source_id") or "")
+            if sid and sid in seen_ids:
+                continue
+            if sid:
+                seen_ids.add(sid)
+            # Prefer library match for join links
+            matched = None
+            try:
+                if sid:
+                    matched = db.find_by_source_id("anilist", sid)
+            except Exception:
+                matched = None
+            if matched:
+                item["id"] = matched.get("id")
+                item["join_link"] = matched.get("join_link")
+                item["ongoing_link"] = matched.get("ongoing_link")
+                item["matchedJoinLink"] = matched.get("join_link") or matched.get("ongoing_link")
+            results.append(item)
+    except requests.RequestException as e:
+        al_error = str(e) or "AniList unavailable"
+    except Exception as e:
+        al_error = str(e) or "Search failed"
+
+    # If AniList failed but we have local results, still return 200
+    if al_error and not results:
+        return jsonify({"results": [], "has_next": False, "error": al_error}), 502
+
+    # Page > 1: local already shown on page 1; only return AniList page slice
+    # (AniList results already appended above for this page)
+    if page > 1:
+        # Drop pure-local-only rows on later pages (they were page-1)
+        results = [r for r in results if not r.get("from_library")]
+
+    return jsonify({"results": results, "has_next": has_next, "error": al_error})
 
 
 @app.get("/api/genres/<genre>")
@@ -788,47 +861,66 @@ def api_profile_help_update():
 
 @app.patch("/api/anime/<int:anime_id>/link")
 def api_edit_link(anime_id):
+    """Set/clear finished (join_link) and ongoing (ongoing_link) independently.
+
+    - Non-empty link → save to MongoDB
+    - Empty string for a field → clear that field in MongoDB
+    - Both empty → delete the post (and franchise family) from the library
+    """
     user = current_user()
     if not is_admin(user):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
     raw_link = (payload.get("link") or "").strip()
-    # Optional separate ongoing-only join URL (empty string clears it)
     has_ongoing = "ongoing_link" in payload
     raw_ongoing = (payload.get("ongoing_link") or "").strip() if has_ongoing else None
     if not db.get_anime(anime_id):
         abort(404)
     try:
         link = normalize_join_link(raw_link) if raw_link else ""
-        ongoing_link = normalize_join_link(raw_ongoing) if (has_ongoing and raw_ongoing) else ("" if has_ongoing else None)
+        if has_ongoing:
+            ongoing_link = normalize_join_link(raw_ongoing) if raw_ongoing else ""
+        else:
+            ongoing_link = None  # leave existing ongoing_link untouched
     except ValueError as e:
         return jsonify(error=str(e)), 400
+
+    # Both links empty (and ongoing was explicitly sent) → remove from library
+    if not link and has_ongoing and not ongoing_link:
+        propagated = db.delete_anime_family(anime_id)
+        return jsonify(status="deleted", link="", ongoing_link="", propagated=propagated)
+
+    # Empty finished only, ongoing not in payload → treat as clear finished;
+    # if no ongoing_link remains either, delete.
+    anime = db.get_anime(anime_id)
+    existing_ongoing = (anime or {}).get("ongoing_link") or ""
+    final_ongoing = ongoing_link if has_ongoing else existing_ongoing
+    if not link and not final_ongoing:
+        propagated = db.delete_anime_family(anime_id)
+        return jsonify(status="deleted", link="", ongoing_link="", propagated=propagated)
+
+    # Pure DB write — no AniList network during Save
+    db.update_link(anime_id, link or None)
+    if has_ongoing:
+        db.update_ongoing_link(anime_id, ongoing_link or None)
+    propagated = 0
     if link:
-        # Pure DB write — no AniList network during Save so it finishes quickly.
-        anime = db.get_anime(anime_id)
-        db.update_link(anime_id, link)
-        if has_ongoing:
-            db.update_ongoing_link(anime_id, ongoing_link or None)
-        propagated = 0
         try:
             propagated = db.propagate_join_link(anime_id, link)
         except Exception:
             pass
-        try:
-            db.accept_requests_for_title(anime.get("title") or "")
-        except Exception:
-            pass
-        updated = db.get_anime(anime_id)
-        return jsonify(
-            status="updated",
-            link=link,
-            ongoing_link=(updated or {}).get("ongoing_link"),
-            propagated=propagated,
-            anime=updated,
-        )
-    # Empty finished Join URL → remove this anime from the library
-    propagated = db.delete_anime_family(anime_id)
-    return jsonify(status="deleted", link="", propagated=propagated)
+    try:
+        db.accept_requests_for_title((anime or {}).get("title") or "")
+    except Exception:
+        pass
+    updated = db.get_anime(anime_id)
+    return jsonify(
+        status="updated",
+        link=(updated or {}).get("join_link") or "",
+        ongoing_link=(updated or {}).get("ongoing_link") or "",
+        propagated=propagated,
+        anime=updated,
+    )
 
 
 
@@ -936,39 +1028,77 @@ def api_refresh_airing_days():
 
 @app.post("/api/anime/link-anilist/<int:anilist_id>")
 def api_set_link_from_anilist(anilist_id):
-    """Set a join link for a title that's only been browsed from AniList
-    (Discover/Genre) and doesn't have a local library entry yet. Creates
-    that entry on the fly — from this point on it's a normal posted anime
-    and shows up in the Available tab, same as one added via /addpost."""
+    """Set finished and/or ongoing join links for a title browsed from AniList
+    (Discover/Genre/Search). Creates a full MongoDB library entry so the title
+    appears under Finished (join_link) and/or Ongoing (ongoing_link)."""
     user = current_user()
     if not is_admin(user):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
     raw_link = (payload.get("link") or "").strip()
-    if not raw_link:
-        return jsonify(error="A join link is required."), 400
+    raw_ongoing = (payload.get("ongoing_link") or "").strip()
+    if not raw_link and not raw_ongoing:
+        return jsonify(error="A Finished or Ongoing join link is required."), 400
     try:
-        link = normalize_join_link(raw_link)
+        link = normalize_join_link(raw_link) if raw_link else ""
+        ongoing_link = normalize_join_link(raw_ongoing) if raw_ongoing else ""
     except ValueError as e:
         return jsonify(error=str(e)), 400
+
+    # Prefer full AniList details; fall back to client-supplied fields so a
+    # temporary AniList outage never blocks adding to the Finished library.
+    details = None
     try:
         details = SOURCES["anilist"].get_details(anilist_id, use_cache=True)
-    except requests.RequestException:
-        return jsonify(error="Couldn't fetch details from AniList right now."), 502
-    except Exception:
-        return jsonify(error="Couldn't fetch details from AniList right now."), 502
+    except Exception as e:
+        print(f"[link-anilist] details fetch failed for {anilist_id}: {e}")
+
+    if not details or not details.get("title"):
+        details = {
+            "source": "anilist",
+            "source_id": anilist_id,
+            "title": (payload.get("title") or f"AniList #{anilist_id}").strip(),
+            "alt_title": (payload.get("alt_title") or None),
+            "year": payload.get("year"),
+            "poster_url": payload.get("poster_url"),
+            "banner_url": payload.get("banner_url"),
+            "description": payload.get("description"),
+            "genres": payload.get("genres") or [],
+            "rating": payload.get("rating"),
+            "status": payload.get("status") or "FINISHED",
+            "episodes": payload.get("episodes"),
+            "format": payload.get("format"),
+            "related_ids": [],
+            "relations": [],
+        }
+
+    # Ensure source fields are always set for MongoDB uniqueness
+    details["source"] = details.get("source") or "anilist"
+    details["source_id"] = details.get("source_id") or anilist_id
+
     anime_id = db.upsert_anime(details, added_by=user["id"])
-    db.update_link(anime_id, link)
-    # Fast: only already-posted family members (no AniList franchise crawl)
-    propagated = 0
-    try:
-        propagated = db.propagate_join_link(anime_id, link)
-    except Exception:
+    # Always write links into MongoDB
+    if link:
+        db.update_link(anime_id, link)
+    else:
+        # Explicit empty finished link should not wipe an inherited link on create;
+        # only clear if client sent an empty string intentionally on an existing doc.
         pass
+    if ongoing_link:
+        db.update_ongoing_link(anime_id, ongoing_link)
+
+    propagated = 0
+    if link:
+        try:
+            propagated = db.propagate_join_link(anime_id, link)
+        except Exception:
+            pass
     try:
         db.accept_requests_for_title(details.get("title") or "")
     except Exception:
         pass
-    return jsonify(status="updated", anime=db.get_anime(anime_id), propagated=propagated)
+
+    anime = db.get_anime(anime_id)
+    return jsonify(status="updated", anime=anime, propagated=propagated)
 
 

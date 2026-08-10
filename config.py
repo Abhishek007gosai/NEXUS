@@ -19,8 +19,15 @@ WORKERS = int(os.getenv("WORKERS", "5"))
 OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
 MSG_EFFECT = 5046509860389126442
 
-
-ADMINS = [8771195193]
+# Comma or space separated Telegram user IDs. Always includes OWNER_ID.
+_admin_raw = os.getenv("ADMINS", str(OWNER_ID))
+ADMINS = []
+for _part in _admin_raw.replace(",", " ").split():
+    _part = _part.strip()
+    if _part.lstrip("-").isdigit():
+        ADMINS.append(int(_part))
+if OWNER_ID not in ADMINS:
+    ADMINS.append(OWNER_ID)
 
 # ──────────────────────────────────────────────
 # MongoDB
