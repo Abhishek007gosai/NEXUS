@@ -33,39 +33,8 @@
         </div>
       </div>
 
-      <div class="pill-tabs">
-        <button class="pill-tab active" data-tab="all">All</button>
-        <button class="pill-tab" data-tab="library">Available</button>
-      </div>
-
-      <!-- "All" tab: Trending + Top Airing -->
-      <div id="tab-all">
-        <section>
-          <div class="section-header-row">
-            <h2 class="section-header section-header--trending"><span class="accent-bar"></span>Trending Now</h2>
-          </div>
-          <div id="trending-row" class="hscroll"></div>
-        </section>
-
-        <section>
-          <div class="section-header-row">
-            <h2 class="section-header section-header--airing"><span class="accent-bar"></span>Top Airing</h2>
-          </div>
-          <div id="top-airing-list" class="hscroll"></div>
-          <p id="popular-load-more" class="search-loading-more hidden">Loading more…</p>
-        </section>
-
-        <section>
-          <div class="section-header-row">
-            <h2 class="section-header section-header--popular"><span class="accent-bar"></span>Popular</h2>
-          </div>
-          <div id="popular-grid-list" class="popular-grid"></div>
-          <button id="popular-grid-load-more" class="load-more-btn">Load more</button>
-        </section>
-      </div>
-
-      <!-- "Available" tab: your posted library, browsable A–Z -->
-      <div id="tab-library" class="hidden">
+      <!-- Home = Available only (# + A–Z) -->
+      <div id="tab-library">
         <h2 class="section-header section-header--available"><span class="accent-bar"></span>Available Anime</h2>
         <div id="letter-bar" class="letter-bar"></div>
         <div id="available-groups"></div>
@@ -108,6 +77,30 @@
 
       <h2 class="section-header section-header--genres"><span class="accent-bar"></span>Genres</h2>
       <div id="genre-tile-grid" class="genre-tile-grid"></div>
+
+      <!-- Discover (moved from Home "All") -->
+      <section>
+        <div class="section-header-row">
+          <h2 class="section-header section-header--trending"><span class="accent-bar"></span>Trending Now</h2>
+        </div>
+        <div id="trending-row" class="hscroll"></div>
+      </section>
+
+      <section>
+        <div class="section-header-row">
+          <h2 class="section-header section-header--airing"><span class="accent-bar"></span>Top Airing</h2>
+        </div>
+        <div id="top-airing-list" class="hscroll"></div>
+        <p id="popular-load-more" class="search-loading-more hidden">Loading more…</p>
+      </section>
+
+      <section>
+        <div class="section-header-row">
+          <h2 class="section-header section-header--popular"><span class="accent-bar"></span>Popular</h2>
+        </div>
+        <div id="popular-grid-list" class="popular-grid"></div>
+        <button id="popular-grid-load-more" class="load-more-btn">Load more</button>
+      </section>
     </div>
   </section>
 

@@ -466,13 +466,7 @@
     popularLoading = false;
   }
 
-  // Auto-load more Popular anime as the Home tab is scrolled, instead of
-  // making the user tap a button.
-  scrollArea.addEventListener("scroll", debounce(() => {
-    if (tabAll.classList.contains("hidden")) return;
-    const nearBottom = scrollArea.scrollTop + scrollArea.clientHeight > scrollArea.scrollHeight - 400;
-    if (nearBottom) loadMorePopular();
-  }, 150));
+  // Discovery sections now live on the Search page — no home auto-load.
 
   function renderPopularGrid() {
     if (!popularGridList) return;
@@ -512,16 +506,18 @@
 
   popularGridLoadMoreBtn.addEventListener("click", loadMorePopularGrid);
 
-  // ---------------------------------------------------------------------
-  // Pill tabs: All (discovery) / Available (posted library)
-  // ---------------------------------------------------------------------
+  // Home is Available-only (# + A–Z). Discovery (All) lives on Search page.
   function setPillTab(tab) {
-    pillTabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-    tabAll.classList.toggle("hidden", tab !== "all");
-    tabLibrary.classList.toggle("hidden", tab !== "library");
+    if (pillTabs && pillTabs.length) {
+      pillTabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+    }
+    if (tabAll) tabAll.classList.toggle("hidden", tab !== "all");
+    if (tabLibrary) tabLibrary.classList.toggle("hidden", tab !== "library");
     if (tab === "library") renderLibraryTab();
   }
-  pillTabs.forEach((b) => b.addEventListener("click", () => setPillTab(b.dataset.tab)));
+  if (pillTabs && pillTabs.length) {
+    pillTabs.forEach((b) => b.addEventListener("click", () => setPillTab(b.dataset.tab)));
+  }
 
   // ---------------------------------------------------------------------
   // Render: Available/library tab (posted catalog, A–Z)
@@ -1054,6 +1050,10 @@
     renderPopularSearches();
     renderRecentSearches();
     renderGenreTiles();
+    // Discovery sections (Trending / Airing / Popular) live under Genres
+    renderTrending();
+    renderTopAiring();
+    renderPopularGrid();
   }
 
   async function renderPopularSearches() {
@@ -1826,12 +1826,8 @@
     } catch (err) {
       available = [];
     }
-    if (!tabLibrary.classList.contains("hidden")) renderLibraryTab();
-    if (!tabAll.classList.contains("hidden")) {
-      renderTrending();
-      renderTopAiring();
-      renderPopularGrid();
-    }
+    // Home is Available-only — always render the library
+    renderLibraryTab();
   }
 
   async function preloadProfile() {
