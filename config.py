@@ -17,7 +17,7 @@ TOKEN = os.getenv("TOKEN", "")
 API_ID = int(os.getenv("API_ID", "0") or "0")
 API_HASH = os.getenv("API_HASH", "")
 WORKERS = int(os.getenv("WORKERS", "5"))
-OWNER_ID = int(os.getenv("OWNER_ID", "0") or "0")
+OWNER_ID = int(os.getenv("OWNER_ID", "") or "0")
 MSG_EFFECT = 5046509860389126442
 
 
