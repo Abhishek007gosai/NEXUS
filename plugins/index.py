@@ -335,14 +335,9 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         try:
             request_id = int(parts[1])
         except (IndexError, ValueError):
-            await q.answer("Invalid request.", show_alert=True)
+            await q.answer()
             return
-        try:
-            updated = await asyncio.to_thread(db.resolve_request_by_id, request_id, "accepted")
-        except Exception as e:
-            await q.answer("Error while accepting.", show_alert=True)
-            print(f"[reqaccept] resolve failed #{request_id}: {e}")
-            return
+        updated = await asyncio.to_thread(db.resolve_request_by_id, request_id, "accepted")
         if updated is None:
             await q.answer("Already handled.", show_alert=True)
             return
@@ -350,16 +345,11 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         label = f"\n\n\u2705 Accepted by {_display_name(q.from_user)}"
         try:
             if q.message.caption is not None:
-                await safe_edit_caption(q.message, (q.message.caption or "") + label)
+                await q.message.edit_caption((q.message.caption or "") + label)
             else:
-                await safe_edit_text(q.message, (q.message.text or "") + label)
-            # Remove buttons after decision
-            try:
-                await safe_edit_reply_markup(q.message, None)
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"[reqaccept] edit message failed: {e}")
+                await q.message.edit_text((q.message.text or "") + label)
+        except Exception:
+            pass
         return
 
     if action == "reqreject":
@@ -373,9 +363,9 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
             [styled_button("\u2190 Back", style="danger", callback_data=f"reqback:{rid}")],
         ]
         try:
-            await safe_edit_reply_markup(q.message, InlineKeyboardMarkup(rows))
-        except Exception as e:
-            print(f"[reqreject] edit markup failed: {e}")
+            await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
+        except Exception:
+            pass
         return
 
     if action == "reqback":
@@ -386,9 +376,9 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
             styled_button("\u274c Reject", style="danger", callback_data=f"reqreject:{rid}"),
         ]]
         try:
-            await safe_edit_reply_markup(q.message, InlineKeyboardMarkup(rows))
-        except Exception as e:
-            print(f"[reqback] edit markup failed: {e}")
+            await q.message.edit_reply_markup(InlineKeyboardMarkup(rows))
+        except Exception:
+            pass
         return
 
     if action == "reqreason":
@@ -396,17 +386,12 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
             request_id = int(parts[1])
             reason_code = parts[2] if len(parts) > 2 else "other"
         except (IndexError, ValueError):
-            await q.answer("Invalid request.", show_alert=True)
+            await q.answer()
             return
         note = REJECT_REASONS.get(reason_code, REJECT_REASONS["other"])
-        try:
-            updated = await asyncio.to_thread(
-                db.resolve_request_by_id, request_id, "rejected", note
-            )
-        except Exception as e:
-            await q.answer("Error while rejecting.", show_alert=True)
-            print(f"[reqreason] resolve failed #{request_id}: {e}")
-            return
+        updated = await asyncio.to_thread(
+            db.resolve_request_by_id, request_id, "rejected", note
+        )
         if updated is None:
             await q.answer("Already handled.", show_alert=True)
             return
@@ -414,13 +399,8 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         label = f"\n\n\u274c Rejected by {_display_name(q.from_user)} \u2014 {note}"
         try:
             if q.message.caption is not None:
-                await safe_edit_caption(q.message, (q.message.caption or "") + label)
+                await q.message.edit_caption((q.message.caption or "") + label)
             else:
-                await safe_edit_text(q.message, (q.message.text or "") + label)
-            try:
-                await safe_edit_reply_markup(q.message, None)
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"[reqreason] edit message failed: {e}")
-        return
+                await q.message.edit_text((q.message.text or "") + label)
+        except Exception:
+            pass
