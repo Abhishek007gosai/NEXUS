@@ -133,6 +133,7 @@
   const availableGroups = el("available-groups");
   const availableEmpty = el("available-empty");
   const dayBar = el("day-bar");
+  const ongoingLetterBar = el("ongoing-letter-bar");
   const ongoingGroups = el("ongoing-groups");
   const ongoingEmpty = el("ongoing-empty");
   const finishedPanel = el("finished-panel");
@@ -194,7 +195,8 @@
   let mostPopularLoading = false;
   let available = [];
   let activeLetter = null;
-  let activeDay = null;
+  let activeDay = null;           // null = ALL days
+  let activeOngoingLetter = null; // null = all letters within ongoing filter
   let libraryQuery = "";
   let libraryMode = "finished"; // "finished" | "ongoing"
   const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -589,6 +591,16 @@
     return false;
   }
 
+
+  function effectiveJoinLink(anime) {
+    // Ongoing URL is only used inside the Ongoing tab/column.
+    // Finished (and Search/Discover) always use the main join_link.
+    if (!anime) return null;
+    if (libraryMode === "ongoing" && anime.ongoing_link) return anime.ongoing_link;
+    return anime.join_link || anime.matchedJoinLink || null;
+  }
+
+
   function finishedList() {
     return primaryAvailableList().filter((a) => !isOngoing(a));
   }
@@ -621,10 +633,43 @@
     let list = ongoingList();
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
-    } else if (activeDay) {
-      list = list.filter((a) => (a.airing_day || "").toLowerCase() === activeDay);
+    } else {
+      // Day column: only titles that actually air that day (no day = TBA only under ALL)
+      if (activeDay) {
+        list = list.filter((a) => (a.airing_day || "").toLowerCase() === activeDay);
+      }
+      if (activeOngoingLetter) {
+        list = list.filter((a) => indexKeyFor(a.title) === activeOngoingLetter);
+      }
     }
     return [...list].sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  function ongoingLettersWithData() {
+    // Letter availability respects the current day filter (ALL vs specific day)
+    let list = ongoingList();
+    if (activeDay) {
+      list = list.filter((a) => (a.airing_day || "").toLowerCase() === activeDay);
+    }
+    return new Set(list.map((a) => indexKeyFor(a.title)));
+  }
+
+  function renderOngoingLetterBar() {
+    if (!ongoingLetterBar) return;
+    ongoingLetterBar.innerHTML = "";
+    const has = ongoingLettersWithData();
+    INDEX_KEYS.forEach((l) => {
+      const btn = document.createElement("button");
+      btn.className = "letter-btn" + (activeOngoingLetter === l ? " active" : "");
+      btn.textContent = l;
+      // Always clickable — empty letter shows empty state
+      btn.addEventListener("click", () => {
+        libraryQuery = "";
+        activeOngoingLetter = activeOngoingLetter === l ? null : l;
+        renderLibraryTab();
+      });
+      ongoingLetterBar.appendChild(btn);
+    });
   }
 
   function renderLetterBar() {
@@ -656,18 +701,21 @@
     allBtn.addEventListener("click", () => {
       libraryQuery = "";
       activeDay = null;
+      activeOngoingLetter = null;
       renderLibraryTab();
     });
     dayBar.appendChild(allBtn);
 
     WEEKDAYS.forEach((d) => {
       const btn = document.createElement("button");
+      // Always enabled — titles that don't air this day simply aren't listed here;
+      // they still appear under ALL.
       btn.className = "letter-btn" + (activeDay === d ? " active" : "");
       btn.textContent = WEEKDAY_LABELS[d];
-      btn.disabled = !has.has(d);
       btn.addEventListener("click", () => {
         libraryQuery = "";
         activeDay = d;
+        activeOngoingLetter = null;
         renderLibraryTab();
       });
       dayBar.appendChild(btn);
@@ -731,14 +779,16 @@
   function renderLibraryTab() {
     if (libraryMode === "ongoing") {
       renderDayBar();
+      renderOngoingLetterBar();
       const list = filteredOngoing();
-      // Group by day; unscheduled ongoing goes under "TBA"
+      // Always A–Z like Finished. Day filter (ALL vs Sun…) is applied in filteredOngoing.
+      // Titles without airing_day still appear under ALL, not under a weekday column.
       renderGroupedGrid(
         ongoingGroups,
         ongoingEmpty,
         list,
-        (a) => (a.airing_day || "tba").toLowerCase(),
-        (k) => (k === "tba" ? "TBA" : (WEEKDAY_LABELS[k] || k).toUpperCase())
+        (a) => indexKeyFor(a.title),
+        (k) => k
       );
     } else {
       renderLetterBar();
@@ -983,13 +1033,14 @@
     const row = document.createElement("div");
     row.className = "action-row";
 
-    if (anime.join_link) {
+    const joinUrl = effectiveJoinLink(anime);
+    if (joinUrl) {
       const joinBtn = document.createElement("button");
       joinBtn.className = "btn btn-primary";
       joinBtn.textContent = "\u25b6 Join";
       joinBtn.addEventListener("click", () => {
-        if (tg && tg.openLink) tg.openLink(anime.join_link);
-        else window.open(anime.join_link, "_blank");
+        if (tg && tg.openLink) tg.openLink(joinUrl);
+        else window.open(joinUrl, "_blank");
       });
       row.appendChild(joinBtn);
     } else {
@@ -1008,7 +1059,7 @@
       plus.addEventListener("click", () => openLinkSheet(anime));
       row.appendChild(plus);
 
-      // Solo vs group seasons — styled toggle (no native select)
+      // Solo vs group seasons — Touka-style toggle buttons
       const modeWrap = document.createElement("div");
       modeWrap.className = "display-mode-wrap";
       const modeLabel = document.createElement("p");
@@ -1054,6 +1105,63 @@
       modeWrap.appendChild(modeLabel);
       modeWrap.appendChild(modeRow);
       detailActionArea.appendChild(modeWrap);
+
+      // Ongoing day chips — auto-groups titles under Sun–Sat on Home
+      const dayWrap = document.createElement("div");
+      dayWrap.className = "display-mode-wrap airing-day-wrap";
+      const dayLabel = document.createElement("p");
+      dayLabel.className = "display-mode-label";
+      dayLabel.textContent = "Ongoing day (Home tab)";
+      const dayRow = document.createElement("div");
+      dayRow.className = "airing-day-row";
+
+      async function saveAiringDay(day, chipEls) {
+        try {
+          const result = await api(`/api/anime/${anime.id}/airing-day`, {
+            method: "PATCH",
+            body: JSON.stringify({ day: day || "" }),
+          });
+          const updated = result.anime || {};
+          anime.airing_day = updated.airing_day || null;
+          if (updated.status) anime.status = updated.status;
+          const idx = available.findIndex((a) => a.id === anime.id);
+          if (idx >= 0) available[idx] = { ...available[idx], airing_day: anime.airing_day, status: anime.status };
+          const curDay = (anime.airing_day || "").toLowerCase();
+          chipEls.forEach((c) => {
+            const v = c.dataset.day || "";
+            c.classList.toggle("active", v === curDay);
+          });
+          showToast(curDay ? `Airing: ${WEEKDAY_LABELS[curDay] || curDay}` : "Not ongoing / TBA");
+          renderLibraryTab();
+        } catch (err) {
+          showToast(err.message || "Couldn't save airing day");
+        }
+      }
+
+      const chips = [];
+      const noneBtn = document.createElement("button");
+      noneBtn.type = "button";
+      noneBtn.className = "airing-day-chip";
+      noneBtn.dataset.day = "";
+      noneBtn.textContent = "TBA";
+      chips.push(noneBtn);
+      WEEKDAYS.forEach((d) => {
+        const c = document.createElement("button");
+        c.type = "button";
+        c.className = "airing-day-chip";
+        c.dataset.day = d;
+        c.textContent = WEEKDAY_LABELS[d];
+        chips.push(c);
+      });
+      const curDay = (anime.airing_day || "").toLowerCase();
+      chips.forEach((c) => {
+        c.classList.toggle("active", (c.dataset.day || "") === curDay);
+        c.addEventListener("click", () => saveAiringDay(c.dataset.day, chips));
+        dayRow.appendChild(c);
+      });
+      dayWrap.appendChild(dayLabel);
+      dayWrap.appendChild(dayRow);
+      detailActionArea.appendChild(dayWrap);
     }
 
     detailActionArea.appendChild(row);
@@ -1065,6 +1173,35 @@
       const full = await api(`/api/anime/${item.id}`);
       if (currentDetail && currentDetail.id === item.id) {
         openDetailSheet({ ...item, ...full }, "available");
+      }
+      // If this title is ongoing but has no airing_day yet, pull it from
+      // AniList once and persist so day chips / Home grouping stay accurate.
+      const merged = { ...item, ...full };
+      const st = (merged.status || "").toUpperCase();
+      if (
+        profile && profile.role === "admin" &&
+        merged.id && merged.source_id &&
+        !merged.airing_day &&
+        (st === "RELEASING" || st === "NOT_YET_RELEASED")
+      ) {
+        try {
+          const al = await api(`/api/anilist/${merged.source_id}`);
+          const day = (al.airing_day || "").toLowerCase();
+          if (day) {
+            const result = await api(`/api/anime/${merged.id}/airing-day`, {
+              method: "PATCH",
+              body: JSON.stringify({ day }),
+            });
+            const updated = result.anime || {};
+            const idx = available.findIndex((a) => a.id === merged.id);
+            if (idx >= 0) available[idx] = { ...available[idx], airing_day: updated.airing_day };
+            if (currentDetail && currentDetail.id === merged.id) {
+              currentDetail.airing_day = updated.airing_day;
+              openDetailSheet(currentDetail, "available");
+            }
+            renderLibraryTab();
+          }
+        } catch (err) { /* non-fatal enrichment */ }
       }
     } catch (err) {
       // Keep showing what we already had — related-title cards just won't
@@ -1107,6 +1244,8 @@
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
     linkInput.value = anime.join_link || "";
+    const ongoingInput = el("ongoing-link-input");
+    if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
     linkOverlay.classList.remove("hidden");
     linkInput.focus();
   }
@@ -1120,14 +1259,29 @@
   const linkSaveBtn = el("link-save");
   linkSaveBtn.addEventListener("click", async () => {
     if (!linkTargetAnime || linkSaveBtn.disabled) return;
-    const value = linkInput.value.trim();
+    let value = linkInput.value.trim();
+    const ongoingInput = el("ongoing-link-input");
+    const ongoingValue = ongoingInput ? ongoingInput.value.trim() : "";
+    // Adding/editing ongoing URL must never wipe the finished link.
+    // Only when BOTH fields are empty do we allow removing the post.
+    if (!value && linkTargetAnime.join_link && ongoingValue) {
+      value = linkTargetAnime.join_link;
+      linkInput.value = value;
+    } else if (!value && !ongoingValue && linkTargetAnime.join_link && linkTargetAnime.ongoing_link) {
+      // Cleared ongoing only — keep finished link
+      value = linkTargetAnime.join_link;
+      linkInput.value = value;
+    }
     linkSaveBtn.disabled = true;
     const originalLabel = linkSaveBtn.textContent;
     linkSaveBtn.textContent = "Saving…";
     try {
       let result;
       if (linkTargetAnime.id) {
-        result = await api(`/api/anime/${linkTargetAnime.id}/link`, { method: "PATCH", body: JSON.stringify({ link: value }) });
+        result = await api(`/api/anime/${linkTargetAnime.id}/link`, {
+          method: "PATCH",
+          body: JSON.stringify({ link: value, ongoing_link: ongoingValue }),
+        });
         if (result.status === "deleted") {
           // No link = the post itself (and any related title that only
           // had this same link) was deleted from the database, not just
@@ -1141,9 +1295,21 @@
           await loadAvailable();
           return;
         }
-        linkTargetAnime.join_link = value;
+        // Prefer server values so an ongoing-only save never wipes finished link
+        const saved = result.anime || {};
+        linkTargetAnime.join_link = saved.join_link != null ? saved.join_link : (value || linkTargetAnime.join_link);
+        linkTargetAnime.ongoing_link = saved.ongoing_link != null ? saved.ongoing_link : (ongoingValue || null);
         if (currentDetail && currentDetail.id === linkTargetAnime.id) {
-          currentDetail.join_link = value;
+          currentDetail.join_link = linkTargetAnime.join_link;
+          currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
+        }
+        const aidx = available.findIndex((a) => a.id === linkTargetAnime.id);
+        if (aidx >= 0) {
+          available[aidx] = {
+            ...available[aidx],
+            join_link: linkTargetAnime.join_link,
+            ongoing_link: linkTargetAnime.ongoing_link,
+          };
         }
       } else {
         // Not in the local library yet (Discover/Genre post) — this creates
@@ -1688,12 +1854,9 @@
     el("help-edit-text").value = help.text || "";
     const supportInput = el("help-edit-support");
     if (supportInput) supportInput.value = help.support_chat_url || "";
+    // Main links UI removed — keep container empty so saves clear legacy main links.
     const box = el("help-edit-links");
-    box.innerHTML = "";
-    const links = (help.links && help.links.length)
-      ? help.links
-      : [{ name: "", url: "" }, { name: "", url: "" }];
-    links.forEach((l) => box.appendChild(helpEditRow(l.name || "", l.url || "")));
+    if (box) box.innerHTML = "";
     const moreBox = el("help-edit-more-links");
     if (moreBox) {
       moreBox.innerHTML = "";
@@ -1752,7 +1915,8 @@
       const text = el("help-edit-text").value.trim();
       const supportInput = el("help-edit-support");
       const support_chat_url = supportInput ? supportInput.value.trim() : "";
-      const links = collectLinkRows("help-edit-links");
+      // Main links removed from UI — always clear them on save.
+      const links = [];
       const more_links = collectLinkRows("help-edit-more-links");
       try {
         await api("/api/profile/help", {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#131310" />
   <title>{{ brand_name }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ asset_version }}" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body data-brand="{{ brand_name }}">
@@ -48,10 +48,11 @@
           <p id="available-empty" class="empty-note hidden">No finished anime found.</p>
         </div>
 
-        <!-- ONGOING: day-of-week groups -->
+        <!-- ONGOING: day filter + A–Z groups -->
         <div id="ongoing-panel" class="hidden">
           <h2 class="section-header section-header--available"><span class="accent-bar"></span>𝙾𝙽𝙶𝙾𝙸𝙽𝙶</h2>
           <div id="day-bar" class="letter-bar"></div>
+          <div id="ongoing-letter-bar" class="letter-bar"></div>
           <div id="ongoing-groups"></div>
           <p id="ongoing-empty" class="empty-note hidden">No ongoing anime found.</p>
         </div>
@@ -192,8 +193,17 @@
     <div class="sheet">
       <div class="sheet-body">
         <h3 class="sheet-title">Set Join Link</h3>
-        <input id="link-input" class="edit-link-input link-input-full" type="text"
-               placeholder="Join URL" autocomplete="off" />
+        <div class="form-field">
+          <label class="form-label" for="link-input">Join URL (Finished)</label>
+          <input id="link-input" class="edit-link-input link-input-full" type="text"
+                 placeholder="https://t.me/..." autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="ongoing-link-input">Ongoing URL (optional)</label>
+          <p class="form-hint">If set, Join on ongoing titles uses this instead of the finished link</p>
+          <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
+                 placeholder="Leave empty to use Finished link" autocomplete="off" />
+        </div>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>
           <button id="link-save" class="btn btn-primary">Save</button>
@@ -239,18 +249,27 @@
   <div id="help-edit-overlay" class="overlay hidden">
     <div class="sheet">
       <div class="sheet-body">
-        <h3 class="sheet-title">Edit profile links</h3>
-        <label class="empty-note" style="display:block;text-align:left;padding:0 0 4px">Title</label>
-        <input id="help-edit-title" class="edit-link-input link-input-full" type="text" placeholder="Need help?" />
-        <label class="empty-note" style="display:block;text-align:left;padding:8px 0 4px">Description</label>
-        <input id="help-edit-text" class="edit-link-input link-input-full" type="text" placeholder="Short help text" />
-        <label class="empty-note" style="display:block;text-align:left;padding:8px 0 4px">Support Chat URL</label>
-        <input id="help-edit-support" class="edit-link-input link-input-full" type="text" placeholder="https://t.me/your_support" />
-        <p class="empty-note" style="text-align:left;padding:12px 0 6px">Main links (name + URL)</p>
-        <div id="help-edit-links"></div>
-        <p class="empty-note" style="text-align:left;padding:12px 0 6px">More Channels (shown after tapping MORE CHANNELS)</p>
-        <div id="help-edit-more-links"></div>
-        <button id="help-edit-add-more" class="btn btn-secondary" type="button" style="width:100%;margin-bottom:12px">+ Add more-channel link</button>
+        <h3 class="sheet-title">Edit profile</h3>
+        <div class="form-field">
+          <label class="form-label" for="help-edit-title">Title</label>
+          <input id="help-edit-title" class="edit-link-input link-input-full" type="text" placeholder="Community name" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="help-edit-text">Description</label>
+          <input id="help-edit-text" class="edit-link-input link-input-full" type="text" placeholder="Short welcome text" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="help-edit-support">Support Chat URL</label>
+          <input id="help-edit-support" class="edit-link-input link-input-full" type="text" placeholder="https://t.me/your_support" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="form-label">More Channels</label>
+          <p class="form-hint">Shown after the user taps MORE CHANNELS</p>
+          <div id="help-edit-more-links"></div>
+          <button id="help-edit-add-more" class="btn btn-secondary form-add-btn" type="button">+ Add channel link</button>
+        </div>
+        <!-- kept for JS compatibility; Main links UI removed -->
+        <div id="help-edit-links" class="hidden"></div>
         <div class="btn-row">
           <button id="help-edit-cancel" class="btn btn-secondary">Cancel</button>
           <button id="help-edit-save" class="btn btn-primary">Save</button>
@@ -261,6 +280,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v={{ asset_version }}"></script>
 </body>
 </html>

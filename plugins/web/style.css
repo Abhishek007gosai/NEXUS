@@ -504,8 +504,8 @@ html, body {
 
 .popular-grid {
   display: grid;
-  /* ~3 columns on phone; last incomplete row cards expand to fill width */
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  /* Fixed 3 columns — incomplete last row keeps normal card width (no huge empty stretch) */
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px 8px;
   padding-bottom: 16px;
   align-items: start;
@@ -1419,17 +1419,20 @@ html, body {
 }
 
 
-/* Admin finished display toggle */
+/* ---- Admin finished display + airing day (Touka-style) ---- */
 .display-mode-wrap {
   width: 100%;
-  margin-top: 12px;
+  margin-top: 14px;
+  margin-bottom: 4px;
 }
 .display-mode-label {
   text-align: left;
   padding: 0 0 8px;
   margin: 0;
   font-size: 12px;
+  font-weight: 600;
   color: var(--muted);
+  letter-spacing: 0.2px;
 }
 .display-mode-row {
   display: grid;
@@ -1439,15 +1442,106 @@ html, body {
 .display-mode-btn {
   border: 1px solid var(--border);
   background: var(--surface-2);
-  color: var(--text);
-  border-radius: 12px;
+  color: var(--text-dim);
+  border-radius: 14px;
   padding: 12px 10px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .display-mode-btn.active {
   background: var(--green);
   border-color: var(--green);
   color: #0b120e;
+}
+
+.airing-day-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.airing-day-chip {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  min-width: 44px;
+  text-align: center;
+}
+.airing-day-chip.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #0b120e;
+}
+
+.letter-btn.muted {
+  opacity: 0.55;
+}
+
+/* ---- Profile edit form ---- */
+.form-field {
+  margin-bottom: 14px;
+}
+.form-label {
+  display: block;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 6px;
+  letter-spacing: 0.2px;
+}
+.form-hint {
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+  opacity: 0.85;
+}
+.form-add-btn {
+  width: 100%;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+.edit-link-input:focus {
+  outline: none;
+  border-color: var(--amber, #c9a227);
+  box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.2);
+}
+.help-edit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.help-edit-row input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.help-edit-actions {
+  text-align: right;
+}
+.help-edit-remove {
+  background: none;
+  border: none;
+  color: var(--hot, #e85d5d);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: inherit;
 }
