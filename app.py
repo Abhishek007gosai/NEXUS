@@ -772,16 +772,8 @@ def api_edit_link(anime_id):
             pass
         updated = db.get_anime(anime_id)
         return jsonify(status="updated", link=link, ongoing_link=updated.get("ongoing_link"), propagated=propagated, anime=updated)
-    # Only ongoing_link update without touching/clearing the main link
-    if has_ongoing and not raw_link:
-        existing = db.get_anime(anime_id)
-        if not existing or not existing.get("join_link"):
-            return jsonify(error="Set a main Join URL first."), 400
-        updated = db.update_ongoing_link(anime_id, ongoing_link or None)
-        return jsonify(status="updated", link=existing.get("join_link"), ongoing_link=updated.get("ongoing_link"), propagated=0, anime=updated)
-    # No link = not a real post anymore — delete it (and the rest of its
-    # franchise, which just lost the link via propagation) from MongoDB
-    # entirely, rather than leaving an unlinked, unjoinable entry behind.
+    # Empty finished Join URL → remove this anime from the library
+    # (Finished tab is driven by join_link; no link means it shouldn't appear)
     propagated = db.delete_anime_family(anime_id)
     return jsonify(status="deleted", link="", propagated=propagated)
 
