@@ -816,6 +816,69 @@ def api_set_airing_day(anime_id):
     return jsonify(status="ok", anime=updated)
 
 
+@app.post("/api/admin/refresh-airing-days")
+def api_refresh_airing_days():
+    """Admin: pull airing_day from AniList for every posted ongoing title
+    that is missing one (or all of them if force=true).
+    Only updates the airing_day field — never overwrites other metadata.
+    """
+    user = current_user()
+    if not is_admin(user):
+        abort(403)
+    payload = request.get_json(force=True, silent=True) or {}
+    force = bool(payload.get("force"))
+
+    all_posts = db.list_available()
+    candidates = []
+    for a in all_posts:
+        st = (a.get("status") or "").upper()
+        # Match frontend isOngoing(): RELEASING or already has a day
+        is_ongoing = st in ("RELEASING", "NOT_YET_RELEASED") or bool(a.get("airing_day"))
+        if not is_ongoing:
+            continue
+        if not force and a.get("airing_day"):
+            continue
+        if not a.get("source_id") or a.get("source") != "anilist":
+            continue
+        candidates.append(a)
+
+    updated = 0
+    failed = 0
+    skipped = 0
+    results = []
+    src = SOURCES.get("anilist")
+    if not src:
+        return jsonify(error="AniList source unavailable"), 502
+
+    for a in candidates:
+        try:
+            details = src.get_details(a["source_id"], use_cache=False)
+            day = (details.get("airing_day") or "").strip().lower() or None
+            if day:
+                db.update_airing_day(a["id"], day)
+                # Also refresh status so future filters stay accurate
+                if details.get("status"):
+                    try:
+                        db.upsert_anime(details)  # keeps airing_day we just set
+                    except Exception:
+                        pass
+                updated += 1
+                results.append({"id": a["id"], "title": a.get("title"), "day": day})
+            else:
+                skipped += 1
+        except Exception:
+            failed += 1
+
+    return jsonify(
+        status="ok",
+        updated=updated,
+        skipped=skipped,
+        failed=failed,
+        total_candidates=len(candidates),
+        results=results[:50],  # sample for UI feedback
+    )
+
+
 @app.post("/api/anime/link-anilist/<int:anilist_id>")
 def api_set_link_from_anilist(anilist_id):
     """Set a join link for a title that's only been browsed from AniList
