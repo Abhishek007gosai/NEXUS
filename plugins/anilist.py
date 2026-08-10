@@ -20,17 +20,18 @@ _DISK_CACHE_DIR = Path(os.getenv("CATALOG_CACHE_DIR", "/tmp/nexus_catalog_cache"
 
 SEARCH_QUERY = """
 query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 15) {
+  Page(page: $page, perPage: 25) {
     pageInfo { hasNextPage }
     media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
       id
-      title { romaji english }
+      title { romaji english native }
       startDate { year }
       coverImage { extraLarge large }
       averageScore
       genres
       format
       episodes
+      status
     }
   }
 }
@@ -292,16 +293,19 @@ class AniListSource(AnimeSource):
         results = []
         for m in media:
             score = m.get("averageScore")
+            titles = m.get("title") or {}
             results.append({
                 "source_id": m["id"],
                 "anilist_id": m["id"],
-                "title": _best_title(m["title"]),
+                "title": _best_title(titles),
+                "alt_title": titles.get("romaji") or titles.get("native"),
                 "year": (m.get("startDate") or {}).get("year"),
                 "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
                 "rating": round(score / 10, 1) if score else None,
                 "genres": (m.get("genres") or [])[:3],
                 "format": m.get("format"),
                 "episodes": m.get("episodes"),
+                "status": m.get("status"),
             })
         return {"results": results, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
