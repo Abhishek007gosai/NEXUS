@@ -197,7 +197,26 @@ class AniListSource(AnimeSource):
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in key)
         return _DISK_CACHE_DIR / f"{safe}.json"
 
+    def _read_mongo(self, key: str):
+        """Persistent cache in MongoDB (survives Render/Koyeb redeploys)."""
+        try:
+            from helper import database as db
+            return db.get_catalog_cache(key)
+        except Exception:
+            return None
+
+    def _write_mongo(self, key: str, value: dict):
+        try:
+            from helper import database as db
+            db.set_catalog_cache(key, value)
+        except Exception:
+            pass
+
     def _read_disk(self, key: str):
+        # Prefer Mongo (durable) then local disk (/tmp — wiped on redeploy)
+        mongo = self._read_mongo(key)
+        if mongo:
+            return mongo
         try:
             p = self._disk_path(key)
             if not p.is_file():
@@ -214,6 +233,8 @@ class AniListSource(AnimeSource):
         return None
 
     def _write_disk(self, key: str, value: dict):
+        # Always write Mongo first so next cold start is fast
+        self._write_mongo(key, value)
         try:
             p = self._disk_path(key)
             p.write_text(
@@ -255,10 +276,10 @@ class AniListSource(AnimeSource):
                 )
                 retry_after = resp.headers.get("Retry-After")
                 try:
-                    delay = float(retry_after) if retry_after else 1.2 * (attempt + 1)
+                    delay = float(retry_after) if retry_after else 2.5 * (2 ** attempt)
                 except (TypeError, ValueError):
-                    delay = 1.2 * (attempt + 1)
-                time.sleep(min(delay, 8))
+                    delay = 2.5 * (2 ** attempt)
+                time.sleep(min(delay, 20))
                 continue
             if resp.status_code >= 500:
                 last_exc = requests.HTTPError(
@@ -476,33 +497,27 @@ class AniListSource(AnimeSource):
         threading.Thread(target=_run, daemon=True, name=f"anilist-refresh:{key[:24]}").start()
 
     def warm_home(self, pages: int = 2):
-        """Preload discovery feeds in parallel for faster cold start after redeploy."""
-        pages = max(1, min(int(pages or 1), 3))
+        """Preload discovery feeds sequentially to avoid AniList 429 storms.
+
+        Parallel warm-up was flooding AniList (many pages × 3 feeds) and
+        burning the rate limit right after redeploy. Sequential + small gaps
+        keeps the cache useful without tripping 429 on every page.
+        """
+        pages = max(1, min(int(pages or 1), 2))
         jobs = []
         for p in range(1, pages + 1):
             jobs.append(("trending", p, self.get_trending))
             jobs.append(("airing", p, self.get_popular))
             jobs.append(("popular", p, self.get_most_popular))
 
-        def _run(label, page, fn):
+        for i, (label, page, fn) in enumerate(jobs):
             try:
                 fn(page)
             except Exception as e:
                 print(f"[catalog] warm {label} page={page} failed: {e}")
-
-        try:
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            with ThreadPoolExecutor(max_workers=min(6, len(jobs))) as pool:
-                futs = [pool.submit(_run, label, page, fn) for label, page, fn in jobs]
-                for f in as_completed(futs):
-                    try:
-                        f.result()
-                    except Exception:
-                        pass
-        except Exception:
-            # Fallback: sequential if thread pool unavailable
-            for label, page, fn in jobs:
-                _run(label, page, fn)
+            # Space out calls so AniList doesn't rate-limit the whole warm
+            if i < len(jobs) - 1:
+                time.sleep(0.8)
 
     def _discover(self, sort: str, page: int = 1, query: str = DISCOVER_QUERY, cache_prefix: str = "") -> dict:
         def fetch():
