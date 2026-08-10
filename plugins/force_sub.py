@@ -4,37 +4,12 @@ from helper.helper_func import is_bot_admin, styled_button, safe_edit_text, safe
 
 #===============================================================#
 
-async def fsub(client, query):
-    # Create a formatted list of channels with names and IDs
-    if client.fsub_dict:
-        channel_list = []
-        for channel_id, channel_data in client.fsub_dict.items():
-            channel_name = channel_data[0] if channel_data and len(channel_data) > 0 else "Unknown"
-            request_status = "Request: ✅" if channel_data[2] else "Request: ❌"
-            timer_status = f"Timer: {channel_data[3]}m" if channel_data[3] > 0 else "Timer: ∞"
-            channel_list.append(f"• `{channel_name}` (`{channel_id}`) - {request_status}, {timer_status}")
-        
-        channels_display = "\n".join(channel_list)
-    else:
-        channels_display = "_No force subscription channels configured_"
-    
-    msg = f"""<blockquote>**Force Subscription Settings:**</blockquote>
-**Configured Channels:**
-{channels_display}
-
-__Use the appropriate button below to add or remove a force subscription channel based on your needs!__
-"""
-    reply_markup = InlineKeyboardMarkup([
-        [styled_button('ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_fsub'), styled_button('ʀᴇᴍᴏᴠᴇ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_fsub')],
-        [styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='settings')]]
-    )
-    await safe_edit_text(query.message, msg, reply_markup=reply_markup)
-    return
-
 #===============================================================#
 
 @Client.on_callback_query(filters.regex('^add_fsub$'))
 async def add_fsub(client: Client, query: CallbackQuery):
+    if query.from_user.id not in client.admins:
+        return await query.answer("✗ Only admins can use this!", show_alert=True)
     await query.answer()
     ask_channel_info = await client.ask(query.from_user.id, "Send channel id(negative integer value), request boolean(yes/no/true/false), timers(integer without decimal)(to enable it keep it greator than 0 otherwise the invite link will not have any timer to invalidate it) seperated by a space in the next 60 seconds!\n<blockquote expandable>Eg: `-10089479289 yes 5`\n\n__It means `-10089479289` is the force sub channel id, `yes` means to enable request it means the link will be request link and only after user sends request to the channel bot will work for that user even if you do not accept his request or user is not a member, `5` means timer in minutes aftetr 5 minutes the invite link will be expired.__</blockquote>", filters=filters.text, timeout=60)
     try:
@@ -82,6 +57,8 @@ async def add_fsub(client: Client, query: CallbackQuery):
 
 @Client.on_callback_query(filters.regex('^rm_fsub$'))
 async def rm_fsub(client: Client, query: CallbackQuery):
+    if query.from_user.id not in client.admins:
+        return await query.answer("✗ Only admins can use this!", show_alert=True)
     await query.answer()
     ask_channel_info = await client.ask(query.from_user.id, "Send channel id(negative integer value) in the next 60 seconds!", filters=filters.text, timeout=60)
     try:

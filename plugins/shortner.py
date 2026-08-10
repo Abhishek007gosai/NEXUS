@@ -46,8 +46,19 @@ def get_short(url, client):
 
 #===============================================================#
 
+def _mask_secret(secret: str, visible: int = 4) -> str:
+    """Show only the last few characters of a secret, masking the rest."""
+    if not secret:
+        return "Not set"
+    if len(secret) <= visible:
+        return "*" * len(secret)
+    return "*" * (len(secret) - visible) + secret[-visible:]
+
+
 @Client.on_message(filters.command('shortner') & filters.private)
 async def shortner_command(client: Client, message: Message):
+    if message.from_user.id not in client.admins:
+        return await message.reply("✗ Only admins can use this!")
     await shortner_panel(client, message)
 
 #===============================================================#
@@ -76,7 +87,7 @@ async def shortner_panel(client, query_or_message):
 **<u>ᴄᴜʀʀᴇɴᴛ ꜱᴇᴛᴛɪɴɢꜱ:</u>**
 <blockquote>›› **ꜱʜᴏʀᴛɴᴇʀ ꜱᴛᴀᴛᴜꜱ:** {enabled_text}
 ›› **ꜱʜᴏʀᴛɴᴇʀ ᴜʀʟ:** `{short_url}`
-›› **ꜱʜᴏʀᴛɴᴇʀ ᴀᴘɪ:** `{short_api}`</blockquote> 
+›› **ꜱʜᴏʀᴛɴᴇʀ ᴀᴘɪ:** `{_mask_secret(short_api)}`</blockquote> 
 <blockquote>›› **ᴛᴜᴛᴏʀɪᴀʟ ʟɪɴᴋ:** `{tutorial_link}`
 ›› **ᴀᴘɪ ꜱᴛᴀᴛᴜꜱ:** {status}</blockquote>
 
