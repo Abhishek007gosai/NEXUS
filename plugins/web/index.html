@@ -199,11 +199,20 @@
           <button type="button" class="pill-tab" data-link-type="ongoing" id="link-tab-ongoing">ONGOING</button>
         </div>
 
-        <div class="form-field" id="link-finished-field">
-          <label class="form-label" for="link-input">Finished join URL</label>
-          <input id="link-input" class="edit-link-input link-input-full" type="text"
-                 placeholder="https://t.me/..." autocomplete="off" />
-          <p class="form-hint">Used on the Finished tab. Leave empty + Save to remove finished link.</p>
+        <!-- Finished: two independent URL fields (All seasons + Solo) -->
+        <div id="link-finished-fields">
+          <div class="form-field" id="link-finished-field">
+            <label class="form-label" for="link-input">All seasons join URL</label>
+            <input id="link-input" class="edit-link-input link-input-full" type="text"
+                   placeholder="https://t.me/..." autocomplete="off" />
+            <p class="form-hint">Whole franchise (seasons, OVAs, movies) shares this link on Finished.</p>
+          </div>
+          <div class="form-field" id="link-solo-field">
+            <label class="form-label" for="solo-link-input">Solo join URL</label>
+            <input id="solo-link-input" class="edit-link-input link-input-full" type="text"
+                   placeholder="https://t.me/..." autocomplete="off" />
+            <p class="form-hint">Only this title — own card + own link on Finished (can sit next to All seasons).</p>
+          </div>
         </div>
 
         <div class="form-field hidden" id="link-ongoing-field">
@@ -211,14 +220,6 @@
           <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
                  placeholder="https://t.me/..." autocomplete="off" />
           <p class="form-hint">Used on the Ongoing tab. Leave empty + Save to remove ongoing link.</p>
-        </div>
-
-        <div class="form-field" id="link-display-mode-field">
-          <label class="form-label">Finished display</label>
-          <div class="display-mode-row">
-            <button type="button" class="display-mode-btn active" id="link-mode-group" data-mode="group">All seasons</button>
-            <button type="button" class="display-mode-btn" id="link-mode-solo" data-mode="solo">Solo</button>
-          </div>
         </div>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>
