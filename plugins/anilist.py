@@ -36,6 +36,34 @@ query ($search: String, $page: Int) {
 }
 """
 
+
+def _airing_day_from_media(m: dict) -> str | None:
+    """Map AniList broadcast / next airing timestamp to sunday…saturday."""
+    day_map = {
+        "sundays": "sunday", "mondays": "monday", "tuesdays": "tuesday",
+        "wednesdays": "wednesday", "thursdays": "thursday",
+        "fridays": "friday", "saturdays": "saturday",
+        "sunday": "sunday", "monday": "monday", "tuesday": "tuesday",
+        "wednesday": "wednesday", "thursday": "thursday",
+        "friday": "friday", "saturday": "saturday",
+    }
+    b = m.get("broadcast") or {}
+    raw = (b.get("day") or "").strip().lower()
+    if raw in day_map:
+        return day_map[raw]
+    # Fallback: next episode airing time (UTC → weekday name)
+    nae = m.get("nextAiringEpisode") or {}
+    ts = nae.get("airingAt")
+    if ts:
+        try:
+            import datetime as _dt
+            d = _dt.datetime.utcfromtimestamp(int(ts))
+            return ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][d.weekday()]
+        except Exception:
+            pass
+    return None
+
+
 DETAILS_QUERY = """
 query ($id: Int) {
   Media(id: $id, type: ANIME) {
@@ -51,6 +79,8 @@ query ($id: Int) {
     episodes
     format
     duration
+    broadcast { day time timezone }
+    nextAiringEpisode { airingAt episode }
     relations {
       edges {
         relationType
@@ -321,6 +351,7 @@ class AniListSource(AnimeSource):
             "episodes": m.get("episodes"),
             "format": m.get("format"),
             "duration": m.get("duration"),
+            "airing_day": _airing_day_from_media(m),
             "related_ids": related_ids,
             "relations": relations,
         }
