@@ -623,17 +623,21 @@
   }
 
   function finishedList() {
-    // Finished: non-ongoing, PLUS ongoing titles that already have a finished join link
+    // Finished column: every library title that has a Finished join link.
+    // Also include non-airing titles that only have an ongoing_link (fallback)
+    // so completed posts never disappear from Home.
     return primaryAvailableList().filter((a) => {
-      if (!isOngoing(a)) return true;
-      return !!(a.join_link || a.matchedJoinLink);
+      if (a.join_link || a.matchedJoinLink) return true;
+      if (!isOngoing(a)) return !!(a.ongoing_link || a.join_link || a.matchedJoinLink);
+      return false;
     });
   }
 
   function ongoingList() {
     // Do NOT franchise-collapse ongoing — long-runners (One Piece, Conan,
     // Pokemon) must each stay visible even if other franchise titles exist.
-    return available.filter((a) => isOngoing(a));
+    // Prefer titles with ongoing_link; fall back to any linked airing title.
+    return available.filter((a) => isOngoing(a) && (a.ongoing_link || a.join_link || a.matchedJoinLink));
   }
 
   function lettersWithData() {
@@ -1159,28 +1163,34 @@
   }
 
   // ---------------------------------------------------------------------
-  // Set Join Link sheet (admin only)
+  // Set Join Link sheet (admin only) — separate Finished / Ongoing fields
   // ---------------------------------------------------------------------
   let linkTargetAnime = null;
+  let linkSheetType = "finished"; // "finished" | "ongoing"
 
-  function setOngoingLinkPanel(open) {
-    const panel = el("ongoing-link-panel");
-    const toggle = el("link-ongoing-toggle");
-    if (panel) panel.classList.toggle("hidden", !open);
-    if (toggle) {
-      toggle.classList.toggle("active", !!open);
-      toggle.textContent = open ? "Ongoing link on" : "Add ongoing link";
-    }
+  function setLinkSheetType(type) {
+    linkSheetType = type === "ongoing" ? "ongoing" : "finished";
+    const tabFin = el("link-tab-finished");
+    const tabOng = el("link-tab-ongoing");
+    const fieldFin = el("link-finished-field");
+    const fieldOng = el("link-ongoing-field");
+    if (tabFin) tabFin.classList.toggle("active", linkSheetType === "finished");
+    if (tabOng) tabOng.classList.toggle("active", linkSheetType === "ongoing");
+    if (fieldFin) fieldFin.classList.toggle("hidden", linkSheetType !== "finished");
+    if (fieldOng) fieldOng.classList.toggle("hidden", linkSheetType !== "ongoing");
+    const focusEl = linkSheetType === "ongoing" ? el("ongoing-link-input") : linkInput;
+    if (focusEl) setTimeout(() => focusEl.focus(), 30);
   }
 
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
     linkInput.value = anime.join_link || "";
     const ongoingInput = el("ongoing-link-input");
-    const hasOngoing = !!(anime.ongoing_link && String(anime.ongoing_link).trim());
     if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
-    setOngoingLinkPanel(hasOngoing);
-    // Group / Solo lives inside the + sheet
+    // Default tab: Ongoing when already on Ongoing home tab or title is airing
+    const preferOngoing = (typeof libraryMode !== "undefined" && libraryMode === "ongoing")
+      || (anime.status && String(anime.status).toUpperCase() === "RELEASING");
+    setLinkSheetType(preferOngoing ? "ongoing" : "finished");
     const mode = (anime.display_mode || "group");
     const btnGroup = el("link-mode-group");
     const btnSolo = el("link-mode-solo");
@@ -1189,10 +1199,8 @@
       btnSolo.classList.toggle("active", mode === "solo");
     }
     const modeField = el("link-display-mode-field");
-    // Always show Solo / All seasons so admin can choose on first save too
     if (modeField) modeField.classList.remove("hidden");
     linkOverlay.classList.remove("hidden");
-    linkInput.focus();
   }
 
   (function wireLinkDisplayMode() {
@@ -1206,22 +1214,10 @@
       btnGroup.addEventListener("click", () => setMode("group"));
       btnSolo.addEventListener("click", () => setMode("solo"));
     }
-    const toggle = el("link-ongoing-toggle");
-    if (toggle) {
-      toggle.addEventListener("click", () => {
-        const panel = el("ongoing-link-panel");
-        const opening = panel && panel.classList.contains("hidden");
-        setOngoingLinkPanel(opening);
-        if (opening) {
-          const input = el("ongoing-link-input");
-          if (input) setTimeout(() => input.focus(), 50);
-        } else {
-          // Turning off clears the field so save removes ongoing_link
-          const input = el("ongoing-link-input");
-          if (input) input.value = "";
-        }
-      });
-    }
+    const tabFin = el("link-tab-finished");
+    const tabOng = el("link-tab-ongoing");
+    if (tabFin) tabFin.addEventListener("click", () => setLinkSheetType("finished"));
+    if (tabOng) tabOng.addEventListener("click", () => setLinkSheetType("ongoing"));
   })();
 
   function closeLinkSheet() {
@@ -1234,18 +1230,15 @@
   const linkSaveBtn = el("link-save");
   linkSaveBtn.addEventListener("click", async () => {
     if (!linkTargetAnime || linkSaveBtn.disabled) return;
-    let value = linkInput.value.trim();
+    const value = (linkInput.value || "").trim();
     const ongoingInput = el("ongoing-link-input");
-    const ongoingPanel = el("ongoing-link-panel");
-    const ongoingEnabled = ongoingPanel && !ongoingPanel.classList.contains("hidden");
-    // Only send ongoing_link when the panel is open; empty finished URL = remove post
-    const ongoingValue = (ongoingEnabled && ongoingInput) ? ongoingInput.value.trim() : "";
+    const ongoingValue = ongoingInput ? (ongoingInput.value || "").trim() : "";
     const btnGroup = el("link-mode-group");
     const chosenMode = (btnGroup && btnGroup.classList.contains("active")) ? "group" : "solo";
 
-    // New posts require a finished join URL
-    if (!linkTargetAnime.id && !value) {
-      showToast("Paste a join URL first");
+    // New posts need at least one of the two links
+    if (!linkTargetAnime.id && !value && !ongoingValue) {
+      showToast("Paste a Finished or Ongoing join URL first");
       return;
     }
 
@@ -1255,12 +1248,12 @@
     try {
       let result;
       if (linkTargetAnime.id) {
-        // Empty finished Join URL → delete this post from the library
+        // Always send both fields so each can be set/cleared independently in MongoDB
         result = await api(`/api/anime/${linkTargetAnime.id}/link`, {
           method: "PATCH",
           body: JSON.stringify({
             link: value,
-            ...(ongoingEnabled ? { ongoing_link: ongoingValue } : {}),
+            ongoing_link: ongoingValue,
           }),
         });
         if (result.status === "deleted") {
@@ -1273,11 +1266,13 @@
           return;
         }
         const saved = result.anime || {};
-        linkTargetAnime.join_link = saved.join_link != null ? saved.join_link : (value || linkTargetAnime.join_link);
-        linkTargetAnime.ongoing_link = saved.ongoing_link != null ? saved.ongoing_link : (ongoingValue || null);
+        linkTargetAnime.join_link = saved.join_link || null;
+        linkTargetAnime.ongoing_link = saved.ongoing_link || null;
+        linkTargetAnime.matchedJoinLink = linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
         if (currentDetail && currentDetail.id === linkTargetAnime.id) {
           currentDetail.join_link = linkTargetAnime.join_link;
           currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
+          currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
         }
         const aidx = available.findIndex((a) => a.id === linkTargetAnime.id);
         if (aidx >= 0) {
@@ -1288,22 +1283,54 @@
           };
         }
       } else {
-        // Discover/Genre post — create library entry with the link
+        // Discover/Genre — create library entry with one or both links
         const alId = linkTargetAnime.anilist_id || linkTargetAnime.source_id;
         if (!alId) {
           throw new Error("Missing AniList id — open the title again and retry");
         }
         result = await api(`/api/anime/link-anilist/${alId}`, {
           method: "POST",
-          body: JSON.stringify({ link: value }),
+          body: JSON.stringify({
+            link: value,
+            ongoing_link: ongoingValue,
+            // Fallback metadata if AniList is down — still saves full row in MongoDB
+            title: linkTargetAnime.title,
+            alt_title: linkTargetAnime.alt_title,
+            year: linkTargetAnime.year,
+            poster_url: linkTargetAnime.poster_url,
+            banner_url: linkTargetAnime.banner_url,
+            description: linkTargetAnime.description,
+            genres: linkTargetAnime.genres || [],
+            rating: linkTargetAnime.rating,
+            status: linkTargetAnime.status || "FINISHED",
+            episodes: linkTargetAnime.episodes,
+            format: linkTargetAnime.format,
+          }),
         });
-        linkTargetAnime.id = result.anime.id;
-        linkTargetAnime.join_link = result.anime.join_link;
-        linkTargetAnime.matchedJoinLink = result.anime.join_link;
+        const anime = result.anime || {};
+        linkTargetAnime.id = anime.id;
+        linkTargetAnime.join_link = anime.join_link || value || null;
+        linkTargetAnime.ongoing_link = anime.ongoing_link || ongoingValue || null;
+        linkTargetAnime.matchedJoinLink = linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
+        // Optimistically add to local library so Finished column updates immediately
+        if (anime.id) {
+          const idx = available.findIndex((a) => a.id === anime.id);
+          const row = {
+            ...linkTargetAnime,
+            ...anime,
+            id: anime.id,
+            join_link: linkTargetAnime.join_link,
+            ongoing_link: linkTargetAnime.ongoing_link,
+            available: true,
+          };
+          if (idx >= 0) available[idx] = { ...available[idx], ...row };
+          else available.push(row);
+        }
         if (currentDetail && (currentDetail.anilist_id === alId || currentDetail.source_id === alId)) {
-          currentDetail.id = result.anime.id;
-          currentDetail.join_link = result.anime.join_link;
-          currentDetail.matchedJoinLink = result.anime.join_link;
+          currentDetail.id = anime.id;
+          currentDetail.join_link = linkTargetAnime.join_link;
+          currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
+          currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
         }
       }
 
@@ -1323,11 +1350,35 @@
       }
 
       if (currentDetail) renderDetailAction(currentDetail, currentContext);
+      // Capture before closeLinkSheet() nulls the target
+      const savedJoin = !!(linkTargetAnime && linkTargetAnime.join_link);
+      const savedOngoing = !!(linkTargetAnime && linkTargetAnime.ongoing_link);
+      const savedTitle = (linkTargetAnime && linkTargetAnime.title)
+        || (currentDetail && currentDetail.title)
+        || "";
       closeLinkSheet();
       showToast(result.propagated
         ? `Link saved — applied to ${result.propagated} related title(s) too`
         : "Link saved");
-      loadAvailable().catch(() => {});
+      // Refresh catalog, then jump to the matching Home column so the card is visible
+      try {
+        await loadAvailable();
+      } catch (e) { /* ignore */ }
+      if (savedJoin) {
+        setLibraryMode("finished");
+        showView("app");
+        try {
+          if (savedTitle && typeof indexKeyFor === "function") {
+            activeLetter = indexKeyFor(savedTitle);
+            activeDay = null;
+            libraryQuery = "";
+            renderLibraryTab();
+          }
+        } catch (e) { /* ignore */ }
+      } else if (savedOngoing) {
+        setLibraryMode("ongoing");
+        showView("app");
+      }
     } catch (err) {
       showToast(err.message || "Couldn't save link");
     } finally {

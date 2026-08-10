@@ -190,20 +190,29 @@
     <div class="sheet">
       <div class="sheet-body">
         <h3 class="sheet-title">Set Join Link</h3>
-        <div class="form-field">
-          <label class="form-label" for="link-input">Join URL (Finished)</label>
+        <p class="form-hint" style="margin-top:-4px;margin-bottom:12px">
+          Separate links for Finished and Ongoing. Clear a field and Save to remove that link from the database.
+        </p>
+
+        <div class="pill-tabs link-type-tabs" id="link-type-tabs" style="margin-bottom:14px">
+          <button type="button" class="pill-tab active" data-link-type="finished" id="link-tab-finished">FINISHED</button>
+          <button type="button" class="pill-tab" data-link-type="ongoing" id="link-tab-ongoing">ONGOING</button>
+        </div>
+
+        <div class="form-field" id="link-finished-field">
+          <label class="form-label" for="link-input">Finished join URL</label>
           <input id="link-input" class="edit-link-input link-input-full" type="text"
                  placeholder="https://t.me/..." autocomplete="off" />
+          <p class="form-hint">Used on the Finished tab. Leave empty + Save to remove finished link.</p>
         </div>
-        <div class="form-field">
-          <label class="form-label">Ongoing link</label>
-          <p class="form-hint">Optional — only used on the Ongoing tab</p>
-          <button type="button" class="display-mode-btn link-ongoing-toggle-btn" id="link-ongoing-toggle">Add ongoing link</button>
-          <div id="ongoing-link-panel" class="hidden">
-            <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
-                   placeholder="https://t.me/..." autocomplete="off" />
-          </div>
+
+        <div class="form-field hidden" id="link-ongoing-field">
+          <label class="form-label" for="ongoing-link-input">Ongoing join URL</label>
+          <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
+                 placeholder="https://t.me/..." autocomplete="off" />
+          <p class="form-hint">Used on the Ongoing tab. Leave empty + Save to remove ongoing link.</p>
         </div>
+
         <div class="form-field" id="link-display-mode-field">
           <label class="form-label">Finished display</label>
           <div class="display-mode-row">
