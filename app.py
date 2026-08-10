@@ -748,32 +748,29 @@ def api_edit_link(anime_id):
     except ValueError as e:
         return jsonify(error=str(e)), 400
     if link:
-        # Fast path: write the link first, propagate only to already-posted
-        # franchise members in MongoDB (no AniList network walks). Metadata
-        # refresh uses cache when possible so Save stays responsive.
+        # Pure DB write — no AniList network during Save so it finishes quickly.
         anime = db.get_anime(anime_id)
         db.update_link(anime_id, link)
         if has_ongoing:
             db.update_ongoing_link(anime_id, ongoing_link or None)
-        # DB-only propagation — already-posted seasons/OVAs only (fast)
-        propagated = db.propagate_join_link(anime_id, link)
+        propagated = 0
         try:
-            db.accept_requests_for_title(anime["title"])
+            propagated = db.propagate_join_link(anime_id, link)
         except Exception:
             pass
-        # Best-effort cached metadata refresh (poster/relations/airing_day)
         try:
-            details = SOURCES[anime["source"]].get_details(anime["source_id"], use_cache=True)
-            db.upsert_anime(details)
-            db.update_link(anime_id, link)  # upsert must not drop the link
-            if has_ongoing:
-                db.update_ongoing_link(anime_id, ongoing_link or None)
+            db.accept_requests_for_title(anime.get("title") or "")
         except Exception:
             pass
         updated = db.get_anime(anime_id)
-        return jsonify(status="updated", link=link, ongoing_link=updated.get("ongoing_link"), propagated=propagated, anime=updated)
+        return jsonify(
+            status="updated",
+            link=link,
+            ongoing_link=(updated or {}).get("ongoing_link"),
+            propagated=propagated,
+            anime=updated,
+        )
     # Empty finished Join URL → remove this anime from the library
-    # (Finished tab is driven by join_link; no link means it shouldn't appear)
     propagated = db.delete_anime_family(anime_id)
     return jsonify(status="deleted", link="", propagated=propagated)
 
@@ -899,13 +896,23 @@ def api_set_link_from_anilist(anilist_id):
     except ValueError as e:
         return jsonify(error=str(e)), 400
     try:
-        details = SOURCES["anilist"].get_details(anilist_id)
+        details = SOURCES["anilist"].get_details(anilist_id, use_cache=True)
     except requests.RequestException:
+        return jsonify(error="Couldn't fetch details from AniList right now."), 502
+    except Exception:
         return jsonify(error="Couldn't fetch details from AniList right now."), 502
     anime_id = db.upsert_anime(details, added_by=user["id"])
     db.update_link(anime_id, link)
-    propagated = propagate_link_full_franchise(anime_id, link)
-    db.accept_requests_for_title(details["title"])
+    # Fast: only already-posted family members (no AniList franchise crawl)
+    propagated = 0
+    try:
+        propagated = db.propagate_join_link(anime_id, link)
+    except Exception:
+        pass
+    try:
+        db.accept_requests_for_title(details.get("title") or "")
+    except Exception:
+        pass
     return jsonify(status="updated", anime=db.get_anime(anime_id), propagated=propagated)
 
 
