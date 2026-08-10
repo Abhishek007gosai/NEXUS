@@ -66,8 +66,14 @@ except Exception as e:
     print(f"[anime_db] init deferred / failed: {e}")
 
 
-def _warm_catalog_cache(pages: int = 3):
-    """Pre-fill discovery catalog (memory + disk) fast after redeploy."""
+def _warm_catalog_cache(pages: int = 1, delay_sec: float = 0):
+    """Pre-fill discovery catalog (memory + disk) after redeploy.
+
+    Uses few pages + optional start delay so we don't trip AniList 429
+    right as the bot and web process also boot.
+    """
+    if delay_sec and delay_sec > 0:
+        time.sleep(delay_sec)
     src = SOURCES.get("anilist")
     if not src:
         return
@@ -84,20 +90,24 @@ def _warm_catalog_cache(pages: int = 3):
 
 
 def _catalog_rewarm_loop():
-    """Re-warm discovery feeds every ~12 minutes so soft TTL rarely expires cold."""
-    import time as _t
+    """Re-warm discovery feeds every ~15 minutes so soft TTL rarely expires cold."""
     while True:
-        _t.sleep(12 * 60)
+        time.sleep(15 * 60)
         try:
-            _warm_catalog_cache(pages=2)
+            _warm_catalog_cache(pages=1)
         except Exception:
             pass
 
 
 try:
     import threading
-    # Fire warm immediately on process start (redeploy / cold boot)
-    threading.Thread(target=_warm_catalog_cache, kwargs={"pages": 3}, daemon=True, name="catalog-warm").start()
+    # Delay first warm so boot traffic + bot start don't stack 429s
+    threading.Thread(
+        target=_warm_catalog_cache,
+        kwargs={"pages": 1, "delay_sec": 8},
+        daemon=True,
+        name="catalog-warm",
+    ).start()
     threading.Thread(target=_catalog_rewarm_loop, daemon=True, name="catalog-rewarm").start()
 except Exception:
     pass
@@ -323,8 +333,34 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
         )
 
 
+_bot_username_cache = {"name": None, "ts": 0}
+
+
+def _bot_username() -> str | None:
+    """Resolve this bot's public @username (cached)."""
+    now = time.time()
+    if _bot_username_cache["name"] and now - _bot_username_cache["ts"] < 3600:
+        return _bot_username_cache["name"]
+    if not TOKEN:
+        return None
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe", timeout=8)
+        data = r.json()
+        if data.get("ok") and data.get("result", {}).get("username"):
+            _bot_username_cache["name"] = data["result"]["username"]
+            _bot_username_cache["ts"] = now
+            return _bot_username_cache["name"]
+    except Exception:
+        pass
+    return None
+
+
 def normalize_join_link(raw: str) -> str:
-    """Turn admin paste into a safe Telegram URL. Raises ValueError on bad input."""
+    """Turn admin paste into a safe Telegram URL. Raises ValueError on bad input.
+
+    Accepts full t.me links, @username, channel IDs, and deep-link fragments
+    like `?start=TOKEN` or `start=TOKEN` (completed using this bot's username).
+    """
     raw = (raw or "").strip()
     if not raw:
         return ""
@@ -334,13 +370,33 @@ def normalize_join_link(raw: str) -> str:
         return raw
     if raw.startswith("t.me/") or raw.startswith("telegram.me/"):
         return "https://" + raw
+    # Deep-link start payload: ?start=XXX / start=XXX / t=XXX (truncated paste)
+    start_payload = None
+    m = re.match(r"^\?start=([A-Za-z0-9_\-]+)$", raw)
+    if m:
+        start_payload = m.group(1)
+    elif re.match(r"^start=([A-Za-z0-9_\-]+)$", raw):
+        start_payload = raw.split("=", 1)[1]
+    elif re.match(r"^t=([A-Za-z0-9_\-]+)$", raw):
+        # Truncated URL that only kept the end of ?start=...
+        start_payload = raw.split("=", 1)[1]
+    elif re.fullmatch(r"[A-Za-z0-9_\-]{8,}", raw) and ("=" not in raw) and ("/" not in raw):
+        # Bare start token (base64-ish)
+        start_payload = raw
+    if start_payload:
+        bot = _bot_username()
+        if not bot:
+            raise ValueError(
+                "Paste the full https://t.me/YourBot?start=... link "
+                "(couldn't resolve this bot's username automatically)."
+            )
+        return f"https://t.me/{bot}?start={start_payload}"
     if re.fullmatch(r"-?\d+", raw):
-        token = TOKEN or TOKEN
-        if not token:
+        if not TOKEN:
             raise ValueError("Bot isn't connected — can't generate an invite link for a channel ID.")
         try:
             r = requests.post(
-                f"https://api.telegram.org/bot{token}/createChatInviteLink",
+                f"https://api.telegram.org/bot{TOKEN}/createChatInviteLink",
                 json={"chat_id": int(raw)},
                 timeout=15,
             )
@@ -357,7 +413,7 @@ def normalize_join_link(raw: str) -> str:
     if not USERNAME_RE.match(username):
         raise ValueError(
             "Enter a Telegram @username, a t.me/ link, an invite link (https://t.me/+...), "
-            "or a channel ID."
+            "a bot deep link (https://t.me/Bot?start=...), or a channel ID."
         )
     return f"https://t.me/{username}"
 
