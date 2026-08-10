@@ -61,7 +61,7 @@ class Bot(Client):
         self.protect = protect
         self.req_fsub = {}
         self.disable_btn = disable_btn
-        self.reply_text = messages.get('REPLY', 'ғᴜᴄᴋ ᴏғғ ʙɪᴛᴄʜ !!!')
+        self.reply_text = messages.get('REPLY', 'ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ.')
         # DB_URI is a list — MongoDB/LinkShareDB try each URI until one connects
         self.mongodb = MongoDB(db_uri, db_name)
         self.linkshare_db = LinkShareDB(db_uri, db_name)

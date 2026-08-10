@@ -1,6 +1,22 @@
 import os
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
+
+
+def _require_env(name: str) -> str:
+    """Fetch a required env var, or exit with a clear error instead of
+    silently falling back to a bundled default (which would leak
+    whoever's credentials shipped in this repo)."""
+    value = os.getenv(name, "").strip()
+    if not value:
+        sys.exit(
+            f"[config] Missing required environment variable: {name}. "
+            f"Set it before starting the bot — no built-in default is used "
+            f"for secrets/IDs."
+        )
+    return value
+
 
 # ──────────────────────────────────────────────
 # Logging / Server
@@ -13,14 +29,15 @@ PORT = int(os.getenv("PORT", "5010"))
 # ──────────────────────────────────────────────
 SESSION = os.getenv("SESSION", "Kaya")
 TOKEN = os.getenv("TOKEN", "")
-API_ID = int(os.getenv("API_ID", "29245477"))
-API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
+API_ID = int(_require_env("API_ID"))
+API_HASH = _require_env("API_HASH")
 WORKERS = int(os.getenv("WORKERS", "5"))
-OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
+OWNER_ID = int(_require_env("OWNER_ID"))
 MSG_EFFECT = 5046509860389126442
 
 
-ADMINS = [8771195193]
+# Comma-separated extra admin IDs on top of OWNER_ID, e.g. ADMINS="111 222"
+ADMINS = [int(a) for a in os.getenv("ADMINS", "").split() if a.strip().lstrip("-").isdigit()]
 
 # ──────────────────────────────────────────────
 # MongoDB
@@ -44,6 +61,8 @@ INDEX_URL = os.getenv("INDEX_URL", "").rstrip("/")
 LOG_CHANNEL_ID = (os.getenv("LOG_CHANNEL_ID", "") or "").strip()
 SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+if SECRET_KEY == "change-me-in-production":
+    print("[config] WARNING: SECRET_KEY is unset — using an insecure placeholder. Set SECRET_KEY in production.")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
 # AniList GraphQL (set ANILIST_ENDPOINT to your own proxy URL if needed)
 ANILIST_ENDPOINT = os.getenv("ANILIST_ENDPOINT", "https://graphql.anilist.co").rstrip("/")
@@ -68,8 +87,29 @@ SHORT_TUT = os.getenv("SHORT_TUT", "")
 # ──────────────────────────────────────────────
 # Channels / Force Sub / Bot settings
 # ──────────────────────────────────────────────
-DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1003928914916"))
-FSUBS = [[-1002369123167, True, 5]]
+DB_CHANNEL = int(_require_env("DB_CHANNEL"))
+
+# Force-subscribe channels: FSUB_CHANNELS="channel_id:request:timer,channel_id:request:timer"
+# request = true/false (join-request mode), timer = invite-link expiry in minutes (0 = no expiry)
+# Example: FSUB_CHANNELS="-1002369123167:true:5"
+def _parse_fsubs(raw: str):
+    channels = []
+    for entry in (raw or "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parts = entry.split(":")
+        try:
+            chan_id = int(parts[0])
+            request = parts[1].strip().lower() in ("1", "true", "yes", "on") if len(parts) > 1 else False
+            timer = int(parts[2]) if len(parts) > 2 and parts[2].strip() else 0
+            channels.append([chan_id, request, timer])
+        except (ValueError, IndexError):
+            print(f"[config] Skipping malformed FSUB_CHANNELS entry: {entry!r}")
+    return channels
+
+
+FSUBS = _parse_fsubs(os.getenv("FSUB_CHANNELS", ""))
 AUTO_DEL = os.getenv("AUTO_DEL", "300")
 DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
 PROTECT = os.getenv("PROTECT", "False").lower() == "true"
