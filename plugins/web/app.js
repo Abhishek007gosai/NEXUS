@@ -288,16 +288,23 @@
   function simplePosterCard(item, onOpen) {
     const card = document.createElement("div");
     card.className = "poster-card";
+
+    // Prefer higher-quality poster when available
+    const src = item.poster_url || item.cover_url || item.banner_url || "";
     const img = document.createElement("img");
     img.loading = "lazy";
-    img.src = item.poster_url || "";
-    img.alt = item.title;
+    img.decoding = "async";
+    img.src = src;
+    img.alt = item.title || "";
+    img.onerror = () => {
+      img.replaceWith(generatedThumb(item.title || "Anime"));
+    };
     card.appendChild(img);
 
     if (item.rating) {
       const rating = document.createElement("span");
       rating.className = "poster-rating";
-      rating.textContent = "\u2605 " + item.rating.toFixed(1);
+      rating.textContent = "★ " + Number(item.rating).toFixed(1);
       card.appendChild(rating);
     }
 
@@ -305,10 +312,18 @@
     meta.className = "poster-meta";
     const title = document.createElement("p");
     title.className = "poster-title";
-    title.textContent = item.title;
+    title.textContent = item.title || "Untitled";
     meta.appendChild(title);
-    card.appendChild(meta);
 
+    if (item.genres && item.genres.length) {
+      const genres = document.createElement("p");
+      genres.className = "poster-genres";
+      // Show first 2 genres max to keep cards clean (matches Nari Noona style)
+      genres.textContent = item.genres.slice(0, 2).join(", ");
+      meta.appendChild(genres);
+    }
+
+    card.appendChild(meta);
     card.addEventListener("click", onOpen);
     return card;
   }
@@ -329,10 +344,16 @@
     const card = document.createElement("div");
     card.className = "poster-card";
 
+    // Prefer higher-quality poster when available
+    const src = item.poster_url || item.cover_url || item.banner_url || "";
     const img = document.createElement("img");
     img.loading = "lazy";
-    img.src = item.poster_url || "";
-    img.alt = item.title;
+    img.decoding = "async";
+    img.src = src;
+    img.alt = item.title || "";
+    img.onerror = () => {
+      img.replaceWith(generatedThumb(item.title || "Anime"));
+    };
     card.appendChild(img);
 
     if (badgeText) {
@@ -345,7 +366,7 @@
     if (item.rating) {
       const rating = document.createElement("span");
       rating.className = "poster-rating";
-      rating.textContent = "\u2605 " + item.rating.toFixed(1);
+      rating.textContent = "★ " + Number(item.rating).toFixed(1);
       card.appendChild(rating);
     }
 
@@ -353,12 +374,12 @@
     meta.className = "poster-meta";
     const title = document.createElement("p");
     title.className = "poster-title";
-    title.textContent = item.title;
+    title.textContent = item.title || "Untitled";
     meta.appendChild(title);
     if (item.genres && item.genres.length) {
       const genres = document.createElement("p");
       genres.className = "poster-genres";
-      genres.textContent = item.genres.join(", ");
+      genres.textContent = item.genres.slice(0, 2).join(", ");
       meta.appendChild(genres);
     }
     card.appendChild(meta);

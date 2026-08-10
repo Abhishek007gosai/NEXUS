@@ -391,7 +391,7 @@ html, body {
 
 .poster-card {
   position: relative;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   background: var(--surface-2);
   cursor: pointer;
@@ -405,6 +405,7 @@ html, body {
   height: 178px;
   object-fit: cover;
   display: block;
+  background: var(--surface-2);
 }
 
 .hot-badge {
@@ -418,29 +419,45 @@ html, body {
   letter-spacing: 0.4px;
   padding: 2px 7px;
   border-radius: 6px;
+  z-index: 2;
 }
 
 .poster-rating {
   position: absolute;
   top: 6px;
-  right: 6px;
-  background: rgba(0,0,0,0.65);
-  color: var(--amber);
-  font-size: 10.5px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffd54f;
+  font-size: 11px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 3px 7px;
   border-radius: 6px;
-  line-height: 1.3;
+  line-height: 1.25;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  backdrop-filter: blur(4px);
 }
 
-.poster-meta { padding: 8px 2px 0; }
+/* When both badge + rating exist, push rating to the right */
+.poster-card:has(.hot-badge) .poster-rating,
+.poster-card:has(.popular-badge) .poster-rating,
+.poster-card:has(.new-ep-badge) .poster-rating {
+  left: auto;
+  right: 6px;
+}
+
+.poster-meta {
+  padding: 7px 2px 2px;
+}
 
 .poster-title {
   color: var(--text);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   line-height: 1.3;
-  margin: 0 0 3px;
+  margin: 0 0 2px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -451,10 +468,11 @@ html, body {
   color: var(--green);
   font-size: 10px;
   font-weight: 600;
-  margin: 0 0 2px;
+  margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0.9;
 }
 
 .empty-note {
@@ -479,15 +497,20 @@ html, body {
 }
 
 .hscroll .skeleton-card { width: 132px; height: 178px; }
-.popular-grid .skeleton-card { height: 178px; }
+.popular-grid .skeleton-card { height: 210px; }
+.available-grid .skeleton-card { height: 210px; }
 
-/* ---------------- Popular grid (2-column, reuses poster-card) ---------------- */
+/* ---------------- Popular grid (auto-fill so last row always fills) ---------------- */
 
 .popular-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  gap: 14px 10px;
   padding-bottom: 16px;
+}
+
+.popular-grid .poster-card img {
+  height: 168px;
 }
 
 .popular-badge {
@@ -611,8 +634,14 @@ html, body {
 .letter-group-label { color: var(--green); font-weight: 700; font-size: 14px; }
 .letter-group-line { flex: 1; height: 1px; background: var(--border); }
 
-.available-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.available-grid .poster-card img { height: 208px; }
+.available-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  gap: 14px 10px;
+}
+.available-grid .poster-card img {
+  height: 168px;
+}
 
 /* ---------------- bottom nav ---------------- */
 
