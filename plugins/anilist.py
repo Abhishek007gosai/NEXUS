@@ -93,7 +93,7 @@ query ($id: Int) {
 
 DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 10) {
+  Page(page: $page, perPage: 12) {
     pageInfo { hasNextPage }
     media(type: ANIME, sort: $sort) {
       id
@@ -113,7 +113,7 @@ query ($sort: [MediaSort], $page: Int) {
 # shows (e.g. Death Note) don't show up just because they're popular.
 DISCOVER_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 10) {
+  Page(page: $page, perPage: 12) {
     pageInfo { hasNextPage }
     media(type: ANIME, sort: $sort, status: RELEASING) {
       id
@@ -130,7 +130,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 GENRE_QUERY = """
 query ($genre: String, $page: Int) {
-  Page(page: $page, perPage: 10) {
+  Page(page: $page, perPage: 12) {
     pageInfo { hasNextPage }
     media(type: ANIME, genre: $genre, sort: POPULARITY_DESC) {
       id
