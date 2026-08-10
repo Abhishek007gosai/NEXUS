@@ -198,7 +198,7 @@
   let libraryQuery = "";
   let libraryMode = "finished"; // "finished" | "ongoing"
   const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  const WEEKDAY_LABELS = { sunday: "Sun", monday: "Mon", tuesday: "Tue", wednesday: "Wed", thursday: "Thu", friday: "Fri", saturday: "Sat" };
+  const WEEKDAY_LABELS = { sunday: "SUN", monday: "MON", tuesday: "TUE", wednesday: "WED", thursday: "THU", friday: "FRI", saturday: "SAT" };
   let profile = null;
 
   const ALL_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -699,12 +699,14 @@
     });
 
     const keys = Object.keys(groups).sort((a, b) => {
-      // Prefer weekday order when both are weekdays
-      const ia = WEEKDAYS.indexOf(a);
-      const ib = WEEKDAYS.indexOf(b);
-      if (ia >= 0 && ib >= 0) return ia - ib;
-      if (ia >= 0) return -1;
-      if (ib >= 0) return 1;
+      // ALL / TBA bucket first, then weekday order
+      const rank = (k) => {
+        if (k === "all" || k === "tba") return -1;
+        const i = WEEKDAYS.indexOf(k);
+        return i >= 0 ? i : 100;
+      };
+      const ra = rank(a), rb = rank(b);
+      if (ra !== rb) return ra - rb;
       return a.localeCompare(b);
     });
 
@@ -745,14 +747,29 @@
     if (libraryMode === "ongoing") {
       renderDayBar();
       const list = filteredOngoing();
-      // Group by airing day (Sun…Sat / TBA). Filter by day chip is in filteredOngoing.
-      renderGroupedGrid(
-        ongoingGroups,
-        ongoingEmpty,
-        list,
-        (a) => (a.airing_day || "tba").toLowerCase(),
-        (k) => (k === "tba" ? "TBA" : (WEEKDAY_LABELS[k] || k).toUpperCase())
-      );
+      if (!ongoingGroups) return;
+      ongoingGroups.innerHTML = "";
+      if (ongoingEmpty) ongoingEmpty.classList.toggle("hidden", list.length !== 0);
+      if (!list.length) {
+        // empty state only
+      } else if (activeDay) {
+        // Single day filter: one section labeled with that day
+        renderGroupedGrid(
+          ongoingGroups,
+          ongoingEmpty,
+          list,
+          () => activeDay,
+          (k) => (WEEKDAY_LABELS[k] || k).toUpperCase()
+        );
+      } else {
+        // ALL column: flat grid — no TBA / ALL / day section headers
+        const grid = document.createElement("div");
+        grid.className = "available-grid";
+        list.forEach((item) => {
+          grid.appendChild(simplePosterCard(item, () => openLocalDetail(item)));
+        });
+        ongoingGroups.appendChild(grid);
+      }
     } else {
       renderLetterBar();
       const list = filteredFinished();
