@@ -746,10 +746,9 @@
   let _airingDaysRefreshDone = false;
 
   async function autoRefreshAiringDays() {
-    // Silent one-shot: fill missing airing_day from AniList so Ongoing columns work.
-    // Runs at most once per page load. No button, no toast unless something changed.
+    // Silent one-shot: fill missing airing_day from AniList so Ongoing day
+    // columns work. Runs at most once per page load for any logged-in user.
     if (_airingDaysRefreshDone) return;
-    if (!profile || profile.role !== "admin") return;
     const missing = ongoingList().filter((a) => !a.airing_day && a.source_id);
     if (!missing.length) {
       _airingDaysRefreshDone = true;
@@ -766,7 +765,7 @@
         if (libraryMode === "ongoing") renderLibraryTab();
       }
     } catch (err) {
-      // Non-fatal — titles simply stay under OTHER until next open
+      // Non-fatal — titles stay under OTHER; allow retry next open
       _airingDaysRefreshDone = false;
     }
   }
@@ -1165,17 +1164,6 @@
     }
     const modeField = el("link-display-mode-field");
     if (modeField) modeField.classList.toggle("hidden", !anime.id); // only for existing posts
-    // Airing day selector (Ongoing tab columns)
-    const dayField = el("link-airing-day-field");
-    if (dayField) dayField.classList.toggle("hidden", !anime.id);
-    const currentDay = (anime.airing_day || "").toLowerCase();
-    const dayRow = el("link-airing-day-row");
-    if (dayRow) {
-      dayRow.querySelectorAll("[data-day]").forEach((btn) => {
-        const d = (btn.dataset.day || "").toLowerCase();
-        btn.classList.toggle("active", d === currentDay || (!currentDay && d === ""));
-      });
-    }
     linkOverlay.classList.remove("hidden");
     linkInput.focus();
   }
@@ -1205,16 +1193,6 @@
           const input = el("ongoing-link-input");
           if (input) input.value = "";
         }
-      });
-    }
-    // Airing-day chips
-    const dayRow = el("link-airing-day-row");
-    if (dayRow) {
-      dayRow.querySelectorAll("[data-day]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          dayRow.querySelectorAll("[data-day]").forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
-        });
       });
     }
   })();
@@ -1295,20 +1273,6 @@
           linkTargetAnime.display_mode = dm;
           if (currentDetail && currentDetail.id === linkTargetAnime.id) currentDetail.display_mode = dm;
           if (aidx >= 0) available[aidx] = { ...available[aidx], display_mode: dm };
-        } catch (err) { /* non-fatal */ }
-        // Save airing day for Ongoing tab columns
-        try {
-          const dayRow = el("link-airing-day-row");
-          const activeDayBtn = dayRow && dayRow.querySelector("[data-day].active");
-          const chosenDay = activeDayBtn ? (activeDayBtn.dataset.day || null) : null;
-          const dayRes = await api(`/api/anime/${linkTargetAnime.id}/airing-day`, {
-            method: "PATCH",
-            body: JSON.stringify({ day: chosenDay || null }),
-          });
-          const ad = (dayRes.anime && dayRes.anime.airing_day) || chosenDay || null;
-          linkTargetAnime.airing_day = ad;
-          if (currentDetail && currentDetail.id === linkTargetAnime.id) currentDetail.airing_day = ad;
-          if (aidx >= 0) available[aidx] = { ...available[aidx], airing_day: ad };
         } catch (err) { /* non-fatal */ }
       } else {
         // Not in the local library yet (Discover/Genre post) — this creates
@@ -2166,6 +2130,8 @@
     }
     // Home is Available-only — always render the library
     renderLibraryTab();
+    // After first catalog load, silently fill any missing airing days
+    autoRefreshAiringDays();
   }
 
   async function preloadProfile() {
