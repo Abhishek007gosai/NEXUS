@@ -50,7 +50,10 @@ app = Flask(
     template_folder=str(WEB_DIR),
 )
 app.config["SECRET_KEY"] = SECRET_KEY
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+# Short default for static; real cache-busting uses ?v=ASSET_VERSION on HTML links.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 120
+# Bumps on every process start so redeploys invalidate Telegram/browser caches.
+ASSET_VERSION = str(int(time.time()))
 app.config["COMPRESS_MIMETYPES"] = [
     "text/html", "text/css", "text/javascript", "application/javascript",
     "application/json",
@@ -391,13 +394,33 @@ def propagate_link_full_franchise(anime_id: int, link: str) -> int:
     return updated
 
 
+@app.after_request
+def _cache_headers(resp):
+    """HTML must not be cached (Telegram WebApp + browsers otherwise keep old UI).
+    Versioned static assets (?v=) can be cached briefly."""
+    path = request.path or ""
+    if path == "/" or path.endswith(".html"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    elif path.startswith("/static/"):
+        # Short browser cache; ?v= on the URL is the real invalidation key.
+        resp.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
+    return resp
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     # Telegram may still POST updates here if an old webhook points at WEBAPP_URL.
     # We run Pyrogram in polling mode, so ignore POSTs with 200 to stop retry spam.
     if request.method == "POST":
         return "", 200
-    return render_template("index.html", brand_name=BRAND_NAME, brand_handle=BRAND_HANDLE)
+    return render_template(
+        "index.html",
+        brand_name=BRAND_NAME,
+        brand_handle=BRAND_HANDLE,
+        asset_version=ASSET_VERSION,
+    )
 
 
 @app.get("/favicon.ico")
@@ -712,10 +735,14 @@ def api_edit_link(anime_id):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
     raw_link = (payload.get("link") or "").strip()
+    # Optional separate ongoing-only join URL (empty string clears it)
+    has_ongoing = "ongoing_link" in payload
+    raw_ongoing = (payload.get("ongoing_link") or "").strip() if has_ongoing else None
     if not db.get_anime(anime_id):
         abort(404)
     try:
-        link = normalize_join_link(raw_link)
+        link = normalize_join_link(raw_link) if raw_link else ""
+        ongoing_link = normalize_join_link(raw_ongoing) if (has_ongoing and raw_ongoing) else ("" if has_ongoing else None)
     except ValueError as e:
         return jsonify(error=str(e)), 400
     if link:
@@ -733,9 +760,19 @@ def api_edit_link(anime_id):
         except requests.RequestException:
             pass  # AniList unreachable — keep whatever's cached, still set the link below
         db.update_link(anime_id, link)
+        if has_ongoing:
+            db.update_ongoing_link(anime_id, ongoing_link or None)
         propagated = propagate_link_full_franchise(anime_id, link)
         db.accept_requests_for_title(anime["title"])
-        return jsonify(status="updated", link=link, propagated=propagated)
+        updated = db.get_anime(anime_id)
+        return jsonify(status="updated", link=link, ongoing_link=updated.get("ongoing_link"), propagated=propagated, anime=updated)
+    # Only ongoing_link update without touching/clearing the main link
+    if has_ongoing and not raw_link:
+        existing = db.get_anime(anime_id)
+        if not existing or not existing.get("join_link"):
+            return jsonify(error="Set a main Join URL first."), 400
+        updated = db.update_ongoing_link(anime_id, ongoing_link or None)
+        return jsonify(status="updated", link=existing.get("join_link"), ongoing_link=updated.get("ongoing_link"), propagated=0, anime=updated)
     # No link = not a real post anymore — delete it (and the rest of its
     # franchise, which just lost the link via propagation) from MongoDB
     # entirely, rather than leaving an unlinked, unjoinable entry behind.

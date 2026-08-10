@@ -293,10 +293,3 @@ class Bot(Client):
         await super().stop()
         self.LOGGER(__name__, self.name).info("Bot stopped.")
 
-
-# ============================================
-# FIXED WEB APP
-# ============================================
-
-async def web_app():
-    return
