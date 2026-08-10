@@ -199,27 +199,25 @@
           <button type="button" class="pill-tab" data-link-type="ongoing" id="link-tab-ongoing">ONGOING</button>
         </div>
 
-        <!-- Finished: two independent URL fields (All seasons + Solo) -->
+        <!-- Finished: one URL + All seasons | Solo underline tabs -->
         <div id="link-finished-fields">
           <div class="form-field" id="link-finished-field">
-            <label class="form-label" for="link-input">All seasons join URL</label>
             <input id="link-input" class="edit-link-input link-input-full" type="text"
                    placeholder="https://t.me/..." autocomplete="off" />
-            <p class="form-hint">Whole franchise (seasons, OVAs, movies) shares this link on Finished.</p>
           </div>
-          <div class="form-field" id="link-solo-field">
-            <label class="form-label" for="solo-link-input">Solo join URL</label>
-            <input id="solo-link-input" class="edit-link-input link-input-full" type="text"
-                   placeholder="https://t.me/..." autocomplete="off" />
-            <p class="form-hint">Only this title — own card + own link on Finished (can sit next to All seasons).</p>
+          <div class="link-mode-underline" id="link-mode-underline" role="tablist">
+            <button type="button" class="link-mode-tab active" id="link-mode-group" data-mode="group">All seasons</button>
+            <button type="button" class="link-mode-tab" id="link-mode-solo" data-mode="solo">Solo</button>
           </div>
+          <p class="form-hint" id="link-finished-hint" style="margin-top:10px">
+            Choose how this title appears on Finished. All seasons = whole franchise. Solo = this title only.
+          </p>
         </div>
 
         <div class="form-field hidden" id="link-ongoing-field">
-          <label class="form-label" for="ongoing-link-input">Ongoing join URL</label>
           <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
                  placeholder="https://t.me/..." autocomplete="off" />
-          <p class="form-hint">Used on the Ongoing tab. Leave empty + Save to remove ongoing link.</p>
+          <p class="form-hint" style="margin-top:10px">Used on the Ongoing tab. Leave empty + Save to remove ongoing link.</p>
         </div>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>

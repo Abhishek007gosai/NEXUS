@@ -1461,6 +1461,39 @@ html, body {
   box-shadow: 0 6px 18px rgba(31, 86, 40, 0.35);
 }
 
+/* All seasons | Solo underline tabs (Finished link sheet) */
+.link-mode-underline {
+  display: flex;
+  gap: 0;
+  margin-top: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.link-mode-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 8px 12px;
+  cursor: pointer;
+  position: relative;
+}
+.link-mode-tab.active {
+  color: var(--text);
+}
+.link-mode-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--green, #2ecc71);
+}
+
 .plus-btn {
   flex: none;
   width: 42px;

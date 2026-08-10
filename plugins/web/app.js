@@ -1051,54 +1051,18 @@
     detailActionArea.innerHTML = "";
     reportOpenBtn.classList.toggle("hidden", !["available", "discover", "genre"].includes(context));
 
-    const finishedUrl = anime.join_link || anime.matchedJoinLink || null;
+    // Finished URL = join_link (or matched from library on Discover)
+    // Ongoing URL = ongoing_link only — never fall back for button split
+    const finishedUrl = anime.join_link || (
+      (context === "discover" || context === "genre") ? (anime.matchedJoinLink || null) : null
+    );
     const ongoingUrl = anime.ongoing_link || null;
-    const onOngoingTab = libraryMode === "ongoing" || isOngoing(anime);
 
-    if (context === "discover" || context === "genre") {
-      const row = document.createElement("div");
-      row.className = "action-row";
-
-      if (finishedUrl && ongoingUrl) {
-        const prevBtn = document.createElement("button");
-        prevBtn.className = "btn btn-primary join-split-btn";
-        prevBtn.textContent = "PREVIOUS";
-        prevBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
-        const ongBtn = document.createElement("button");
-        ongBtn.className = "btn btn-primary join-split-btn";
-        ongBtn.textContent = "ONGOING";
-        ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
-        row.appendChild(prevBtn);
-        row.appendChild(ongBtn);
-      } else if (finishedUrl || ongoingUrl || anime.matchedJoinLink) {
-        const joinBtn = document.createElement("button");
-        joinBtn.className = "btn btn-primary";
-        joinBtn.textContent = "\u25b6 Join";
-        joinBtn.addEventListener("click", () => openJoinUrl(ongoingUrl || finishedUrl || anime.matchedJoinLink));
-        row.appendChild(joinBtn);
-      } else {
-        row.appendChild(makeRequestButton(anime));
-      }
-
-      if (profile && profile.role === "admin" && (anime.anilist_id || anime.source_id || anime.id)) {
-        const plus = document.createElement("button");
-        plus.className = "plus-btn";
-        plus.textContent = "+";
-        plus.setAttribute("aria-label", "Set join link");
-        plus.addEventListener("click", () => openLinkSheet(anime));
-        row.appendChild(plus);
-      }
-
-      detailActionArea.appendChild(row);
-      return;
-    }
-
-    // context === "available" (library detail)
     const row = document.createElement("div");
     row.className = "action-row";
 
     if (finishedUrl && ongoingUrl) {
-      // Both links set → PREVIOUS | ONGOING (both green)
+      // Both → PREVIOUS | ONGOING (green)
       const prevBtn = document.createElement("button");
       prevBtn.className = "btn btn-primary join-split-btn";
       prevBtn.textContent = "PREVIOUS";
@@ -1109,32 +1073,23 @@
       ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
       row.appendChild(prevBtn);
       row.appendChild(ongBtn);
-    } else if (onOngoingTab && !ongoingUrl && !finishedUrl) {
-      // Ongoing column, no link yet → Request for users
-      row.appendChild(makeRequestButton(anime));
-    } else if (onOngoingTab && !ongoingUrl && finishedUrl) {
-      // Airing title with only finished link — still allow Join to finished
-      // but prefer Request if admin hasn't set ongoing yet on Ongoing tab
-      if (libraryMode === "ongoing") {
-        row.appendChild(makeRequestButton(anime));
-      } else {
-        const joinBtn = document.createElement("button");
-        joinBtn.className = "btn btn-primary";
-        joinBtn.textContent = "\u25b6 Join";
-        joinBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
-        row.appendChild(joinBtn);
-      }
+    } else if (finishedUrl && !ongoingUrl) {
+      // Only finished → single Join
+      const joinBtn = document.createElement("button");
+      joinBtn.className = "btn btn-primary";
+      joinBtn.textContent = "\u25b6 Join";
+      joinBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
+      row.appendChild(joinBtn);
+    } else if (!finishedUrl && ongoingUrl) {
+      // Only ongoing → single ONGOING
+      const ongBtn = document.createElement("button");
+      ongBtn.className = "btn btn-primary";
+      ongBtn.textContent = "ONGOING";
+      ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
+      row.appendChild(ongBtn);
     } else {
-      const joinUrl = ongoingUrl || finishedUrl;
-      if (joinUrl) {
-        const joinBtn = document.createElement("button");
-        joinBtn.className = "btn btn-primary";
-        joinBtn.textContent = "\u25b6 Join";
-        joinBtn.addEventListener("click", () => openJoinUrl(joinUrl));
-        row.appendChild(joinBtn);
-      } else {
-        row.appendChild(makeRequestButton(anime));
-      }
+      // Neither → Request
+      row.appendChild(makeRequestButton(anime));
     }
 
     if (profile && profile.role === "admin" && (anime.id || anime.anilist_id || anime.source_id)) {
@@ -1263,28 +1218,25 @@
     if (focusEl) setTimeout(() => focusEl.focus(), 30);
   }
 
-  function findGroupLinkForAnime(anime) {
-    // Prefer a non-solo family member's join_link as the All-seasons URL
-    if ((anime.display_mode || "group") !== "solo" && anime.join_link) return anime.join_link;
-    const related = anime.related_ids || [];
-    for (const a of available) {
-      if ((a.display_mode || "group") === "solo") continue;
-      if (!a.join_link) continue;
-      if (related.length && related.map(String).includes(String(a.source_id))) return a.join_link;
-      if ((a.related_ids || []).map(String).includes(String(anime.source_id))) return a.join_link;
+  function setFinishedMode(mode) {
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    const hint = el("link-finished-hint");
+    if (btnGroup) btnGroup.classList.toggle("active", mode === "group");
+    if (btnSolo) btnSolo.classList.toggle("active", mode === "solo");
+    if (hint) {
+      hint.textContent = mode === "solo"
+        ? "Solo: only this title gets its own card and this join link on Finished."
+        : "All seasons: whole franchise shares this join link on Finished.";
     }
-    return (anime.display_mode || "group") !== "solo" ? (anime.join_link || "") : "";
   }
 
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
-    const groupUrl = findGroupLinkForAnime(anime);
-    const soloUrl = ((anime.display_mode || "group") === "solo") ? (anime.join_link || "") : "";
-    if (linkInput) linkInput.value = groupUrl || "";
-    const soloInput = el("solo-link-input");
-    if (soloInput) soloInput.value = soloUrl;
+    if (linkInput) linkInput.value = anime.join_link || "";
     const ongoingInput = el("ongoing-link-input");
     if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
+    setFinishedMode((anime.display_mode || "group") === "solo" ? "solo" : "group");
     const preferOngoing = (typeof libraryMode !== "undefined" && libraryMode === "ongoing")
       || (anime.status && String(anime.status).toUpperCase() === "RELEASING");
     setLinkSheetType(preferOngoing ? "ongoing" : "finished");
@@ -1296,6 +1248,10 @@
     const tabOng = el("link-tab-ongoing");
     if (tabFin) tabFin.addEventListener("click", () => setLinkSheetType("finished"));
     if (tabOng) tabOng.addEventListener("click", () => setLinkSheetType("ongoing"));
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    if (btnGroup) btnGroup.addEventListener("click", () => setFinishedMode("group"));
+    if (btnSolo) btnSolo.addEventListener("click", () => setFinishedMode("solo"));
   })();
 
   function closeLinkSheet() {
@@ -1308,15 +1264,15 @@
   const linkSaveBtn = el("link-save");
   linkSaveBtn.addEventListener("click", async () => {
     if (!linkTargetAnime || linkSaveBtn.disabled) return;
-    const groupValue = (linkInput.value || "").trim();
-    const soloInput = el("solo-link-input");
-    const soloValue = soloInput ? (soloInput.value || "").trim() : "";
+    const finishedValue = (linkInput.value || "").trim();
     const ongoingInput = el("ongoing-link-input");
     const ongoingValue = ongoingInput ? (ongoingInput.value || "").trim() : "";
+    const btnGroup = el("link-mode-group");
+    const finishedMode = (btnGroup && btnGroup.classList.contains("active")) ? "group" : "solo";
 
     // Need at least one URL when creating a new post
-    if (!linkTargetAnime.id && !groupValue && !soloValue && !ongoingValue) {
-      showToast("Paste an All seasons, Solo, or Ongoing join URL first");
+    if (!linkTargetAnime.id && !finishedValue && !ongoingValue) {
+      showToast("Paste a Finished or Ongoing join URL first");
       return;
     }
 
@@ -1326,14 +1282,16 @@
     try {
       let result;
       if (linkTargetAnime.id) {
-        // group_link + solo_link are independent Finished URLs
+        const body = { ongoing_link: ongoingValue };
+        if (finishedMode === "solo") {
+          body.solo_link = finishedValue;
+          // Don't clear group unless finished field intentionally empty and was solo-only
+        } else {
+          body.group_link = finishedValue;
+        }
         result = await api(`/api/anime/${linkTargetAnime.id}/link`, {
           method: "PATCH",
-          body: JSON.stringify({
-            group_link: groupValue,
-            solo_link: soloValue,
-            ongoing_link: ongoingValue,
-          }),
+          body: JSON.stringify(body),
         });
         if (result.status === "deleted") {
           closeLinkSheet();
@@ -1370,24 +1328,25 @@
         if (!alId) {
           throw new Error("Missing AniList id — open the title again and retry");
         }
+        const createBody = {
+          ongoing_link: ongoingValue,
+          title: linkTargetAnime.title,
+          alt_title: linkTargetAnime.alt_title,
+          year: linkTargetAnime.year,
+          poster_url: linkTargetAnime.poster_url,
+          banner_url: linkTargetAnime.banner_url,
+          description: linkTargetAnime.description,
+          genres: linkTargetAnime.genres || [],
+          rating: linkTargetAnime.rating,
+          status: linkTargetAnime.status || "FINISHED",
+          episodes: linkTargetAnime.episodes,
+          format: linkTargetAnime.format,
+        };
+        if (finishedMode === "solo") createBody.solo_link = finishedValue;
+        else createBody.group_link = finishedValue;
         result = await api(`/api/anime/link-anilist/${alId}`, {
           method: "POST",
-          body: JSON.stringify({
-            group_link: groupValue,
-            solo_link: soloValue,
-            ongoing_link: ongoingValue,
-            title: linkTargetAnime.title,
-            alt_title: linkTargetAnime.alt_title,
-            year: linkTargetAnime.year,
-            poster_url: linkTargetAnime.poster_url,
-            banner_url: linkTargetAnime.banner_url,
-            description: linkTargetAnime.description,
-            genres: linkTargetAnime.genres || [],
-            rating: linkTargetAnime.rating,
-            status: linkTargetAnime.status || "FINISHED",
-            episodes: linkTargetAnime.episodes,
-            format: linkTargetAnime.format,
-          }),
+          body: JSON.stringify(createBody),
         });
         const anime = result.anime || {};
         linkTargetAnime.id = anime.id;
