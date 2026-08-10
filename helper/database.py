@@ -1128,6 +1128,7 @@ def upsert_anime(details: dict, added_by: int | None = None) -> int:
         "episodes": details.get("episodes"),
         "format": details.get("format"),
         "duration": details.get("duration"),
+        "airing_day": details.get("airing_day"),
         "related_ids": related_ids,
         "relations": details.get("relations", []),
         "updated_at": now,
