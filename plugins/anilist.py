@@ -431,21 +431,33 @@ class AniListSource(AnimeSource):
         threading.Thread(target=_run, daemon=True, name=f"anilist-refresh:{key[:24]}").start()
 
     def warm_home(self, pages: int = 2):
-        """Preload Home feeds (and a couple of pages) for instant first paint."""
+        """Preload discovery feeds in parallel for faster cold start after redeploy."""
         pages = max(1, min(int(pages or 1), 3))
+        jobs = []
         for p in range(1, pages + 1):
+            jobs.append(("trending", p, self.get_trending))
+            jobs.append(("airing", p, self.get_popular))
+            jobs.append(("popular", p, self.get_most_popular))
+
+        def _run(label, page, fn):
             try:
-                self.get_trending(p)
-            except Exception:
-                pass
-            try:
-                self.get_popular(p)
-            except Exception:
-                pass
-            try:
-                self.get_most_popular(p)
-            except Exception:
-                pass
+                fn(page)
+            except Exception as e:
+                print(f"[catalog] warm {label} page={page} failed: {e}")
+
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=min(6, len(jobs))) as pool:
+                futs = [pool.submit(_run, label, page, fn) for label, page, fn in jobs]
+                for f in as_completed(futs):
+                    try:
+                        f.result()
+                    except Exception:
+                        pass
+        except Exception:
+            # Fallback: sequential if thread pool unavailable
+            for label, page, fn in jobs:
+                _run(label, page, fn)
 
     def _discover(self, sort: str, page: int = 1, query: str = DISCOVER_QUERY, cache_prefix: str = "") -> dict:
         def fetch():

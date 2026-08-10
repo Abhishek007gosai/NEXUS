@@ -262,31 +262,49 @@ async def link_generator(client: Client, message: Message):
     except Exception:
         return
 
-    if channel_message.forward_date:
-        # Forwarded post/file: copy straight from what was forwarded to the
-        # bot. No need for the bot to have access to the original channel.
+    # Resolve origin (works for forwards, t.me links, and plain message IDs)
+    source_channel_id, source_message_id = await _get_source_message(client, channel_message)
+
+    # Already in a DB channel → reuse existing message ID (do NOT re-copy / re-forward)
+    if source_channel_id and source_message_id and _is_db_channel(client, source_channel_id):
+        db_message_id = source_message_id
+        # Encode against the actual source DB channel (primary or secondary)
+        encode_channel = source_channel_id
+    elif channel_message.forward_date:
+        # Forwarded from a non-DB channel: copy into primary DB channel once
         try:
             db_message_id = await _copy_forward_to_db(client, channel_message)
+            encode_channel = client.primary_db_channel
         except Exception as e:
             client.LOGGER(__name__, client.name).warning(f"Failed to store forwarded message in DB: {e}")
-            return await channel_message.reply("<blockquote>✗ ꜰᴀɪʟᴇᴅ ᴛᴏ sᴛᴏʀᴇ ᴛʜᴇ ꜰɪʟᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ.</blockquote>", quote=True)
+            return await channel_message.reply(
+                "<blockquote>✗ ꜰᴀɪʟᴇᴅ ᴛᴏ sᴛᴏʀᴇ ᴛʜᴇ ꜰɪʟᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ.</blockquote>",
+                quote=True,
+            )
     else:
-        # Plain text input: must be a t.me post link, which requires the
-        # bot to have access to that source channel to fetch the message.
-        source_channel_id, source_message_id = await _get_source_message(client, channel_message)
+        # Plain text: t.me link or message ID from a non-DB source
         if not source_channel_id or not source_message_id:
-            return await channel_message.reply("<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\nForward a valid channel post or send its t.me message link.", quote=True)
-
+            return await channel_message.reply(
+                "<blockquote>✗ ɪɴᴠᴀʟɪᴅ</blockquote>\n\n"
+                "Forward a valid channel post or send its t.me message link.",
+                quote=True,
+            )
         try:
             db_message_id = await _copy_one_to_db(client, source_channel_id, source_message_id)
+            encode_channel = client.primary_db_channel
         except Exception as e:
             client.LOGGER(__name__, client.name).warning(f"Failed to store selected message in DB: {e}")
-            return await channel_message.reply("<blockquote>✗ ꜰᴀɪʟᴇᴅ ᴛᴏ sᴛᴏʀᴇ ᴛʜᴇ ꜰɪʟᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ. ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜᴇ ʙᴏᴛ ᴄᴀɴ ᴀᴄᴄᴇss ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ, ᴏʀ ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ᴘᴏsᴛ ɪɴsᴛᴇᴀᴅ ᴏꜰ sᴇɴᴅɪɴɢ ɪᴛs ʟɪɴᴋ.</blockquote>", quote=True)
+            return await channel_message.reply(
+                "<blockquote>✗ ꜰᴀɪʟᴇᴅ ᴛᴏ sᴛᴏʀᴇ ᴛʜᴇ ꜰɪʟᴇ ɪɴ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ. "
+                "ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜᴇ ʙᴏᴛ ᴄᴀɴ ᴀᴄᴄᴇss ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ, ᴏʀ ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ᴘᴏsᴛ "
+                "ɪɴsᴛᴇᴀᴅ ᴏꜰ sᴇɴᴅɪɴɢ ɪᴛs ʟɪɴᴋ.</blockquote>",
+                quote=True,
+            )
 
-    base64_string = await encode(f"get-{db_message_id * abs(client.primary_db_channel)}")
+    base64_string = await encode(f"get-{db_message_id * abs(encode_channel)}")
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[styled_button("🔁 sʜᴀʀᴇ ᴜʀʟ", style="primary", url=f'https://telegram.me/share/url?url={link}')]])
-    sent = await channel_message.reply_text(
+    await channel_message.reply_text(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
         quote=True, reply_markup=reply_markup
     )
