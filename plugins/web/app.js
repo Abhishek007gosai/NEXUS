@@ -912,6 +912,7 @@
     renderRelated(anime);
     renderDetailAction(anime, context);
     detailOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
   }
 
   function addMetaPill(text, isRating = false) {
@@ -926,6 +927,7 @@
     detailDescription.textContent = text;
     detailDescription.scrollTop = 0;
     detailDescription.classList.toggle("clamped", !descriptionExpanded);
+    detailDescription.classList.toggle("expanded", descriptionExpanded);
     detailReadMore.classList.toggle("hidden", text.length < 180);
     detailReadMore.textContent = descriptionExpanded ? "Show Less" : "Read More";
   }
@@ -987,6 +989,7 @@
 
   function closeDetailSheet() {
     detailOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
     currentDetail = null;
     currentContext = null;
   }

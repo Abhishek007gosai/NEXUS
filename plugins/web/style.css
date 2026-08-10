@@ -1070,6 +1070,40 @@ html, body {
   will-change: transform, opacity;
 }
 
+/* Detail modal: fixed layout — no sheet scroll / no shrink while interacting */
+#detail-overlay {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+#detail-overlay .sheet,
+#detail-sheet {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  max-height: min(640px, 86dvh);
+  transform: none;
+}
+#detail-overlay .sheet-body {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#detail-overlay .sheet-description {
+  max-height: 4.5em;
+  overflow: hidden;
+}
+#detail-overlay .sheet-description.expanded {
+  max-height: 9em;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#detail-overlay .genre-row,
+#detail-overlay .meta-pill-row,
+#detail-overlay .sheet-title,
+#detail-overlay .detail-subtitle {
+  flex-shrink: 0;
+}
+
 @keyframes modal-in {
   from { transform: scale(0.94); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
