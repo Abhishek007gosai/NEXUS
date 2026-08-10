@@ -1313,12 +1313,13 @@
       showToast(result.propagated
         ? `Link saved — applied to ${result.propagated} related title(s) too`
         : "Link saved");
-      await loadAvailable();
+      // Refresh catalog in background — don't block the Save UI
+      loadAvailable().catch(() => {});
     } catch (err) {
       showToast(err.message || "Couldn't save link");
     } finally {
       linkSaveBtn.disabled = false;
-      linkSaveBtn.textContent = originalLabel;
+      linkSaveBtn.textContent = originalLabel || "Save";
     }
   });
 
