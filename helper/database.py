@@ -959,18 +959,47 @@ reports_col = _LazyCol("reports")
 requests_col = _LazyCol("requests")
 searches_col = _LazyCol("searches")
 counters_col = _LazyCol("counters")
+catalog_cache_col = _LazyCol("catalog_cache")
 
 
 def init_db():
     _ensure()
     anime_col.create_index([("source", ASCENDING), ("source_id", ASCENDING)], unique=True)
     anime_col.create_index([("title", ASCENDING)])
+    anime_col.create_index([("status", ASCENDING)])
+    anime_col.create_index([("airing_day", ASCENDING)])
     requests_col.create_index([("key", ASCENDING), ("requested_by", ASCENDING)])
     requests_col.create_index([("status", ASCENDING)])
     requests_col.create_index([("status", ASCENDING), ("created_at", ASCENDING)])
     requests_col.create_index([("requested_by", ASCENDING), ("seen", ASCENDING)])
     requests_col.create_index([("requested_by", ASCENDING), ("responded_at", ASCENDING)])
     searches_col.create_index([("count", ASCENDING)])
+    catalog_cache_col.create_index([("updated_at", ASCENDING)])
+
+
+def get_catalog_cache(key: str):
+    """Return (stored_at_epoch, value_dict) or None."""
+    try:
+        doc = catalog_cache_col.find_one({"_id": key})
+        if not doc or not isinstance(doc.get("value"), dict):
+            return None
+        return float(doc.get("updated_at") or 0), doc["value"]
+    except Exception:
+        return None
+
+
+def set_catalog_cache(key: str, value: dict):
+    """Persist a catalog/details payload in Mongo so cold deploys stay fast."""
+    if not key or not isinstance(value, dict):
+        return
+    try:
+        catalog_cache_col.update_one(
+            {"_id": key},
+            {"$set": {"value": value, "updated_at": time.time()}},
+            upsert=True,
+        )
+    except Exception:
+        pass
 
 
 def _next_id(counter_name: str) -> int:
