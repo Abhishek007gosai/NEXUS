@@ -743,6 +743,42 @@ def api_edit_link(anime_id):
     return jsonify(status="deleted", link="", propagated=propagated)
 
 
+
+
+@app.patch("/api/anime/<int:anime_id>/display-mode")
+def api_set_display_mode(anime_id):
+    """Admin: solo card vs group with franchise seasons on Home → Finished."""
+    user = current_user()
+    if not is_admin(user):
+        abort(403)
+    if not db.get_anime(anime_id):
+        abort(404)
+    payload = request.get_json(force=True, silent=True) or {}
+    mode = payload.get("mode") or "group"
+    try:
+        updated = db.update_display_mode(anime_id, mode)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(status="ok", anime=updated)
+
+
+@app.patch("/api/anime/<int:anime_id>/airing-day")
+def api_set_airing_day(anime_id):
+    """Admin: assign this posted anime to a weekday for the Home ONGOING tab."""
+    user = current_user()
+    if not is_admin(user):
+        abort(403)
+    if not db.get_anime(anime_id):
+        abort(404)
+    payload = request.get_json(force=True, silent=True) or {}
+    day = payload.get("day")
+    try:
+        updated = db.update_airing_day(anime_id, day)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(status="ok", anime=updated)
+
+
 @app.post("/api/anime/link-anilist/<int:anilist_id>")
 def api_set_link_from_anilist(anilist_id):
     """Set a join link for a title that's only been browsed from AniList
