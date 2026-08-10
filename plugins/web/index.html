@@ -42,17 +42,14 @@
 
         <!-- FINISHED: letter groups -->
         <div id="finished-panel">
-          <h2 class="section-header section-header--available"><span class="accent-bar"></span>𝙵𝙸𝙽𝙸𝚂𝙷𝙴𝙳</h2>
           <div id="letter-bar" class="letter-bar"></div>
           <div id="available-groups"></div>
           <p id="available-empty" class="empty-note hidden">No finished anime found.</p>
         </div>
 
-        <!-- ONGOING: day filter + A–Z groups -->
+        <!-- ONGOING: day-of-week groups only -->
         <div id="ongoing-panel" class="hidden">
-          <h2 class="section-header section-header--available"><span class="accent-bar"></span>𝙾𝙽𝙶𝙾𝙸𝙽𝙶</h2>
           <div id="day-bar" class="letter-bar"></div>
-          <div id="ongoing-letter-bar" class="letter-bar"></div>
           <div id="ongoing-groups"></div>
           <p id="ongoing-empty" class="empty-note hidden">No ongoing anime found.</p>
         </div>
@@ -200,9 +197,16 @@
         </div>
         <div class="form-field">
           <label class="form-label" for="ongoing-link-input">Ongoing URL (optional)</label>
-          <p class="form-hint">If set, Join on ongoing titles uses this instead of the finished link</p>
+          <p class="form-hint">If set, Join on Ongoing tab uses this instead of the finished link</p>
           <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
                  placeholder="Leave empty to use Finished link" autocomplete="off" />
+        </div>
+        <div class="form-field" id="link-display-mode-field">
+          <label class="form-label">Finished display</label>
+          <div class="display-mode-row">
+            <button type="button" class="display-mode-btn active" id="link-mode-group" data-mode="group">All seasons</button>
+            <button type="button" class="display-mode-btn" id="link-mode-solo" data-mode="solo">Solo</button>
+          </div>
         </div>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>

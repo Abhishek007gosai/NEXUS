@@ -133,7 +133,6 @@
   const availableGroups = el("available-groups");
   const availableEmpty = el("available-empty");
   const dayBar = el("day-bar");
-  const ongoingLetterBar = el("ongoing-letter-bar");
   const ongoingGroups = el("ongoing-groups");
   const ongoingEmpty = el("ongoing-empty");
   const finishedPanel = el("finished-panel");
@@ -196,7 +195,6 @@
   let available = [];
   let activeLetter = null;
   let activeDay = null;           // null = ALL days
-  let activeOngoingLetter = null; // null = all letters within ongoing filter
   let libraryQuery = "";
   let libraryMode = "finished"; // "finished" | "ongoing"
   const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -633,43 +631,12 @@
     let list = ongoingList();
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
-    } else {
-      // Day column: only titles that actually air that day (no day = TBA only under ALL)
-      if (activeDay) {
-        list = list.filter((a) => (a.airing_day || "").toLowerCase() === activeDay);
-      }
-      if (activeOngoingLetter) {
-        list = list.filter((a) => indexKeyFor(a.title) === activeOngoingLetter);
-      }
-    }
-    return [...list].sort((a, b) => a.title.localeCompare(b.title));
-  }
-
-  function ongoingLettersWithData() {
-    // Letter availability respects the current day filter (ALL vs specific day)
-    let list = ongoingList();
-    if (activeDay) {
+    } else if (activeDay) {
+      // Day column: only titles that air that day
       list = list.filter((a) => (a.airing_day || "").toLowerCase() === activeDay);
     }
-    return new Set(list.map((a) => indexKeyFor(a.title)));
-  }
-
-  function renderOngoingLetterBar() {
-    if (!ongoingLetterBar) return;
-    ongoingLetterBar.innerHTML = "";
-    const has = ongoingLettersWithData();
-    INDEX_KEYS.forEach((l) => {
-      const btn = document.createElement("button");
-      btn.className = "letter-btn" + (activeOngoingLetter === l ? " active" : "");
-      btn.textContent = l;
-      // Always clickable — empty letter shows empty state
-      btn.addEventListener("click", () => {
-        libraryQuery = "";
-        activeOngoingLetter = activeOngoingLetter === l ? null : l;
-        renderLibraryTab();
-      });
-      ongoingLetterBar.appendChild(btn);
-    });
+    // ALL: keep everything ongoing (including TBA / no airing_day)
+    return [...list].sort((a, b) => a.title.localeCompare(b.title));
   }
 
   function renderLetterBar() {
@@ -701,7 +668,6 @@
     allBtn.addEventListener("click", () => {
       libraryQuery = "";
       activeDay = null;
-      activeOngoingLetter = null;
       renderLibraryTab();
     });
     dayBar.appendChild(allBtn);
@@ -715,7 +681,6 @@
       btn.addEventListener("click", () => {
         libraryQuery = "";
         activeDay = d;
-        activeOngoingLetter = null;
         renderLibraryTab();
       });
       dayBar.appendChild(btn);
@@ -779,16 +744,14 @@
   function renderLibraryTab() {
     if (libraryMode === "ongoing") {
       renderDayBar();
-      renderOngoingLetterBar();
       const list = filteredOngoing();
-      // Always A–Z like Finished. Day filter (ALL vs Sun…) is applied in filteredOngoing.
-      // Titles without airing_day still appear under ALL, not under a weekday column.
+      // Group by airing day (Sun…Sat / TBA). Filter by day chip is in filteredOngoing.
       renderGroupedGrid(
         ongoingGroups,
         ongoingEmpty,
         list,
-        (a) => indexKeyFor(a.title),
-        (k) => k
+        (a) => (a.airing_day || "tba").toLowerCase(),
+        (k) => (k === "tba" ? "TBA" : (WEEKDAY_LABELS[k] || k).toUpperCase())
       );
     } else {
       renderLetterBar();
@@ -1058,110 +1021,6 @@
       plus.setAttribute("aria-label", "Set join link");
       plus.addEventListener("click", () => openLinkSheet(anime));
       row.appendChild(plus);
-
-      // Solo vs group seasons — Touka-style toggle buttons
-      const modeWrap = document.createElement("div");
-      modeWrap.className = "display-mode-wrap";
-      const modeLabel = document.createElement("p");
-      modeLabel.className = "display-mode-label";
-      modeLabel.textContent = "Finished display";
-      const modeRow = document.createElement("div");
-      modeRow.className = "display-mode-row";
-
-      async function saveDisplayMode(mode, btnGroup, btnSolo) {
-        try {
-          const result = await api(`/api/anime/${anime.id}/display-mode`, {
-            method: "PATCH",
-            body: JSON.stringify({ mode }),
-          });
-          const updated = result.anime || {};
-          anime.display_mode = updated.display_mode || "group";
-          const idx = available.findIndex((a) => a.id === anime.id);
-          if (idx >= 0) available[idx] = { ...available[idx], display_mode: anime.display_mode };
-          btnGroup.classList.toggle("active", anime.display_mode === "group");
-          btnSolo.classList.toggle("active", anime.display_mode === "solo");
-          showToast(anime.display_mode === "solo" ? "Solo card" : "Grouped with seasons");
-          renderLibraryTab();
-        } catch (err) {
-          showToast(err.message || "Couldn't save display mode");
-        }
-      }
-
-      const btnGroup = document.createElement("button");
-      btnGroup.type = "button";
-      btnGroup.className = "display-mode-btn";
-      btnGroup.textContent = "Group seasons";
-      const btnSolo = document.createElement("button");
-      btnSolo.type = "button";
-      btnSolo.className = "display-mode-btn";
-      btnSolo.textContent = "Solo only";
-      const cur = (anime.display_mode || "group");
-      btnGroup.classList.toggle("active", cur === "group");
-      btnSolo.classList.toggle("active", cur === "solo");
-      btnGroup.addEventListener("click", () => saveDisplayMode("group", btnGroup, btnSolo));
-      btnSolo.addEventListener("click", () => saveDisplayMode("solo", btnGroup, btnSolo));
-      modeRow.appendChild(btnGroup);
-      modeRow.appendChild(btnSolo);
-      modeWrap.appendChild(modeLabel);
-      modeWrap.appendChild(modeRow);
-      detailActionArea.appendChild(modeWrap);
-
-      // Ongoing day chips — auto-groups titles under Sun–Sat on Home
-      const dayWrap = document.createElement("div");
-      dayWrap.className = "display-mode-wrap airing-day-wrap";
-      const dayLabel = document.createElement("p");
-      dayLabel.className = "display-mode-label";
-      dayLabel.textContent = "Ongoing day (Home tab)";
-      const dayRow = document.createElement("div");
-      dayRow.className = "airing-day-row";
-
-      async function saveAiringDay(day, chipEls) {
-        try {
-          const result = await api(`/api/anime/${anime.id}/airing-day`, {
-            method: "PATCH",
-            body: JSON.stringify({ day: day || "" }),
-          });
-          const updated = result.anime || {};
-          anime.airing_day = updated.airing_day || null;
-          if (updated.status) anime.status = updated.status;
-          const idx = available.findIndex((a) => a.id === anime.id);
-          if (idx >= 0) available[idx] = { ...available[idx], airing_day: anime.airing_day, status: anime.status };
-          const curDay = (anime.airing_day || "").toLowerCase();
-          chipEls.forEach((c) => {
-            const v = c.dataset.day || "";
-            c.classList.toggle("active", v === curDay);
-          });
-          showToast(curDay ? `Airing: ${WEEKDAY_LABELS[curDay] || curDay}` : "Not ongoing / TBA");
-          renderLibraryTab();
-        } catch (err) {
-          showToast(err.message || "Couldn't save airing day");
-        }
-      }
-
-      const chips = [];
-      const noneBtn = document.createElement("button");
-      noneBtn.type = "button";
-      noneBtn.className = "airing-day-chip";
-      noneBtn.dataset.day = "";
-      noneBtn.textContent = "TBA";
-      chips.push(noneBtn);
-      WEEKDAYS.forEach((d) => {
-        const c = document.createElement("button");
-        c.type = "button";
-        c.className = "airing-day-chip";
-        c.dataset.day = d;
-        c.textContent = WEEKDAY_LABELS[d];
-        chips.push(c);
-      });
-      const curDay = (anime.airing_day || "").toLowerCase();
-      chips.forEach((c) => {
-        c.classList.toggle("active", (c.dataset.day || "") === curDay);
-        c.addEventListener("click", () => saveAiringDay(c.dataset.day, chips));
-        dayRow.appendChild(c);
-      });
-      dayWrap.appendChild(dayLabel);
-      dayWrap.appendChild(dayRow);
-      detailActionArea.appendChild(dayWrap);
     }
 
     detailActionArea.appendChild(row);
@@ -1246,9 +1105,32 @@
     linkInput.value = anime.join_link || "";
     const ongoingInput = el("ongoing-link-input");
     if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
+    // Group / Solo lives inside the + sheet
+    const mode = (anime.display_mode || "group");
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    if (btnGroup && btnSolo) {
+      btnGroup.classList.toggle("active", mode === "group");
+      btnSolo.classList.toggle("active", mode === "solo");
+    }
+    const modeField = el("link-display-mode-field");
+    if (modeField) modeField.classList.toggle("hidden", !anime.id); // only for existing posts
     linkOverlay.classList.remove("hidden");
     linkInput.focus();
   }
+
+  (function wireLinkDisplayMode() {
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    if (!btnGroup || !btnSolo) return;
+    function setMode(mode) {
+      btnGroup.classList.toggle("active", mode === "group");
+      btnSolo.classList.toggle("active", mode === "solo");
+    }
+    btnGroup.addEventListener("click", () => setMode("group"));
+    btnSolo.addEventListener("click", () => setMode("solo"));
+  })();
+
   function closeLinkSheet() {
     linkOverlay.classList.add("hidden");
     linkTargetAnime = null;
@@ -1311,6 +1193,19 @@
             ongoing_link: linkTargetAnime.ongoing_link,
           };
         }
+        // Save All seasons / Solo from the + sheet
+        const btnGroup = el("link-mode-group");
+        const chosenMode = (btnGroup && btnGroup.classList.contains("active")) ? "group" : "solo";
+        try {
+          const modeRes = await api(`/api/anime/${linkTargetAnime.id}/display-mode`, {
+            method: "PATCH",
+            body: JSON.stringify({ mode: chosenMode }),
+          });
+          const dm = (modeRes.anime && modeRes.anime.display_mode) || chosenMode;
+          linkTargetAnime.display_mode = dm;
+          if (currentDetail && currentDetail.id === linkTargetAnime.id) currentDetail.display_mode = dm;
+          if (aidx >= 0) available[aidx] = { ...available[aidx], display_mode: dm };
+        } catch (err) { /* non-fatal */ }
       } else {
         // Not in the local library yet (Discover/Genre post) — this creates
         // the library entry with the link already set in one step.
