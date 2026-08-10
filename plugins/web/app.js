@@ -584,23 +584,51 @@
 
   function isOngoing(a) {
     const st = (a.status || "").toUpperCase();
-    if (st === "RELEASING") return true;
+    if (st === "RELEASING" || st === "NOT_YET_RELEASED") return true;
     if (a.airing_day) return true;
+    if (a.ongoing_link) return true;
     return false;
   }
 
+  // Title-based schedule fallback when AniList has no broadcast day
+  const TITLE_AIRING_DAY = [
+    { day: "monday", re: /grand\s*blue/i },
+    { day: "thursday", re: /smoking\s*behind\s*the\s*supermarket/i },
+    { day: "friday", re: /reincarnated\s*as\s*a\s*slime|tensei\s*shitara\s*slime/i },
+    { day: "saturday", re: /bleach.*thousand|thousand[-\s]?year\s*blood/i },
+    { day: "saturday", re: /detective\s*conan|case\s*closed|meitantei\s*conan/i },
+    { day: "saturday", re: /pok[eé]mon/i },
+    { day: "sunday", re: /mushoku\s*tensei|jobless\s*reincarnation/i },
+    { day: "sunday", re: /\bone\s*piece\b/i },
+    { day: "tuesday", re: /clevatess/i },
+  ];
+
+  function effectiveAiringDay(a) {
+    const stored = (a.airing_day || "").toLowerCase().trim();
+    if (stored) return stored;
+    const title = `${a.title || ""} ${a.alt_title || ""}`;
+    for (const row of TITLE_AIRING_DAY) {
+      if (row.re.test(title)) return row.day;
+    }
+    return null;
+  }
 
   function effectiveJoinLink(anime) {
-    // Ongoing URL is only used inside the Ongoing tab/column.
-    // Finished (and Search/Discover) always use the main join_link.
+    // Ongoing tab: ongoing_link if set, else finished join_link
+    // Finished / Search / Discover: main join_link
     if (!anime) return null;
-    if (libraryMode === "ongoing" && anime.ongoing_link) return anime.ongoing_link;
+    if (libraryMode === "ongoing") {
+      return anime.ongoing_link || anime.join_link || anime.matchedJoinLink || null;
+    }
     return anime.join_link || anime.matchedJoinLink || null;
   }
 
-
   function finishedList() {
-    return primaryAvailableList().filter((a) => !isOngoing(a));
+    // Finished: non-ongoing, PLUS ongoing titles that already have a finished join link
+    return primaryAvailableList().filter((a) => {
+      if (!isOngoing(a)) return true;
+      return !!(a.join_link || a.matchedJoinLink);
+    });
   }
 
   function ongoingList() {
@@ -614,7 +642,7 @@
   }
 
   function daysWithData() {
-    return new Set(ongoingList().map((a) => (a.airing_day || "").toLowerCase()).filter(Boolean));
+    return new Set(ongoingList().map((a) => effectiveAiringDay(a)).filter(Boolean));
   }
 
   function filteredFinished() {
@@ -632,10 +660,8 @@
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
     } else if (activeDay) {
-      // Day column: only titles that air that day
-      list = list.filter((a) => (a.airing_day || "").toLowerCase() === activeDay);
+      list = list.filter((a) => effectiveAiringDay(a) === activeDay);
     }
-    // ALL: keep everything ongoing (including TBA / no airing_day)
     return [...list].sort((a, b) => a.title.localeCompare(b.title));
   }
 
@@ -782,13 +808,13 @@
         ongoingGroups,
         ongoingEmpty,
         list,
-        (a) => (a.airing_day || "other").toLowerCase(),
+        (a) => (effectiveAiringDay(a) || "other").toLowerCase(),
         (k) => {
           if (k === "other" || k === "tba" || k === "all") return "OTHER";
           return (WEEKDAY_LABELS[k] || k).toUpperCase();
         }
       );
-      // Kick off silent backfill after first paint
+      // Kick off silent AniList backfill after first paint
       autoRefreshAiringDays();
     } else {
       renderLetterBar();
