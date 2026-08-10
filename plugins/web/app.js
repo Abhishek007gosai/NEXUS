@@ -1237,37 +1237,29 @@
     const ongoingInput = el("ongoing-link-input");
     const ongoingPanel = el("ongoing-link-panel");
     const ongoingEnabled = ongoingPanel && !ongoingPanel.classList.contains("hidden");
+    // Only send ongoing_link when the panel is open; empty finished URL = remove post
     const ongoingValue = (ongoingEnabled && ongoingInput) ? ongoingInput.value.trim() : "";
-    // Adding/editing ongoing URL must never wipe the finished link.
-    // Only when BOTH fields are empty do we allow removing the post.
-    if (!value && linkTargetAnime.join_link && ongoingValue) {
-      value = linkTargetAnime.join_link;
-      linkInput.value = value;
-    } else if (!value && !ongoingValue && linkTargetAnime.join_link && linkTargetAnime.ongoing_link) {
-      // Cleared ongoing only — keep finished link
-      value = linkTargetAnime.join_link;
-      linkInput.value = value;
-    }
     linkSaveBtn.disabled = true;
     const originalLabel = linkSaveBtn.textContent;
     linkSaveBtn.textContent = "Saving…";
     try {
       let result;
       if (linkTargetAnime.id) {
+        // Empty finished Join URL → delete this post from the library
         result = await api(`/api/anime/${linkTargetAnime.id}/link`, {
           method: "PATCH",
-          body: JSON.stringify({ link: value, ongoing_link: ongoingValue }),
+          body: JSON.stringify({
+            link: value,
+            // Only include ongoing_link when user is managing that field
+            ...(ongoingEnabled ? { ongoing_link: ongoingValue } : {}),
+          }),
         });
         if (result.status === "deleted") {
-          // No link = the post itself (and any related title that only
-          // had this same link) was deleted from the database, not just
-          // hidden — so close out of it rather than trying to re-render
-          // detail actions for an anime that no longer exists.
           closeLinkSheet();
           closeDetailSheet();
           showToast(result.propagated
-            ? `Removed — no join link was set (also removed ${result.propagated} related title(s))`
-            : "Removed — no join link was set");
+            ? `Removed from library (and ${result.propagated} related title(s))`
+            : "Removed from library");
           await loadAvailable();
           return;
         }
