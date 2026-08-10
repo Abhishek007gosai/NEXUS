@@ -225,21 +225,11 @@ def _telegram_user_label(user: dict | None) -> str:
     return name or str(user.get("id"))
 
 
-def _log_chat_id():
-    """Return LOG_CHANNEL_ID as int when possible (Telegram prefers numeric chat_id)."""
-    raw = (LOG_CHANNEL_ID or "").strip()
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return raw
-
-
 def _bot_api(method: str, payload: dict):
+    """Call Telegram Bot API. Logs failures so request notifications can be debugged."""
     token = TOKEN
     if not token:
-        app.logger.warning("_bot_api: TOKEN is empty — cannot call %s", method)
+        print("[request-log] TOKEN is empty — cannot send to log channel")
         return None
     try:
         r = requests.post(
@@ -249,73 +239,84 @@ def _bot_api(method: str, payload: dict):
         )
         data = r.json() if r.content else {}
         if not data.get("ok"):
-            app.logger.warning(
-                "_bot_api %s failed: %s", method, data.get("description") or r.text[:200]
-            )
+            print(f"[request-log] Bot API {method} failed: {data.get('description') or r.text[:200]}")
             return None
         return data
     except requests.RequestException as e:
-        app.logger.warning("_bot_api %s network error: %s", method, e)
+        print(f"[request-log] Bot API {method} network error: {e}")
         return None
 
 
 def notify_new_report(title: str, reason: str, details: str, reporter_name: str):
-    chat_id = _log_chat_id()
-    if not chat_id:
-        app.logger.warning("notify_new_report: LOG_CHANNEL_ID not set")
+    if not LOG_CHANNEL_ID:
+        print("[request-log] LOG_CHANNEL_ID not set — report not posted")
         return
     text = (
-        f"\U0001f6a9 New Report\n"
+        "🚨 New Report\n"
         f"Anime: {title}\n"
         f"Reason: {reason}\n"
         + (f"Details: {details}\n" if details else "")
         + f"By: {reporter_name}"
     )
+    chat_id = LOG_CHANNEL_ID
+    try:
+        chat_id = int(str(LOG_CHANNEL_ID).strip())
+    except (TypeError, ValueError):
+        pass
     _bot_api("sendMessage", {"chat_id": chat_id, "text": text})
 
 
 def notify_new_request(request_id: int, title: str, requester_name: str, poster_url: str | None):
-    chat_id = _log_chat_id()
-    if not chat_id:
-        app.logger.warning("notify_new_request: LOG_CHANNEL_ID not set — request #%s not logged", request_id)
+    """Post new anime request to LOG_CHANNEL_ID with Accept/Reject buttons (copied from working ECCHI)."""
+    if not LOG_CHANNEL_ID:
+        print(f"[request-log] LOG_CHANNEL_ID not set — request #{request_id} ({title}) saved but NOT logged")
         return
 
+    chat_id = LOG_CHANNEL_ID
+    try:
+        chat_id = int(str(LOG_CHANNEL_ID).strip())
+    except (TypeError, ValueError):
+        chat_id = str(LOG_CHANNEL_ID).strip()
+
     text = (
-        f"\U0001f4dd <b>New Request</b>\n"
-        f"Anime: <b>{title}</b>\n"
+        f"📝 New Request\n"
+        f"Anime: {title}\n"
         f"By: {requester_name}\n"
-        f"ID: <code>{request_id}</code>"
+        f"ID: {request_id}"
     )
     keyboard = {
         "inline_keyboard": [[
-            {"text": "\u2705 Accept", "callback_data": f"reqaccept:{request_id}"},
-            {"text": "\u274c Reject", "callback_data": f"reqreject:{request_id}"},
+            {"text": "✅ Accept", "callback_data": f"reqaccept:{request_id}"},
+            {"text": "❌ Reject", "callback_data": f"reqreject:{request_id}"},
         ]]
     }
 
-    # Prefer a photo log when we have a poster (matches rich log style)
+    print(f"[request-log] Posting request #{request_id} '{title}' by {requester_name} → {chat_id}")
+
+    # Prefer photo when poster is available
     if poster_url:
         ok = _bot_api("sendPhoto", {
             "chat_id": chat_id,
             "photo": poster_url,
             "caption": text,
-            "parse_mode": "HTML",
             "reply_markup": keyboard,
         })
         if ok:
+            print(f"[request-log] Delivered request #{request_id} as photo")
             return
-        # Fall through to text if photo fails (bad URL, etc.)
 
-    _bot_api("sendMessage", {
+    ok = _bot_api("sendMessage", {
         "chat_id": chat_id,
         "text": text,
-        "parse_mode": "HTML",
         "reply_markup": keyboard,
     })
-
-
-
-USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
+    if ok:
+        print(f"[request-log] Delivered request #{request_id} as text")
+    else:
+        print(
+            f"[request-log] FAILED to post request #{request_id}. "
+            f"Check LOG_CHANNEL_ID={chat_id}, bot is admin there, and TOKEN is valid."
+        )
 
 
 def normalize_join_link(raw: str) -> str:
@@ -579,11 +580,8 @@ def api_request_anime():
             error=f"You've got {result['limit']} pending requests already — wait for one to be "
                   f"reviewed before requesting more."
         ), 429
-    if not result["already_requested"] and result.get("id"):
-        try:
-            notify_new_request(result["id"], title, _telegram_user_label(user), poster_url)
-        except Exception as e:
-            app.logger.warning("notify_new_request failed for #%s: %s", result.get("id"), e)
+    if not result["already_requested"]:
+        notify_new_request(result["id"], title, _telegram_user_label(user), poster_url)
     return jsonify(result)
 
 
