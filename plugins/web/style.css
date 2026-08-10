@@ -500,11 +500,11 @@ html, body {
 .popular-grid .skeleton-card { height: 210px; }
 .available-grid .skeleton-card { height: 210px; }
 
-/* ---------------- Popular grid (auto-fill so last row always fills) ---------------- */
+/* ---------------- Popular grid (fixed 3 columns — matches Nari Noona) ---------------- */
 
 .popular-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px 10px;
   padding-bottom: 16px;
 }
@@ -636,11 +636,11 @@ html, body {
 
 .available-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 14px 10px;
 }
 .available-grid .poster-card img {
-  height: 168px;
+  height: 210px;
 }
 
 /* ---------------- bottom nav ---------------- */
