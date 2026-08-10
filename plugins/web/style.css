@@ -1447,6 +1447,16 @@ html, body {
 }
 .action-row .btn { margin-bottom: 0; flex: 1; }
 
+/* PREVIOUS | ONGOING split join buttons when both links are set */
+.action-row .join-split-btn {
+  flex: 1;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 12px 8px;
+}
+
 .plus-btn {
   flex: none;
   width: 42px;
