@@ -1113,7 +1113,7 @@ html, body {
   flex: none;
   position: relative;
   width: 100%;
-  height: 170px;
+  height: 140px;
   background: var(--surface-2);
   overflow: hidden;
 }
@@ -1175,14 +1175,14 @@ html, body {
   flex: none;
   display: flex;
   flex-direction: column;
-  padding: 16px 18px 18px;
+  padding: 12px 14px 14px;
 }
 
 .sheet-title {
   flex: none;
-  font-size: 15.5px;
+  font-size: 14px;
   font-weight: 800;
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1193,7 +1193,7 @@ html, body {
   flex: none;
   display: flex;
   align-items: flex-start;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
 }
 
 .detail-header-text {
@@ -1215,16 +1215,16 @@ html, body {
   flex: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: 10px;
+  gap: 5px;
+  margin-bottom: 6px;
 }
 
 .meta-pill {
   border: 1px solid var(--border);
   color: var(--text-dim);
   border-radius: 999px;
-  padding: 3px 11px;
-  font-size: 10.5px;
+  padding: 2px 8px;
+  font-size: 9.5px;
   font-weight: 600;
 }
 
@@ -1236,10 +1236,10 @@ html, body {
 
 .synopsis-label {
   flex: none;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   color: var(--text);
-  margin: 2px 0 6px;
+  margin: 0 0 4px;
 }
 
 .read-more-link {
@@ -1250,11 +1250,11 @@ html, body {
   background: none;
   border: none;
   color: var(--green);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
-  margin: 2px 0 10px;
+  margin: 0 0 6px;
   padding: 0;
 }
 
@@ -1277,9 +1277,9 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   overflow: visible;
-  gap: 8px;
-  margin-bottom: 12px;
-  min-height: 28px;
+  gap: 5px;
+  margin-bottom: 8px;
+  min-height: 0;
 }
 
 .genre-pill {
@@ -1289,17 +1289,17 @@ html, body {
   color: var(--green);
   background: rgba(47, 109, 52, 0.08);
   border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: 2px 8px;
+  font-size: 10px;
   font-weight: 600;
 }
 
 .sheet-description {
   flex: none;
   color: var(--text-dim);
-  font-size: 13.5px;
-  line-height: 1.55;
-  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0 0 2px;
 }
 
 .sheet-description.clamped {
@@ -1315,30 +1315,30 @@ html, body {
   flex: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .related-card {
-  flex: 1 1 calc(50% - 4px);
+  flex: 1 1 calc(50% - 3px);
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   text-align: left;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 6px;
+  border-radius: 10px;
+  padding: 4px;
   cursor: pointer;
   font-family: inherit;
 }
 
 .related-card-thumb {
   flex: none;
-  width: 34px;
-  height: 46px;
-  border-radius: 6px;
+  width: 28px;
+  height: 38px;
+  border-radius: 5px;
   overflow: hidden;
   background: var(--surface);
 }
@@ -1361,15 +1361,15 @@ html, body {
 
 .related-card-label {
   color: var(--green);
-  font-size: 9.5px;
+  font-size: 8.5px;
   font-weight: 800;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   white-space: nowrap;
 }
 
 .related-card-title {
   color: var(--text);
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1380,13 +1380,13 @@ html, body {
 
 .btn {
   width: 100%;
-  padding: 13px 0;
-  border-radius: 14px;
-  font-size: 14.5px;
+  padding: 11px 0;
+  border-radius: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   border: none;
   cursor: pointer;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   font-family: inherit;
 }
 
@@ -1418,20 +1418,20 @@ html, body {
 
 .action-row {
   display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 .action-row .btn { margin-bottom: 0; flex: 1; }
 
 .plus-btn {
   flex: none;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
   display: flex;
