@@ -104,7 +104,7 @@ query ($id: Int) {
 
 DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 24) {
     pageInfo { hasNextPage }
     media(type: ANIME, sort: $sort) {
       id
@@ -124,7 +124,7 @@ query ($sort: [MediaSort], $page: Int) {
 # shows (e.g. Death Note) don't show up just because they're popular.
 DISCOVER_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 24) {
     pageInfo { hasNextPage }
     media(type: ANIME, sort: $sort, status: RELEASING) {
       id
@@ -141,7 +141,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 GENRE_QUERY = """
 query ($genre: String, $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 24) {
     pageInfo { hasNextPage }
     media(type: ANIME, genre: $genre, sort: POPULARITY_DESC) {
       id
@@ -509,7 +509,7 @@ class AniListSource(AnimeSource):
         burning the rate limit right after redeploy. Sequential + small gaps
         keeps the cache useful without tripping 429 on every page.
         """
-        pages = max(1, min(int(pages or 1), 2))
+        pages = max(1, min(int(pages or 1), 3))
         jobs = []
         for p in range(1, pages + 1):
             jobs.append(("trending", p, self.get_trending))
