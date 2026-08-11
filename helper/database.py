@@ -1024,8 +1024,8 @@ def _to_anime(doc) -> dict | None:
     d = dict(doc)
     d["id"] = d.pop("_id")
     d["genres"] = d.get("genres") or []
-    # Available if it has a finished join link and/or a dedicated ongoing link
-    d["available"] = bool(d.get("join_link") or d.get("ongoing_link"))
+    # Available if it has any join path: franchise, solo-only, or ongoing
+    d["available"] = bool(d.get("join_link") or d.get("solo_link") or d.get("ongoing_link"))
     return d
 
 
@@ -1313,15 +1313,30 @@ def search_local(query: str, limit: int = 40) -> list[dict]:
 
 
 def update_link(anime_id: int, link: str):
+    """Set the All-seasons / franchise join_link (does not touch solo_link)."""
     anime_col.update_one(
         {"_id": anime_id},
         {"$set": {"join_link": link or None, "updated_at": time.time()}},
     )
 
 
+def update_solo_link(anime_id: int, link: str | None):
+    """Set the Solo-only join link for this title.
+
+    Independent of join_link (All seasons). When non-empty, this title
+    appears as its own Finished card with this URL; the franchise group
+    card still uses join_link.
+    """
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"solo_link": (link or None), "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
 def update_ongoing_link(anime_id: int, link: str | None):
     """Optional separate join link used while the title is ongoing.
-    Falls back to join_link in the client when empty."""
+    Falls back to join_link / solo_link in the client when empty."""
     anime_col.update_one(
         {"_id": anime_id},
         {"$set": {"ongoing_link": (link or None), "updated_at": time.time()}},
