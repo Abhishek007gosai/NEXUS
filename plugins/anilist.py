@@ -120,9 +120,51 @@ query ($sort: [MediaSort], $page: Int) {
 
 GENRE_QUERY = """
 query ($genre: String, $page: Int, $type: MediaType) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 6) {
     pageInfo { hasNextPage }
     media(type: $type, isAdult: true, genre: $genre, sort: POPULARITY_DESC) {
+      id
+      title { romaji english }
+      coverImage { extraLarge large }
+      averageScore
+      type
+    }
+  }
+}
+"""
+
+# Yaoi / BL is almost entirely manga+manhwa on AniList. GENRE_QUERY alone often
+# returns empty for type=MANGA because adult Yaoi needs format filters.
+YAOI_MANGA_GENRE_QUERY = """
+query ($page: Int) {
+  Page(page: $page, perPage: 6) {
+    pageInfo { hasNextPage }
+    media(
+      type: MANGA
+      isAdult: true
+      genre: "Yaoi"
+      format_in: [MANGA, ONE_SHOT, NOVEL]
+      sort: POPULARITY_DESC
+    ) {
+      id
+      title { romaji english }
+      coverImage { extraLarge large }
+      averageScore
+      type
+    }
+  }
+}
+"""
+
+YAOI_ANIME_GENRE_QUERY = """
+query ($page: Int) {
+  Page(page: $page, perPage: 6) {
+    pageInfo { hasNextPage }
+    media(
+      type: ANIME
+      genre: "Yaoi"
+      sort: POPULARITY_DESC
+    ) {
       id
       title { romaji english }
       coverImage { extraLarge large }
@@ -137,7 +179,7 @@ query ($genre: String, $page: Int, $type: MediaType) {
 # "Manga / Manhwa" — content includes ONE_SHOT (doujin) + KR manhwa + manga.
 MANGA_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 6) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -163,7 +205,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 MANHWA_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 6) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -191,7 +233,7 @@ query ($sort: [MediaSort], $page: Int) {
 # Ongoing adult manga / manhwa / doujin (status RELEASING)
 MANGA_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 6) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -271,7 +313,7 @@ query ($search: String, $page: Int) {
 # dedicated query. Genre "Yaoi" is AniList's adult BL label.
 BL_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 6) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -296,7 +338,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 BL_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 6) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -322,7 +364,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 BL_MANHWA_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
+  Page(page: $page, perPage: 6) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -812,11 +854,18 @@ class AniListSource(AnimeSource):
         return {"results": results, "has_next": has_next}
 
     def browse_genre(self, genre: str, page: int = 1, media_type: str = "ANIME") -> dict:
-        """Browse adult titles in a genre. media_type: ANIME (H-ANIME) or MANGA (H-MANHWA)."""
+        """Browse adult titles in a genre. media_type: ANIME (H-ANIME) or MANGA (H-MANHWA).
+        Yaoi is only available via Genres (filtered out of main catalog feeds)."""
         media_type = "MANGA" if str(media_type).upper() == "MANGA" else "ANIME"
+        is_yaoi = (genre or "").strip().lower() == "yaoi"
 
         def fetch():
-            data = self._post(GENRE_QUERY, {"genre": genre, "page": page, "type": media_type})
+            if is_yaoi and media_type == "MANGA":
+                data = self._post(YAOI_MANGA_GENRE_QUERY, {"page": page})
+            elif is_yaoi and media_type == "ANIME":
+                data = self._post(YAOI_ANIME_GENRE_QUERY, {"page": page})
+            else:
+                data = self._post(GENRE_QUERY, {"genre": genre, "page": page, "type": media_type})
             out = []
             for m in data["Page"]["media"]:
                 score = m.get("averageScore")
@@ -832,7 +881,7 @@ class AniListSource(AnimeSource):
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
         return self._cached(
-            f"genre:{media_type}:{genre}:{page}",
+            f"genre:{media_type}:{genre}:{page}:v2",
             fetch,
             ttl=CATALOG_CACHE_TTL,
         )
