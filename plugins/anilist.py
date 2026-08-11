@@ -120,7 +120,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 GENRE_QUERY = """
 query ($genre: String, $page: Int, $type: MediaType) {
-  Page(page: $page, perPage: 18) {
+  Page(page: $page, perPage: 20) {
     pageInfo { hasNextPage }
     media(type: $type, isAdult: true, genre: $genre, sort: POPULARITY_DESC) {
       id
@@ -137,7 +137,7 @@ query ($genre: String, $page: Int, $type: MediaType) {
 # "Manga / Manhwa" — content includes ONE_SHOT (doujin) + KR manhwa + manga.
 MANGA_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 18) {
+  Page(page: $page, perPage: 20) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -163,7 +163,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 MANHWA_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 18) {
+  Page(page: $page, perPage: 20) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -191,7 +191,7 @@ query ($sort: [MediaSort], $page: Int) {
 # Ongoing adult manga / manhwa / doujin (status RELEASING)
 MANGA_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 18) {
+  Page(page: $page, perPage: 20) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -271,7 +271,7 @@ query ($search: String, $page: Int) {
 # dedicated query. Genre "Yaoi" is AniList's adult BL label.
 BL_DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 18) {
+  Page(page: $page, perPage: 20) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -296,7 +296,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 BL_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 18) {
+  Page(page: $page, perPage: 20) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
@@ -322,7 +322,7 @@ query ($sort: [MediaSort], $page: Int) {
 
 BL_MANHWA_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 18) {
+  Page(page: $page, perPage: 20) {
     pageInfo { hasNextPage }
     media(
       type: MANGA
