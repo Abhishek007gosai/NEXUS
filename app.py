@@ -1252,8 +1252,25 @@ def api_refresh_airing_days():
                 continue
         candidates.append(a)
 
-    # Cap work per request to avoid AniList rate limits on large libraries
-    MAX_FETCH = 40 if force else 25
+    # Cap work per request to avoid AniList rate limits on large libraries.
+    # Prefer titles that look like they should be on Ongoing (blank status,
+    # RELEASING/HIATUS, or have an ongoing_link) so the first refresh fixes
+    # the most important rows.
+    def _prio(a):
+        st = (a.get("status") or "").upper()
+        score = 0
+        if a.get("ongoing_link"):
+            score += 4
+        if st in ("RELEASING", "HIATUS", ""):
+            score += 3
+        if not a.get("airing_day"):
+            score += 1
+        if st in ("FINISHED", "CANCELLED"):
+            score -= 2
+        return -score
+
+    candidates.sort(key=_prio)
+    MAX_FETCH = 80 if force else 30
     candidates = candidates[:MAX_FETCH]
 
     updated = 0
