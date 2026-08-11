@@ -601,15 +601,13 @@
   }
 
   function isOngoing(a) {
-    // Ongoing tab: currently airing titles.
-    // - RELEASING / HIATUS from AniList status
-    // - OR admin set an Ongoing join link (status in DB is often stale/wrong)
-    // Never include pure NOT_YET_RELEASED announcements without an ongoing link.
+    // Ongoing tab: ONLY the season that is airing right now.
+    // Previous seasons (FINISHED / CANCELLED) never appear here — even if they
+    // still have an ongoing_link left over. Announced (NOT_YET_RELEASED) stay out too.
     const st = (a.status || "").toUpperCase();
     if (st === "RELEASING" || st === "HIATUS") return true;
-    if (st === "NOT_YET_RELEASED") return false;
-    // Blank / outdated FINISHED etc.: trust explicit ongoing_link from admin
-    if (a.ongoing_link) return true;
+    // Blank status + ongoing_link: keep until AniList refresh fills status
+    if (!st && a.ongoing_link) return true;
     return false;
   }
 
@@ -660,10 +658,9 @@
   }
 
   function ongoingList() {
-    // Ongoing column: every library title that is actually airing right now
-    // (RELEASING / HIATUS). Announced / NOT_YET_RELEASED seasons are excluded
-    // by isOngoing. No franchise collapse — each airing season is its own card.
-    // When the season ends (status → FINISHED) it drops out automatically.
+    // Only currently airing seasons (RELEASING / HIATUS). Previous seasons of
+    // the same franchise drop out once their status is FINISHED. Each airing
+    // season is its own card (no franchise merge on this tab).
     return available.filter((a) => isOngoing(a));
   }
 
