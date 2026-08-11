@@ -504,7 +504,7 @@ html, body {
   color: var(--text-faint);
   font-size: 13px;
   text-align: center;
-  padding: 40px 0;
+  padding: 16px 0;
 }
 
 /* ---------------- skeleton loading placeholders ---------------- */
@@ -528,7 +528,7 @@ html, body {
 
 .popular-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px 10px;
   padding-bottom: 4px;
 }
@@ -549,8 +549,8 @@ html, body {
 .load-more-btn {
   display: block;
   width: 100%;
-  margin-top: 8px;
-  margin-bottom: 4px;
+  margin-top: 6px;
+  margin-bottom: 0;
   padding: 11px 0;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -655,13 +655,13 @@ html, body {
 .letter-group-label { color: var(--green); font-weight: 700; font-size: 14px; }
 .letter-group-line { flex: 1; height: 1px; background: var(--border); }
 
-.available-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; padding-bottom: 4px; }
+.available-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding-bottom: 4px; }
 .available-grid .poster-card img,
 .available-grid .poster-art img,
-.available-grid .poster-art .generated-thumb { height: 180px; }
+.available-grid .poster-art .generated-thumb { height: 148px; }
 .popular-grid .poster-card img,
 .popular-grid .poster-art img,
-.popular-grid .poster-art .generated-thumb { height: 180px; }
+.popular-grid .poster-art .generated-thumb { height: 148px; }
 
 /* ---------------- bottom nav ---------------- */
 
@@ -714,7 +714,7 @@ html, body {
   min-height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
-  padding: 16px 16px 100px;
+  padding: 16px 16px 88px;
 }
 
 .subview-topbar {
