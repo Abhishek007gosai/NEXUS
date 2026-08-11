@@ -546,9 +546,14 @@
     return pool[0];
   }
 
+  function isSoloCard(a) {
+    // Own Finished card when Solo link is set, or legacy display_mode=solo.
+    return !!(a && (a.solo_link || (a.display_mode || "group") === "solo"));
+  }
+
   function primaryAvailableList() {
     // Franchise grouping for Finished tab:
-    // - display_mode "solo" → always its own card (can coexist with the group card)
+    // - solo_link / display_mode "solo" → always its own card (can coexist with the group card)
     // - display_mode "group" (default) → one card per franchise = latest full release
     const bySourceId = new Map();
     available.forEach((a) => {
@@ -558,9 +563,9 @@
     const visited = new Set();
     const primaries = [];
 
-    // Solo titles always appear on their own (separate from All-seasons group)
+    // Solo titles (solo_link or display_mode=solo) always appear on their own
     available.forEach((a) => {
-      if ((a.display_mode || "group") === "solo") {
+      if (isSoloCard(a)) {
         primaries.push(a);
         visited.add(String(a.id));
       }
@@ -576,7 +581,7 @@
       while (frontier.length) {
         const cur = frontier.pop();
         // Skip solo members — they already have their own card
-        if ((cur.display_mode || "group") === "solo") continue;
+        if (isSoloCard(cur)) continue;
         group.push(cur);
         (cur.related_ids || []).forEach((rid) => {
           const relItem = bySourceId.get(String(rid));
@@ -596,10 +601,11 @@
   }
 
   function isOngoing(a) {
-    // Ongoing tab: ONLY currently airing / not-yet-released titles.
+    // Ongoing tab: currently airing, not-yet-released, or on hiatus.
     // Finished series must never appear here, even if they have links or an old airing_day.
+    // HIATUS is treated as ongoing so mid-season pauses still show under Ongoing.
     const st = (a.status || "").toUpperCase();
-    return st === "RELEASING" || st === "NOT_YET_RELEASED";
+    return st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS";
   }
 
   // Title-based schedule fallback when AniList has no broadcast day
@@ -626,19 +632,23 @@
   }
 
   function effectiveJoinLink(anime) {
-    // Ongoing tab prefers ongoing_link; Finished prefers join_link.
+    // Ongoing tab prefers ongoing_link.
+    // Finished: solo cards use solo_link; group cards use join_link (All seasons).
     if (!anime) return null;
     if (libraryMode === "ongoing") {
-      return anime.ongoing_link || anime.join_link || anime.matchedJoinLink || null;
+      return anime.ongoing_link || anime.solo_link || anime.join_link || anime.matchedJoinLink || null;
+    }
+    if ((anime.display_mode || "group") === "solo" || anime.solo_link) {
+      return anime.solo_link || anime.join_link || anime.matchedJoinLink || null;
     }
     return anime.join_link || anime.matchedJoinLink || null;
   }
 
   function finishedList() {
-    // Finished column: cards with a finished join_link (group primary or solo).
+    // Finished column: cards with any finished path (group join_link, solo_link, or match).
     // Fully-released titles with only ongoing_link still appear as a fallback.
     return primaryAvailableList().filter((a) => {
-      if (a.join_link || a.matchedJoinLink) return true;
+      if (a.join_link || a.solo_link || a.matchedJoinLink) return true;
       if (!isOngoing(a) && a.ongoing_link) return true;
       return false;
     });
@@ -672,11 +682,12 @@
 
   function filteredOngoing() {
     let list = ongoingList();
-    // Ongoing columns: only titles with a known airing day (no OTHER bucket)
-    list = list.filter((a) => !!effectiveAiringDay(a));
+    // Keep titles without a known airing day under a TBA group so they still
+    // appear on ALL (previously they were silently dropped).
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
     } else if (activeDay) {
+      // Day chips only show titles that actually map to that weekday
       list = list.filter((a) => effectiveAiringDay(a) === activeDay);
     }
     return [...list].sort((a, b) => a.title.localeCompare(b.title));
@@ -789,11 +800,19 @@
   let _airingDaysRefreshDone = false;
 
   async function autoRefreshAiringDays() {
-    // Silent one-shot: fill missing airing_day from AniList so Ongoing day
-    // columns work. Runs at most once per page load for any logged-in user.
+    // Silent one-shot: fill missing airing_day and correct stale status from
+    // AniList so Ongoing day columns work. Runs at most once per page load.
     if (_airingDaysRefreshDone) return;
-    const missing = ongoingList().filter((a) => !a.airing_day && a.source_id);
-    if (!missing.length) {
+    // Also refresh when status is blank/wrong so titles stuck as FINISHED
+    // (or with no status) can reappear under Ongoing after AniList correction.
+    const needsFix = available.filter((a) => {
+      if (!a.source_id) return false;
+      const st = (a.status || "").toUpperCase();
+      if (!a.airing_day && (st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS" || !st)) return true;
+      if (!st) return true;
+      return false;
+    });
+    if (!needsFix.length) {
       _airingDaysRefreshDone = true;
       return;
     }
@@ -803,12 +822,12 @@
         method: "POST",
         body: JSON.stringify({ force: false }),
       });
-      if (result && result.updated > 0) {
+      if (result && ((result.updated || 0) > 0 || (result.status_updated || 0) > 0)) {
         await loadAvailable();
         if (libraryMode === "ongoing") renderLibraryTab();
       }
     } catch (err) {
-      // Non-fatal — titles stay under OTHER; allow retry next open
+      // Non-fatal — titles stay under TBA; allow retry next open
       _airingDaysRefreshDone = false;
     }
   }
@@ -818,14 +837,14 @@
       renderDayBar();
       const list = filteredOngoing();
       if (!ongoingGroups) return;
-      // ALL: group by weekday only (SUN…SAT). No OTHER section.
+      // ALL: group by weekday (SUN…SAT) plus TBA for titles with no known day.
       // Single day chip: only that day's titles under one section.
       renderGroupedGrid(
         ongoingGroups,
         ongoingEmpty,
         list,
-        (a) => effectiveAiringDay(a),
-        (k) => (WEEKDAY_LABELS[k] || k || "").toUpperCase()
+        (a) => effectiveAiringDay(a) || "tba",
+        (k) => (k === "tba" ? "TBA" : (WEEKDAY_LABELS[k] || k || "").toUpperCase())
       );
       // Kick off silent AniList backfill after first paint
       autoRefreshAiringDays();
@@ -1049,20 +1068,25 @@
 
   function renderDetailAction(anime, context) {
     detailActionArea.innerHTML = "";
-    reportOpenBtn.classList.toggle("hidden", !["available", "discover", "genre"].includes(context));
+    reportOpenBtn.classList.toggle("hidden", !["available", "ongoing", "discover", "genre"].includes(context));
 
-    // Finished URL = join_link (or matched from library on Discover)
+    // Finished: solo card → solo_link; otherwise All-seasons join_link
     // Ongoing URL = ongoing_link only — never fall back for button split
-    const finishedUrl = anime.join_link || (
+    const finishedUrl = (
+      (isSoloCard(anime) && anime.solo_link) ? anime.solo_link : null
+    ) || anime.join_link || anime.solo_link || (
       (context === "discover" || context === "genre") ? (anime.matchedJoinLink || null) : null
     );
     const ongoingUrl = anime.ongoing_link || null;
 
+    // PREVIOUS | ONGOING split is only for the Ongoing library tab
+    const showOngoingSplit = context === "ongoing" || libraryMode === "ongoing";
+
     const row = document.createElement("div");
     row.className = "action-row";
 
-    if (finishedUrl && ongoingUrl) {
-      // Both → PREVIOUS | ONGOING (green)
+    if (showOngoingSplit && finishedUrl && ongoingUrl) {
+      // Ongoing tab only → PREVIOUS | ONGOING
       const prevBtn = document.createElement("button");
       prevBtn.className = "btn btn-primary join-split-btn";
       prevBtn.textContent = "PREVIOUS";
@@ -1073,15 +1097,22 @@
       ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
       row.appendChild(prevBtn);
       row.appendChild(ongBtn);
-    } else if (finishedUrl && !ongoingUrl) {
-      // Only finished → single Join
+    } else if (showOngoingSplit && !finishedUrl && ongoingUrl) {
+      // Ongoing tab, only ongoing link
+      const ongBtn = document.createElement("button");
+      ongBtn.className = "btn btn-primary";
+      ongBtn.textContent = "ONGOING";
+      ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
+      row.appendChild(ongBtn);
+    } else if (finishedUrl) {
+      // Finished / Discover / etc. → single Join (never the PREVIOUS|ONGOING pair)
       const joinBtn = document.createElement("button");
       joinBtn.className = "btn btn-primary";
       joinBtn.textContent = "\u25b6 Join";
       joinBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
       row.appendChild(joinBtn);
-    } else if (!finishedUrl && ongoingUrl) {
-      // Only ongoing → single ONGOING
+    } else if (ongoingUrl) {
+      // No finished link but ongoing exists (e.g. Finished tab fallback)
       const ongBtn = document.createElement("button");
       ongBtn.className = "btn btn-primary";
       ongBtn.textContent = "ONGOING";
@@ -1105,11 +1136,14 @@
   }
 
   async function openLocalDetail(item) {
-    openDetailSheet(item, "available");
+    // Pass "ongoing" when opened from the Ongoing library tab so PREVIOUS|ONGOING
+    // split buttons only appear there; Finished uses a single Join button.
+    const ctx = libraryMode === "ongoing" ? "ongoing" : "available";
+    openDetailSheet(item, ctx);
     try {
       const full = await api(`/api/anime/${item.id}`);
       if (currentDetail && currentDetail.id === item.id) {
-        openDetailSheet({ ...item, ...full }, "available");
+        openDetailSheet({ ...item, ...full }, ctx);
       }
       const merged = { ...item, ...full };
       // If synopsis / relations still missing, try AniList once more
@@ -1125,9 +1159,10 @@
               ...al,
               id: merged.id,
               join_link: merged.join_link || al.join_link,
+              solo_link: merged.solo_link || al.solo_link,
               ongoing_link: merged.ongoing_link || al.ongoing_link,
               related_posted: al.related_posted || merged.related_posted || [],
-            }, "available");
+            }, ctx);
           }
         } catch (e) { /* non-fatal */ }
       }
@@ -1151,7 +1186,7 @@
             if (idx >= 0) available[idx] = { ...available[idx], airing_day: updated.airing_day };
             if (currentDetail && currentDetail.id === merged.id) {
               currentDetail.airing_day = updated.airing_day;
-              openDetailSheet(currentDetail, "available");
+              openDetailSheet(currentDetail, ctx);
             }
             renderLibraryTab();
           }
@@ -1218,27 +1253,17 @@
     if (focusEl) setTimeout(() => focusEl.focus(), 30);
   }
 
-  function setFinishedMode(mode) {
-    const btnGroup = el("link-mode-group");
-    const btnSolo = el("link-mode-solo");
-    const hint = el("link-finished-hint");
-    if (btnGroup) btnGroup.classList.toggle("active", mode === "group");
-    if (btnSolo) btnSolo.classList.toggle("active", mode === "solo");
-    if (hint) {
-      hint.textContent = mode === "solo"
-        ? "Solo: only this title gets its own card and this join link on Finished."
-        : "All seasons: whole franchise shares this join link on Finished.";
-    }
-  }
-
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
+    // All seasons (franchise) and Solo are independent fields — both can be set.
     if (linkInput) linkInput.value = anime.join_link || "";
+    const soloInput = el("solo-link-input");
+    if (soloInput) soloInput.value = anime.solo_link || "";
     const ongoingInput = el("ongoing-link-input");
     if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
-    setFinishedMode((anime.display_mode || "group") === "solo" ? "solo" : "group");
+    const st = (anime.status && String(anime.status).toUpperCase()) || "";
     const preferOngoing = (typeof libraryMode !== "undefined" && libraryMode === "ongoing")
-      || (anime.status && String(anime.status).toUpperCase() === "RELEASING");
+      || st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS";
     setLinkSheetType(preferOngoing ? "ongoing" : "finished");
     linkOverlay.classList.remove("hidden");
   }
@@ -1248,10 +1273,6 @@
     const tabOng = el("link-tab-ongoing");
     if (tabFin) tabFin.addEventListener("click", () => setLinkSheetType("finished"));
     if (tabOng) tabOng.addEventListener("click", () => setLinkSheetType("ongoing"));
-    const btnGroup = el("link-mode-group");
-    const btnSolo = el("link-mode-solo");
-    if (btnGroup) btnGroup.addEventListener("click", () => setFinishedMode("group"));
-    if (btnSolo) btnSolo.addEventListener("click", () => setFinishedMode("solo"));
   })();
 
   function closeLinkSheet() {
@@ -1264,15 +1285,15 @@
   const linkSaveBtn = el("link-save");
   linkSaveBtn.addEventListener("click", async () => {
     if (!linkTargetAnime || linkSaveBtn.disabled) return;
-    const finishedValue = (linkInput.value || "").trim();
+    const groupValue = (linkInput.value || "").trim();
+    const soloInput = el("solo-link-input");
+    const soloValue = soloInput ? (soloInput.value || "").trim() : "";
     const ongoingInput = el("ongoing-link-input");
     const ongoingValue = ongoingInput ? (ongoingInput.value || "").trim() : "";
-    const btnGroup = el("link-mode-group");
-    const finishedMode = (btnGroup && btnGroup.classList.contains("active")) ? "group" : "solo";
 
     // Need at least one URL when creating a new post
-    if (!linkTargetAnime.id && !finishedValue && !ongoingValue) {
-      showToast("Paste a Finished or Ongoing join URL first");
+    if (!linkTargetAnime.id && !groupValue && !soloValue && !ongoingValue) {
+      showToast("Paste an All seasons, Solo, or Ongoing join URL first");
       return;
     }
 
@@ -1282,13 +1303,12 @@
     try {
       let result;
       if (linkTargetAnime.id) {
-        const body = { ongoing_link: ongoingValue };
-        if (finishedMode === "solo") {
-          body.solo_link = finishedValue;
-          // Don't clear group unless finished field intentionally empty and was solo-only
-        } else {
-          body.group_link = finishedValue;
-        }
+        // Always send both finished fields so they stay independent
+        const body = {
+          group_link: groupValue,
+          solo_link: soloValue,
+          ongoing_link: ongoingValue,
+        };
         result = await api(`/api/anime/${linkTargetAnime.id}/link`, {
           method: "PATCH",
           body: JSON.stringify(body),
@@ -1304,11 +1324,14 @@
         }
         const saved = result.anime || {};
         linkTargetAnime.join_link = saved.join_link || null;
+        linkTargetAnime.solo_link = saved.solo_link || null;
         linkTargetAnime.ongoing_link = saved.ongoing_link || null;
         linkTargetAnime.display_mode = saved.display_mode || linkTargetAnime.display_mode;
-        linkTargetAnime.matchedJoinLink = linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
+        linkTargetAnime.matchedJoinLink =
+          linkTargetAnime.solo_link || linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
         if (currentDetail && currentDetail.id === linkTargetAnime.id) {
           currentDetail.join_link = linkTargetAnime.join_link;
+          currentDetail.solo_link = linkTargetAnime.solo_link;
           currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
           currentDetail.display_mode = linkTargetAnime.display_mode;
           currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
@@ -1318,17 +1341,20 @@
           available[aidx] = {
             ...available[aidx],
             join_link: linkTargetAnime.join_link,
+            solo_link: linkTargetAnime.solo_link,
             ongoing_link: linkTargetAnime.ongoing_link,
             display_mode: linkTargetAnime.display_mode,
           };
         }
       } else {
-        // Discover/Genre — create library entry with separate group/solo/ongoing links
+        // Discover/Genre — create library entry with independent group/solo/ongoing links
         const alId = linkTargetAnime.anilist_id || linkTargetAnime.source_id;
         if (!alId) {
           throw new Error("Missing AniList id — open the title again and retry");
         }
         const createBody = {
+          group_link: groupValue,
+          solo_link: soloValue,
           ongoing_link: ongoingValue,
           title: linkTargetAnime.title,
           alt_title: linkTargetAnime.alt_title,
@@ -1342,17 +1368,18 @@
           episodes: linkTargetAnime.episodes,
           format: linkTargetAnime.format,
         };
-        if (finishedMode === "solo") createBody.solo_link = finishedValue;
-        else createBody.group_link = finishedValue;
         result = await api(`/api/anime/link-anilist/${alId}`, {
           method: "POST",
           body: JSON.stringify(createBody),
         });
         const anime = result.anime || {};
         linkTargetAnime.id = anime.id;
-        linkTargetAnime.join_link = anime.join_link || value || null;
+        linkTargetAnime.join_link = anime.join_link || groupValue || null;
+        linkTargetAnime.solo_link = anime.solo_link || soloValue || null;
         linkTargetAnime.ongoing_link = anime.ongoing_link || ongoingValue || null;
-        linkTargetAnime.matchedJoinLink = linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
+        linkTargetAnime.display_mode = anime.display_mode || (soloValue ? "solo" : "group");
+        linkTargetAnime.matchedJoinLink =
+          linkTargetAnime.solo_link || linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
         // Optimistically add to local library so Finished column updates immediately
         if (anime.id) {
           const idx = available.findIndex((a) => a.id === anime.id);
@@ -1361,6 +1388,7 @@
             ...anime,
             id: anime.id,
             join_link: linkTargetAnime.join_link,
+            solo_link: linkTargetAnime.solo_link,
             ongoing_link: linkTargetAnime.ongoing_link,
             available: true,
           };
@@ -1370,6 +1398,7 @@
         if (currentDetail && (currentDetail.anilist_id === alId || currentDetail.source_id === alId)) {
           currentDetail.id = anime.id;
           currentDetail.join_link = linkTargetAnime.join_link;
+          currentDetail.solo_link = linkTargetAnime.solo_link;
           currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
           currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
         }
@@ -1377,7 +1406,7 @@
 
       if (currentDetail) renderDetailAction(currentDetail, currentContext);
       // Capture before closeLinkSheet() nulls the target
-      const savedJoin = !!(linkTargetAnime && linkTargetAnime.join_link);
+      const savedJoin = !!(linkTargetAnime && (linkTargetAnime.join_link || linkTargetAnime.solo_link));
       const savedOngoing = !!(linkTargetAnime && linkTargetAnime.ongoing_link);
       const savedTitle = (linkTargetAnime && linkTargetAnime.title)
         || (currentDetail && currentDetail.title)
