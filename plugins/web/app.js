@@ -495,17 +495,41 @@
     popularGridLoadMoreBtn.classList.toggle("hidden", !mostPopularHasNext);
   }
 
+  // Prefetch the next Popular page so "Load more" feels instant
+  let mostPopularPrefetch = null; // { page, promise }
+
+  function prefetchMostPopularPage(page) {
+    if (!page || page < 2) return;
+    if (mostPopularPrefetch && mostPopularPrefetch.page === page) return;
+    mostPopularPrefetch = {
+      page,
+      promise: api(`/api/catalog/most-popular?page=${page}`)
+        .then((data) => data)
+        .catch(() => null),
+    };
+  }
+
   async function loadMorePopularGrid() {
     if (mostPopularLoading || !mostPopularHasNext) return;
     mostPopularLoading = true;
     popularGridLoadMoreBtn.disabled = true;
     popularGridLoadMoreBtn.textContent = "Loading…";
+    const nextPage = mostPopularPage + 1;
     try {
-      const data = await api(`/api/catalog/most-popular?page=${mostPopularPage + 1}`);
-      mostPopularPage += 1;
-      mostPopular = mostPopular.concat(data.results);
-      mostPopularHasNext = data.has_next;
+      let data = null;
+      if (mostPopularPrefetch && mostPopularPrefetch.page === nextPage) {
+        data = await mostPopularPrefetch.promise;
+        mostPopularPrefetch = null;
+      }
+      if (!data || !Array.isArray(data.results)) {
+        data = await api(`/api/catalog/most-popular?page=${nextPage}`);
+      }
+      mostPopularPage = nextPage;
+      mostPopular = mostPopular.concat(data.results || []);
+      mostPopularHasNext = !!data.has_next;
       renderPopularGrid();
+      // Warm the following page in the background
+      if (mostPopularHasNext) prefetchMostPopularPage(mostPopularPage + 1);
     } catch (err) {
       showToast("Couldn't load more right now.");
     }
@@ -1543,6 +1567,7 @@
   const RECENT_SEARCH_LIMIT = 10;
 
   function getLocalRecentSearches() {
+    return []; // Recent Searches removed
     try {
       const raw = localStorage.getItem(RECENT_SEARCH_KEY);
       const items = raw ? JSON.parse(raw) : [];
@@ -1553,34 +1578,20 @@
   }
 
   function addLocalRecentSearch(query) {
-    try {
-      const items = getLocalRecentSearches().filter((q) => q.toLowerCase() !== query.toLowerCase());
-      items.unshift(query);
-      localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(items.slice(0, RECENT_SEARCH_LIMIT)));
-    } catch (err) { /* localStorage unavailable — not fatal, just no history */ }
+    // no-op — Recent Searches removed
   }
+
 
   function clearLocalRecentSearches() {
     try { localStorage.removeItem(RECENT_SEARCH_KEY); } catch (err) { /* not fatal */ }
   }
 
   function renderRecentSearches() {
-    recentSearchList.innerHTML = "";
-    const items = getLocalRecentSearches();
-    recentSearchSection.classList.toggle("hidden", items.length === 0);
-    items.forEach((query) => {
-      const row = document.createElement("div");
-      row.className = "popular-search-row";
-      row.innerHTML = `<span class="popular-search-icon">\u{1F551}</span>
-        <span class="popular-search-text">${escapeHtml(query)}</span>
-        <span class="popular-search-arrow">\u2197</span>`;
-      row.addEventListener("click", () => {
-        searchViewInput.value = query;
-        runLibrarySearch(query);
-      });
-      recentSearchList.appendChild(row);
-    });
+    // Recent Searches UI removed
+    if (recentSearchSection) recentSearchSection.classList.add("hidden");
+    if (recentSearchList) recentSearchList.innerHTML = "";
   }
+
 
   recentSearchClear.addEventListener("click", () => {
     clearLocalRecentSearches();
@@ -2287,6 +2298,8 @@
       mostPopularHasNext = !!mostPopularData.has_next;
       mostPopularPage = 1;
       renderPopularGrid();
+      // Prefetch page 2 so the first "Load more" is instant
+      if (mostPopularHasNext) prefetchMostPopularPage(2);
     } catch (e) {
       mostPopular = [];
       mostPopularHasNext = false;
