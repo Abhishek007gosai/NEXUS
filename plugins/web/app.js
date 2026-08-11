@@ -658,7 +658,10 @@
     if (!container) return;
     container.innerHTML = "";
     const availIndex = buildAvailableIndex();
-    items.forEach((item) => {
+    // Show only full rows of 3 so the last row never has empty slots (like KAYA)
+    const cols = 3;
+    const visible = (items && items.length) ? items.slice(0, Math.floor(items.length / cols) * cols) : [];
+    visible.forEach((item) => {
       const matched = availIndex.match(item);
       item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
       container.appendChild(popularGridCard(item, () => openDiscoverDetail(item)));
@@ -738,12 +741,7 @@
   }
 
   async function loadAllDiscover() {
-    renderSkeletonRow(allTrendingHentai, 4);
-    renderSkeletonRow(allAiringHentai, 4);
-    renderSkeletonRow(allPopularHentai, 4);
-    renderSkeletonRow(allTrendingManga, 4);
-    renderSkeletonRow(allAiringManga, 4);
-    renderSkeletonRow(allPopularManga, 4);
+    // No skeleton placeholders — avoid loading animation flash on open
 
     // Wave 1: manga / manhwa (BL filtered on server)
     const [mt, ma, mp] = await Promise.all([
@@ -1027,14 +1025,9 @@
     list = [...list].sort((a, b) => a.title.localeCompare(b.title));
 
     if (emptyEl) {
-      emptyEl.classList.toggle("hidden", list.length !== 0);
-      if (type === "MANGA") {
-        emptyEl.textContent = list.length === 0
-          ? (hmanhwaStatus === "ongoing"
-              ? "No ongoing manhwa/manga posted yet."
-              : "No finished manhwa/manga posted yet.")
-          : emptyEl.textContent;
-      }
+      // No empty-state text on home libraries
+      emptyEl.classList.add("hidden");
+      emptyEl.textContent = "";
     }
 
     if (hideLetters) {

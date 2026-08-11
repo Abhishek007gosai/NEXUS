@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#131310" />
   <title>{{ brand_name }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=43" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=46" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body data-brand="{{ brand_name }}">
@@ -43,7 +43,7 @@
         <h2 class="section-header section-header--available"><span class="accent-bar"></span>Available H-ANIME</h2>
         <div id="hanime-letter-bar" class="letter-bar"></div>
         <div id="hanime-groups"></div>
-        <p id="hanime-empty" class="empty-note">No hanime linked yet. Open a title from Search and use + to set a join link.</p>
+        <p id="hanime-empty" class="empty-note hidden"></p>
       </div>
 
       <!-- H-MANHWA: Ongoing / Finished — posted titles only (A–Z) -->
@@ -55,7 +55,7 @@
 
         <div id="hmanhwa-letter-bar" class="letter-bar"></div>
         <div id="hmanhwa-groups"></div>
-        <p id="hmanhwa-empty" class="empty-note">No ongoing manhwa linked yet. Open a title and use + to set a join link.</p>
+        <p id="hmanhwa-empty" class="empty-note hidden"></p>
       </div>
 
     </div>
@@ -274,6 +274,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=43"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=46"></script>
 </body>
 </html>
