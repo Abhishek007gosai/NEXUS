@@ -42,44 +42,12 @@
     return res.json();
   }
 
-  async function safeApi(path, fallback = { results: [], has_next: false }) {
-    try {
-      return await api(path);
-    } catch (err) {
-      console.warn("API failed", path, err);
-      return fallback;
-    }
-  }
-
   function debounce(fn, ms) {
     let t;
     return (...args) => {
       clearTimeout(t);
       t = setTimeout(() => fn(...args), ms);
     };
-  }
-
-  // Route remote cover/banner images through our same-origin proxy so
-  // Telegram's WebView (and strict referrer policies) can actually load
-  // them. Direct s4.anilist.co / MAL CDN links often fail silently there.
-  const PROXY_HOSTS = new Set([
-    "s4.anilist.co",
-    "s3.anilist.co",
-    "img.anilist.co",
-    "media.anilist.co",
-    "cdn.myanimelist.net",
-  ]);
-  function proxyImg(url) {
-    if (!url || typeof url !== "string") return "";
-    const u = url.trim();
-    if (!u.startsWith("https://")) return u;
-    try {
-      const host = new URL(u).hostname.toLowerCase();
-      if (!PROXY_HOSTS.has(host)) return u;
-      return `/api/img?u=${encodeURIComponent(u)}`;
-    } catch (_) {
-      return u;
-    }
   }
 
   // ---------------------------------------------------------------------
@@ -96,142 +64,31 @@
   }
 
   const PALETTES = [
-    ["#3a0ca3", "#7209b7", "#f72585"], ["#240046", "#5a189a", "#c77dff"],
-    ["#0b132b", "#1c2541", "#5bc0be"], ["#03045e", "#0077b6", "#00b4d8"],
-    ["#1b4332", "#2d6a4f", "#95d5b2"], ["#3d0000", "#9d0208", "#ff6d00"],
-    ["#14213d", "#1d3557", "#fca311"], ["#590d22", "#a4133c", "#ff8fa3"],
-    ["#22223b", "#4a4e69", "#c9184a"], ["#231942", "#5e548e", "#e0b1cb"],
-    ["#ff6b35", "#c9184a", "#9d0208"], ["#4361ee", "#3a0ca3", "#7209b7"],
+    ["#3a0ca3", "#f72585"], ["#7209b7", "#4361ee"], ["#ff6b35", "#9d0208"],
+    ["#0b132b", "#5bc0be"], ["#22223b", "#c9184a"], ["#231942", "#e0b1cb"],
+    ["#03045e", "#00b4d8"], ["#590d22", "#ff8fa3"], ["#1b4332", "#95d5b2"],
+    ["#3d0000", "#ff6d00"], ["#14213d", "#fca311"], ["#240046", "#5a189a"],
   ];
 
-  // High-quality canvas poster placeholder (2× retina) with title.
-  // Cached per title so list scroll doesn't re-rasterize the same card.
-  const _thumbCache = new Map();
   function generatedThumb(title) {
-    const label = (title || "Anime").trim() || "Anime";
-    const cached = _thumbCache.get(label);
-    if (cached) {
-      const img = document.createElement("img");
-      img.className = "generated-thumb";
-      img.src = cached;
-      img.alt = label;
-      img.decoding = "async";
-      return img;
-    }
-
-    const W = 300;
-    const H = 420;
-    const canvas = document.createElement("canvas");
-    canvas.width = W;
-    canvas.height = H;
-    const ctx = canvas.getContext("2d");
-    const h = hashStr(label);
-    const [c1, c2, c3] = PALETTES[h % PALETTES.length];
-
-    // Base multi-stop diagonal gradient
-    const ang = ((110 + (h % 140)) * Math.PI) / 180;
-    const gx = Math.cos(ang);
-    const gy = Math.sin(ang);
-    const grad = ctx.createLinearGradient(
-      W * 0.5 - gx * W * 0.7, H * 0.5 - gy * H * 0.7,
-      W * 0.5 + gx * W * 0.7, H * 0.5 + gy * H * 0.7
-    );
-    grad.addColorStop(0, c1);
-    grad.addColorStop(0.5, c2);
-    grad.addColorStop(1, c3);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    // Soft radial vignette
-    const vig = ctx.createRadialGradient(W * 0.5, H * 0.4, 20, W * 0.5, H * 0.5, H * 0.85);
-    vig.addColorStop(0, "rgba(0,0,0,0)");
-    vig.addColorStop(1, "rgba(0,0,0,0.45)");
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, W, H);
-
-    // Subtle geometric accent shapes
-    ctx.save();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.moveTo(0, H * 0.15);
-    ctx.lineTo(W * 0.55, 0);
-    ctx.lineTo(W, 0);
-    ctx.lineTo(W, H * 0.35);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(W * 0.85, H * 0.78, W * 0.35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // Title — word-wrapped, centered
-    const padX = 28;
-    const maxW = W - padX * 2;
-    const fontSize = label.length > 28 ? 22 : label.length > 16 ? 26 : 30;
-    ctx.font = `700 ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.shadowColor = "rgba(0,0,0,0.55)";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 2;
-
-    const words = label.split(/\s+/);
-    const lines = [];
-    let line = "";
-    for (const w of words) {
-      const test = line ? line + " " + w : w;
-      if (ctx.measureText(test).width > maxW && line) {
-        lines.push(line);
-        line = w;
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines.push(line);
-    const shown = lines.slice(0, 4);
-    if (lines.length > 4) shown[3] = shown[3].replace(/.{0,3}$/, "…");
-
-    const lineH = fontSize * 1.25;
-    const blockH = shown.length * lineH;
-    let y = H * 0.5 - blockH / 2 + lineH / 2;
-    for (const ln of shown) {
-      ctx.fillText(ln, W / 2, y, maxW);
-      y += lineH;
-    }
-
-    // Thin top accent bar
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
-    const bar = ctx.createLinearGradient(0, 0, W, 0);
-    bar.addColorStop(0, c3);
-    bar.addColorStop(1, c1);
-    ctx.fillStyle = bar;
-    ctx.fillRect(0, 0, W, 5);
-
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
-    if (_thumbCache.size > 200) _thumbCache.clear();
-    _thumbCache.set(label, dataUrl);
-
-    const img = document.createElement("img");
-    img.className = "generated-thumb";
-    img.src = dataUrl;
-    img.alt = label;
-    img.decoding = "async";
-    return img;
+    const h = hashStr(title);
+    const [c1, c2] = PALETTES[h % PALETTES.length];
+    const angle = 110 + (h % 140);
+    const div = document.createElement("div");
+    div.className = "generated-thumb";
+    div.style.background = `linear-gradient(${angle}deg, ${c1}, ${c2})`;
+    return div;
   }
 
   function thumbImg(container, src, title) {
-    const proxied = proxyImg(src);
-    if (!proxied) {
+    if (!src) {
       container.appendChild(generatedThumb(title));
       return;
     }
     const img = document.createElement("img");
     img.loading = "lazy";
-    img.src = proxied;
-    img.alt = title || "";
+    img.src = src;
+    img.alt = title;
     img.onerror = () => img.replaceWith(generatedThumb(title));
     container.appendChild(img);
   }
@@ -260,36 +117,27 @@
   const genreTileGrid = el("genre-tile-grid");
   const genreBrowseGrid = el("genre-browse-grid");
   const genreViewTitle = el("genre-view-title");
-  const genreLoadMore = el("genre-load-more");
-  let genreType = "ANIME"; // ANIME | MANGA
 
   const pillTabs = document.querySelectorAll(".pill-tab[data-tab]");
   const tabAll = el("tab-all");
-  const tabHanime = el("tab-hanime");
-  const tabHmanhwa = el("tab-hmanhwa");
+  const tabLibrary = el("tab-library");
 
   const scrollArea = el("scroll-area");
+  const trendingRow = el("trending-row");
+  const topAiringList = el("top-airing-list");
+  const popularLoadMore = el("popular-load-more");
+  const popularGridList = el("popular-grid-list");
+  const popularGridLoadMoreBtn = el("popular-grid-load-more");
 
-  // ALL tab dual feeds
-  const allTrendingHentai = el("all-trending-hentai");
-  const allTrendingManga = el("all-trending-manga");
-  const allAiringHentai = el("all-airing-hentai");
-  const allAiringManga = el("all-airing-manga");
-  const allPopularHentai = el("all-popular-hentai");
-  const allPopularManga = el("all-popular-manga");
-  const allPopularHentaiMore = el("all-popular-hentai-more");
-  const allPopularMangaMore = el("all-popular-manga-more");
-
-  // A–Z libraries
-  const hanimeLetterBar = el("hanime-letter-bar");
-  const hanimeGroups = el("hanime-groups");
-  const hanimeEmpty = el("hanime-empty");
-  const hanimeTrendingRow = el("hanime-trending-row");
-  const hanimePopularGrid = el("hanime-popular-grid");
-  const hanimePopularMore = el("hanime-popular-more");
-  const hmanhwaLetterBar = el("hmanhwa-letter-bar");
-  const hmanhwaGroups = el("hmanhwa-groups");
-  const hmanhwaEmpty = el("hmanhwa-empty");
+  const letterBar = el("letter-bar");
+  const availableGroups = el("available-groups");
+  const availableEmpty = el("available-empty");
+  const dayBar = el("day-bar");
+  const ongoingGroups = el("ongoing-groups");
+  const ongoingEmpty = el("ongoing-empty");
+  const finishedPanel = el("finished-panel");
+  const ongoingPanel = el("ongoing-panel");
+  const libraryModeTabs = document.querySelectorAll("[data-library-mode]");
 
   const navBtns = document.querySelectorAll(".nav-btn");
 
@@ -336,40 +184,22 @@
   // ---------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------
+  let trending = [];
+  let popular = [];
+  let popularPage = 1;
+  let popularHasNext = false;
+  let mostPopular = [];
+  let mostPopularPage = 1;
+  let mostPopularHasNext = false;
+  let mostPopularLoading = false;
   let available = [];
-  let profile = null;
-
-  // ALL — hentai feeds
-  let hTrending = [];
-  let hAiring = [];
-  let hAiringPage = 1;
-  let hAiringHasNext = false;
-  let hPopular = [];
-  let hPopularPage = 1;
-  let hPopularHasNext = false;
-  let hPopularLoading = false;
-
-  // ALL — manga/manhwa feeds
-  let mTrending = [];
-  let mAiring = [];
-  let mAiringPage = 1;
-  let mAiringHasNext = false;
-  let mPopular = [];
-  let mPopularPage = 1;
-  let mPopularHasNext = false;
-  let mPopularLoading = false;
-
-  // A–Z library filters
+  let activeLetter = null;
+  let activeDay = null;           // null = ALL days
   let libraryQuery = "";
-  let availableSub = "hanime"; // hanime | hmanhwa
-  let hanimeLetter = null;
-  let hmanhwaLetter = null;
-  let hmanhwaStatus = "ongoing"; // ongoing | finished
-  let hanimeDiscTrending = [];
-  let hanimeDiscPopular = [];
-  let hanimeDiscPopularPage = 1;
-  let hanimeDiscPopularHasNext = false;
-  let hanimeDiscLoading = false;
+  let libraryMode = "finished"; // "finished" | "ongoing"
+  const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const WEEKDAY_LABELS = { sunday: "SUN", monday: "MON", tuesday: "TUE", wednesday: "WED", thursday: "THU", friday: "FRI", saturday: "SAT" };
+  let profile = null;
 
   const ALL_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   // "#" comes first, same convention as Spotify/Apple Music/contacts apps,
@@ -394,18 +224,15 @@
     const byId = new Map();
     const byTitle = new Map();
     available.forEach((a) => {
-      if (a.source_id != null) {
-        byId.set(`${a.source || "anilist"}:${a.source_id}`, a);
-        byId.set(String(a.source_id), a); // legacy plain-id match
+      if (a.source === "anilist" && a.source_id != null) {
+        byId.set(String(a.source_id), a);
       }
       byTitle.set(a.title.toLowerCase(), a);
     });
     return {
       match(item) {
-        if (item.source_id != null || item.anilist_id != null) {
-          const src = item.source || "anilist";
-          const sid = item.source_id ?? item.anilist_id;
-          const m = byId.get(`${src}:${sid}`) || byId.get(String(sid));
+        if (item.anilist_id != null) {
+          const m = byId.get(String(item.anilist_id));
           if (m) return m;
         }
         return byTitle.get((item.title || "").toLowerCase()) || null;
@@ -472,74 +299,97 @@
     const card = document.createElement("div");
     card.className = "poster-card";
 
-    const art = document.createElement("div");
-    art.className = "poster-art";
-    thumbImg(art, item.poster_url, item.title);
+    // Prefer higher-quality poster when available
+    const src = item.poster_url || item.cover_url || item.banner_url || "";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.src = src;
+    img.alt = item.title || "";
+    img.onerror = () => {
+      img.replaceWith(generatedThumb(item.title || "Anime"));
+    };
+    card.appendChild(img);
+
     if (item.rating) {
-      const badge = document.createElement("span");
-      badge.className = "poster-rating";
-      badge.textContent = "\u2605 " + Number(item.rating).toFixed(1);
-      art.appendChild(badge);
+      const rating = document.createElement("span");
+      rating.className = "poster-rating";
+      rating.textContent = "★ " + Number(item.rating).toFixed(1);
+      card.appendChild(rating);
     }
-    if (item.franchise_count && item.franchise_count > 1) {
-      const seasons = document.createElement("span");
-      seasons.className = "poster-seasons";
-      seasons.textContent = item.franchise_count + " seasons";
-      art.appendChild(seasons);
-    }
-    card.appendChild(art);
 
     const meta = document.createElement("div");
     meta.className = "poster-meta";
     const title = document.createElement("p");
     title.className = "poster-title";
-    title.textContent = item.title;
+    title.textContent = item.title || "Untitled";
     meta.appendChild(title);
-    card.appendChild(meta);
 
+    if (item.genres && item.genres.length) {
+      const genres = document.createElement("p");
+      genres.className = "poster-genres";
+      // Show first 2 genres max to keep cards clean (matches Nari Noona style)
+      genres.textContent = item.genres.slice(0, 2).join(", ");
+      meta.appendChild(genres);
+    }
+
+    card.appendChild(meta);
     card.addEventListener("click", onOpen);
     return card;
   }
 
   function trendingCard(item, onOpen) {
-    return posterScrollCard(item, onOpen);
+    return posterScrollCard(item, onOpen, null, null);
   }
 
   function topAiringCard(item, onOpen) {
-    return posterScrollCard(item, onOpen);
+    return posterScrollCard(item, onOpen, null, null);
   }
 
   function popularGridCard(item, onOpen) {
-    return posterScrollCard(item, onOpen);
+    return posterScrollCard(item, onOpen, null, null);
   }
 
-  function posterScrollCard(item, onOpen) {
+  function posterScrollCard(item, onOpen, badgeText, badgeClass) {
     const card = document.createElement("div");
     card.className = "poster-card";
 
-    const art = document.createElement("div");
-    art.className = "poster-art";
-    thumbImg(art, item.poster_url, item.title);
+    // Prefer higher-quality poster when available
+    const src = item.poster_url || item.cover_url || item.banner_url || "";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.src = src;
+    img.alt = item.title || "";
+    img.onerror = () => {
+      img.replaceWith(generatedThumb(item.title || "Anime"));
+    };
+    card.appendChild(img);
 
-    // Rating overlay on the poster (replaces HOT / NEW EP / POPULAR badges)
-    if (item.rating) {
+    if (badgeText) {
       const badge = document.createElement("span");
-      badge.className = "poster-rating";
-      badge.textContent = "\u2605 " + Number(item.rating).toFixed(1);
-      art.appendChild(badge);
+      badge.className = badgeClass;
+      badge.textContent = badgeText;
+      card.appendChild(badge);
     }
-    card.appendChild(art);
+
+    if (item.rating) {
+      const rating = document.createElement("span");
+      rating.className = "poster-rating";
+      rating.textContent = "★ " + Number(item.rating).toFixed(1);
+      card.appendChild(rating);
+    }
 
     const meta = document.createElement("div");
     meta.className = "poster-meta";
     const title = document.createElement("p");
     title.className = "poster-title";
-    title.textContent = item.title;
+    title.textContent = item.title || "Untitled";
     meta.appendChild(title);
     if (item.genres && item.genres.length) {
       const genres = document.createElement("p");
       genres.className = "poster-genres";
-      genres.textContent = item.genres.join(", ");
+      genres.textContent = item.genres.slice(0, 2).join(", ");
       meta.appendChild(genres);
     }
     card.appendChild(meta);
@@ -548,523 +398,483 @@
     return card;
   }
 
-  function renderSkeletonRow(container, count) {
-    if (!container) return;
-    container.innerHTML = "";
-    for (let i = 0; i < count; i++) {
-      const sk = document.createElement("div");
-      sk.className = "skeleton-card";
-      container.appendChild(sk);
-    }
-  }
-
   function matchesLibraryQuery(title) {
     return !libraryQuery || title.toLowerCase().includes(libraryQuery.toLowerCase());
   }
 
   // ---------------------------------------------------------------------
-  // Pill tabs: ALL (discovery) / HANIME (A–Z) / HMANHWA (A–Z)
+  // Render: Home "All" tab — Trending, Top Airing (+ Load more)
   // ---------------------------------------------------------------------
-  function setPillTab(tab) {
-    pillTabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-    if (tabAll) tabAll.classList.toggle("hidden", tab !== "all");
-    if (tabHanime) tabHanime.classList.toggle("hidden", tab !== "hanime");
-    if (tabHmanhwa) tabHmanhwa.classList.toggle("hidden", tab !== "hmanhwa");
-    if (tab === "hanime") renderTypeLibrary("ANIME");
-    if (tab === "hmanhwa") showHmanhwaStatus(hmanhwaStatus || "ongoing");
-  }
-  pillTabs.forEach((b) => b.addEventListener("click", () => setPillTab(b.dataset.tab)));
 
-  // H-MANHWA status sub-tabs (Ongoing / Finished — posted titles only)
-  function showHmanhwaStatus(status) {
-    hmanhwaStatus = status;
-    hmanhwaLetter = null;
-    document.querySelectorAll(".status-tab[data-status]").forEach((b) => {
-      b.classList.toggle("active", b.dataset.status === status);
-    });
-    renderTypeLibrary("MANGA");
-  }
-  document.querySelectorAll(".status-tab[data-status]").forEach((btn) => {
-    btn.addEventListener("click", () => showHmanhwaStatus(btn.dataset.status));
-  });
-
-
-  function renderHanimeDiscover() {
-    fillHscroll(hanimeTrendingRow, hanimeDiscTrending, trendingCard);
-    fillGrid(hanimePopularGrid, hanimeDiscPopular);
-    if (hanimePopularMore) hanimePopularMore.classList.toggle("hidden", !hanimeDiscPopularHasNext);
-    noteEmpty(hanimeTrendingRow, "Hentai feed unavailable right now");
-    noteEmpty(hanimePopularGrid, "Hentai feed unavailable right now");
-  }
-
-  async function loadHanimeDiscover() {
-    if (hanimeDiscLoading) return;
-    if (hanimeDiscTrending.length || hanimeDiscPopular.length) {
-      renderHanimeDiscover();
-      return;
-    }
-    hanimeDiscLoading = true;
-    renderSkeletonRow(hanimeTrendingRow, 4);
-    renderSkeletonRow(hanimePopularGrid, 6);
-    const [t, p] = await Promise.all([
-      safeApi("/api/catalog/trending"),
-      safeApi("/api/catalog/most-popular"),
-    ]);
-    hanimeDiscTrending = t.results || [];
-    hanimeDiscPopular = p.results || [];
-    hanimeDiscPopularHasNext = !!p.has_next;
-    hanimeDiscPopularPage = 1;
-    renderHanimeDiscover();
-    hanimeDiscLoading = false;
-  }
-
-  async function loadMoreHanimePopular() {
-    if (hanimeDiscLoading || !hanimeDiscPopularHasNext) return;
-    hanimeDiscLoading = true;
-    if (hanimePopularMore) {
-      hanimePopularMore.disabled = true;
-      hanimePopularMore.textContent = "Loading…";
-    }
-    const data = await safeApi(`/api/catalog/most-popular?page=${hanimeDiscPopularPage + 1}`);
-    hanimeDiscPopularPage += 1;
-    hanimeDiscPopular = hanimeDiscPopular.concat(data.results || []);
-    hanimeDiscPopularHasNext = !!data.has_next;
-    fillGrid(hanimePopularGrid, hanimeDiscPopular);
-    if (hanimePopularMore) {
-      hanimePopularMore.disabled = false;
-      hanimePopularMore.textContent = "Load more";
-      hanimePopularMore.classList.toggle("hidden", !hanimeDiscPopularHasNext);
-    }
-    hanimeDiscLoading = false;
-  }
-  if (hanimePopularMore) hanimePopularMore.addEventListener("click", loadMoreHanimePopular);
-
-  // ---------------------------------------------------------------------
-  // ALL tab — dual feeds (hentai vs manga/manhwa shown separately)
-  // ---------------------------------------------------------------------
-  function fillHscroll(container, items, cardFn) {
+  // Shimmer placeholders shown the instant the Home tab opens, replaced as
+  // soon as each section's real data arrives — makes first load (and any
+  // cold-start delay while the server/cache spins back up) feel immediate
+  // instead of showing blank space under each header.
+  function renderSkeletonRow(container, count) {
     if (!container) return;
     container.innerHTML = "";
-    const availIndex = buildAvailableIndex();
-    items.forEach((item) => {
-      const matched = availIndex.match(item);
-      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
-      container.appendChild(cardFn(item, () => openDiscoverDetail(item)));
-    });
+    for (let i = 0; i < count; i++) {
+      const card = document.createElement("div");
+      card.className = "skeleton-card";
+      container.appendChild(card);
+    }
   }
 
-  function fillGrid(container, items) {
-    if (!container) return;
-    container.innerHTML = "";
-    const availIndex = buildAvailableIndex();
-    items.forEach((item) => {
-      const matched = availIndex.match(item);
-      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
-      container.appendChild(popularGridCard(item, () => openDiscoverDetail(item)));
-    });
-  }
-
-  function renderAllTab() {
-    fillHscroll(allTrendingHentai, hTrending, trendingCard);
-    fillHscroll(allTrendingManga, mTrending, trendingCard);
-    fillHscroll(allAiringHentai, hAiring, topAiringCard);
-    fillHscroll(allAiringManga, mAiring, topAiringCard);
-    fillGrid(allPopularHentai, hPopular);
-    fillGrid(allPopularManga, mPopular);
-    if (allPopularHentaiMore) allPopularHentaiMore.classList.toggle("hidden", !hPopularHasNext);
-    if (allPopularMangaMore) allPopularMangaMore.classList.toggle("hidden", !mPopularHasNext);
-  }
-
-  async function loadMoreHentaiPopular() {
-    if (hPopularLoading || !hPopularHasNext) return;
-    hPopularLoading = true;
-    if (allPopularHentaiMore) {
-      allPopularHentaiMore.disabled = true;
-      allPopularHentaiMore.textContent = "Loading…";
-    }
-    try {
-      const data = await api(`/api/catalog/most-popular?page=${hPopularPage + 1}`);
-      hPopularPage += 1;
-      hPopular = hPopular.concat(data.results || []);
-      hPopularHasNext = !!data.has_next;
-      fillGrid(allPopularHentai, hPopular);
-    } catch (err) {
-      showToast("Couldn't load more right now.");
-    }
-    if (allPopularHentaiMore) {
-      allPopularHentaiMore.disabled = false;
-      allPopularHentaiMore.textContent = "Load more";
-      allPopularHentaiMore.classList.toggle("hidden", !hPopularHasNext);
-    }
-    hPopularLoading = false;
-  }
-
-  async function loadMoreMangaPopular() {
-    if (mPopularLoading || !mPopularHasNext) return;
-    mPopularLoading = true;
-    if (allPopularMangaMore) {
-      allPopularMangaMore.disabled = true;
-      allPopularMangaMore.textContent = "Loading…";
-    }
-    try {
-      const data = await api(`/api/catalog/manga/popular?page=${mPopularPage + 1}`);
-      mPopularPage += 1;
-      mPopular = mPopular.concat(data.results || []);
-      mPopularHasNext = !!data.has_next;
-      fillGrid(allPopularManga, mPopular);
-    } catch (err) {
-      showToast("Couldn't load more right now.");
-    }
-    if (allPopularMangaMore) {
-      allPopularMangaMore.disabled = false;
-      allPopularMangaMore.textContent = "Load more";
-      allPopularMangaMore.classList.toggle("hidden", !mPopularHasNext);
-    }
-    mPopularLoading = false;
-  }
-
-  if (allPopularHentaiMore) allPopularHentaiMore.addEventListener("click", loadMoreHentaiPopular);
-  if (allPopularMangaMore) allPopularMangaMore.addEventListener("click", loadMoreMangaPopular);
-
-  function noteEmpty(container, msg) {
-    if (!container) return;
-    if (container.children.length) return;
+  function _emptyNote(text) {
     const p = document.createElement("p");
     p.className = "empty-note";
-    p.style.padding = "12px 0";
-    p.textContent = msg;
-    container.appendChild(p);
+    p.style.padding = "8px 4px";
+    p.textContent = text;
+    return p;
   }
 
-  async function loadAllDiscover() {
-    renderSkeletonRow(allTrendingHentai, 4);
-    renderSkeletonRow(allAiringHentai, 4);
-    renderSkeletonRow(allPopularHentai, 4);
-    renderSkeletonRow(allTrendingManga, 4);
-    renderSkeletonRow(allAiringManga, 4);
-    renderSkeletonRow(allPopularManga, 4);
+  function renderTrending() {
+    if (!trendingRow) return;
+    trendingRow.innerHTML = "";
+    if (!trending.length) {
+      trendingRow.appendChild(_emptyNote("No trending titles yet — retrying…"));
+      return;
+    }
+    const availIndex = buildAvailableIndex();
+    trending.forEach((item) => {
+      const matched = availIndex.match(item);
+      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+      trendingRow.appendChild(trendingCard(item, () => openDiscoverDetail(item)));
+    });
+  }
 
-    // Wave 1: manga / manhwa (BL filtered on server)
-    const [mt, ma, mp] = await Promise.all([
-      safeApi("/api/catalog/manga/trending"),
-      safeApi("/api/catalog/manga/airing"),
-      safeApi("/api/catalog/manga/popular"),
-    ]);
-    mTrending = mt.results || [];
-    mAiring = ma.results || [];
-    mAiringHasNext = !!ma.has_next;
-    mAiringPage = 1;
-    mPopular = mp.results || [];
-    mPopularHasNext = !!mp.has_next;
-    mPopularPage = 1;
-    fillHscroll(allTrendingManga, mTrending, trendingCard);
-    fillHscroll(allAiringManga, mAiring, topAiringCard);
-    fillGrid(allPopularManga, mPopular);
-    if (allPopularMangaMore) allPopularMangaMore.classList.toggle("hidden", !mPopularHasNext);
-    noteEmpty(allTrendingManga, "No manga loaded");
-    noteEmpty(allAiringManga, "No manga loaded");
-    noteEmpty(allPopularManga, "No manga loaded");
+  function renderTopAiring() {
+    if (!topAiringList) return;
+    topAiringList.innerHTML = "";
+    if (!popular.length) {
+      topAiringList.appendChild(_emptyNote("No airing titles yet — retrying…"));
+      return;
+    }
+    const availIndex = buildAvailableIndex();
+    popular.forEach((item) => {
+      const matched = availIndex.match(item);
+      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+      topAiringList.appendChild(topAiringCard(item, () => openDiscoverDetail(item)));
+    });
+  }
 
-    // Wave 2: hentai (BL / gay filtered on server)
-    const [ht, ha, hp] = await Promise.all([
-      safeApi("/api/catalog/trending"),
-      safeApi("/api/catalog/popular"),
-      safeApi("/api/catalog/most-popular"),
-    ]);
-    hTrending = ht.results || [];
-    hAiring = ha.results || [];
-    hAiringHasNext = !!ha.has_next;
-    hAiringPage = 1;
-    hPopular = hp.results || [];
-    hPopularHasNext = !!hp.has_next;
-    hPopularPage = 1;
-    fillHscroll(allTrendingHentai, hTrending, trendingCard);
-    fillHscroll(allAiringHentai, hAiring, topAiringCard);
-    fillGrid(allPopularHentai, hPopular);
-    if (allPopularHentaiMore) allPopularHentaiMore.classList.toggle("hidden", !hPopularHasNext);
-    noteEmpty(allTrendingHentai, "Hentai feed unavailable");
-    noteEmpty(allAiringHentai, "Hentai feed unavailable");
-    noteEmpty(allPopularHentai, "Hentai feed unavailable");
+  let popularLoading = false;
+  async function loadMorePopular() {
+    if (popularLoading || !popularHasNext) return;
+    popularLoading = true;
+    popularLoadMore.classList.remove("hidden");
+    try {
+      const data = await api(`/api/catalog/popular?page=${popularPage + 1}`);
+      popularPage += 1;
+      popular = popular.concat(data.results);
+      popularHasNext = data.has_next;
+      renderTopAiring();
+    } catch (err) {
+      showToast("Couldn't load more right now.");
+    }
+    popularLoadMore.classList.add("hidden");
+    popularLoading = false;
+  }
+
+  // Discovery sections now live on the Search page — no home auto-load.
+
+  function renderPopularGrid() {
+    if (!popularGridList) return;
+    popularGridList.innerHTML = "";
+    if (!mostPopular.length) {
+      popularGridList.appendChild(_emptyNote("No popular titles yet — retrying…"));
+      if (popularGridLoadMoreBtn) popularGridLoadMoreBtn.classList.add("hidden");
+      return;
+    }
+    const availIndex = buildAvailableIndex();
+    mostPopular.forEach((item) => {
+      const matched = availIndex.match(item);
+      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+      popularGridList.appendChild(popularGridCard(item, () => openDiscoverDetail(item)));
+    });
+    popularGridLoadMoreBtn.classList.toggle("hidden", !mostPopularHasNext);
+  }
+
+  // Prefetch the next Popular page so "Load more" feels instant
+  let mostPopularPrefetch = null; // { page, promise }
+
+  function prefetchMostPopularPage(page) {
+    if (!page || page < 2) return;
+    if (mostPopularPrefetch && mostPopularPrefetch.page === page) return;
+    mostPopularPrefetch = {
+      page,
+      promise: api(`/api/catalog/most-popular?page=${page}`)
+        .then((data) => data)
+        .catch(() => null),
+    };
+  }
+
+  async function loadMorePopularGrid() {
+    if (mostPopularLoading || !mostPopularHasNext) return;
+    mostPopularLoading = true;
+    popularGridLoadMoreBtn.disabled = true;
+    popularGridLoadMoreBtn.textContent = "Loading…";
+    const nextPage = mostPopularPage + 1;
+    try {
+      let data = null;
+      if (mostPopularPrefetch && mostPopularPrefetch.page === nextPage) {
+        data = await mostPopularPrefetch.promise;
+        mostPopularPrefetch = null;
+      }
+      if (!data || !Array.isArray(data.results)) {
+        data = await api(`/api/catalog/most-popular?page=${nextPage}`);
+      }
+      mostPopularPage = nextPage;
+      mostPopular = mostPopular.concat(data.results || []);
+      mostPopularHasNext = !!data.has_next;
+      renderPopularGrid();
+      // Warm the following page in the background
+      if (mostPopularHasNext) prefetchMostPopularPage(mostPopularPage + 1);
+    } catch (err) {
+      showToast("Couldn't load more right now.");
+    }
+    popularGridLoadMoreBtn.disabled = false;
+    popularGridLoadMoreBtn.textContent = "Load more";
+    mostPopularLoading = false;
+  }
+
+  popularGridLoadMoreBtn.addEventListener("click", loadMorePopularGrid);
+
+  // Home is Available-only (# + A–Z). Discovery (All) lives on Search page.
+  function setPillTab(tab) {
+    if (pillTabs && pillTabs.length) {
+      pillTabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+    }
+    if (tabAll) tabAll.classList.toggle("hidden", tab !== "all");
+    if (tabLibrary) tabLibrary.classList.toggle("hidden", tab !== "library");
+    if (tab === "library") renderLibraryTab();
+  }
+  if (pillTabs && pillTabs.length) {
+    pillTabs.forEach((b) => b.addEventListener("click", () => setPillTab(b.dataset.tab)));
   }
 
   // ---------------------------------------------------------------------
-  // HANIME / HMANHWA A–Z libraries (posted titles with join links)
+  // Render: Available/library tab (posted catalog, A–Z)
   // ---------------------------------------------------------------------
-  function isMediaType(item, type) {
-    const t = (item.media_type || "ANIME").toUpperCase();
-    if (type === "ANIME") return t === "ANIME";
-    return t === "MANGA";
+  function isFullyReleased(a) {
+    const st = (a.status || "").toUpperCase();
+    return st === "FINISHED" || st === "COMPLETED" || st === "CANCELLED" || st === "";
   }
 
-  function matchesManhwaStatus(item) {
-    // AniList: RELEASING = ongoing, FINISHED = finished.
-    // Unknown status defaults to ongoing so newly linked titles still appear.
-    const s = (item.status || "").toUpperCase();
-    const ongoing = !s || s === "RELEASING" || s === "NOT_YET_RELEASED" || s === "HIATUS";
-    if (hmanhwaStatus === "ongoing") return ongoing;
-    return s === "FINISHED" || s === "CANCELLED";
+  function pickGroupPrimary(group) {
+    // All seasons card: prefer latest FULLY RELEASED season as the front cover.
+    // When a newer season finishes airing it becomes the new primary automatically.
+    const released = group.filter(isFullyReleased);
+    const pool = released.length ? released : group.slice();
+    pool.sort((x, y) => (y.year || 0) - (x.year || 0) || (y.id || 0) - (x.id || 0));
+    return pool[0];
   }
 
-  function primaryListForType(type) {
-    // Linked titles in this media type (anime → H-ANIME, manga → H-MANHWA).
-    // Franchise members (seasons / OVAs / movies linked via AniList relations)
-    // are collapsed to a single card so "Bible Black", "Bible Black Origins",
-    // etc. appear as one entry instead of flooding the A–Z grid.
-    let pool = available.filter((a) => {
-      if (!isMediaType(a, type)) return false;
-      if (!(a.join_link || "").trim()) return false;
-      return true;
-    });
-    if (type === "MANGA") {
-      // Prefer admin-chosen library_section; fall back to AniList status
-      pool = pool.filter((a) => {
-        const sec = (a.library_section || "").toLowerCase();
-        if (sec === "ongoing" || sec === "finished") {
-          return sec === hmanhwaStatus;
-        }
-        const s = (a.status || "").toUpperCase();
-        if (hmanhwaStatus === "ongoing") {
-          return !s || s === "RELEASING" || s === "NOT_YET_RELEASED" || s === "HIATUS";
-        }
-        return s === "FINISHED" || s === "CANCELLED";
-      });
-    }
-    return collapseFranchises(pool);
+  function isSoloCard(a) {
+    // Own Finished card when Solo link is set, or legacy display_mode=solo.
+    return !!(a && (a.solo_link || (a.display_mode || "group") === "solo"));
   }
 
-  // Collapse franchise members into one card. Connect via:
-  //  1) AniList related_ids (when present on stored docs)
-  //  2) Shared join_link (link propagation already unifies a franchise)
-  //  3) Shared title base ("Bible Black: New Testament" → "bible black")
-  // Representative: latest full season (TV/ONA) in front; OVAs last.
-  function collapseFranchises(pool) {
-    if (!pool.length) return pool;
+  function primaryAvailableList() {
+    // Franchise grouping for Finished tab:
+    // - solo_link / display_mode "solo" → always its own card (can coexist with the group card)
+    // - display_mode "group" (default) → one card per franchise = latest full release
+    const bySourceId = new Map();
+    available.forEach((a) => {
+      if (a.source === "anilist" && a.source_id != null) bySourceId.set(String(a.source_id), a);
+    });
 
-    function itemKey(a) {
-      const src = a.source || "anilist";
-      if (a.source_id != null) return `${src}:${a.source_id}`;
-      return `id:${a.id}`;
-    }
+    const visited = new Set();
+    const primaries = [];
 
-    function titleBase(title) {
-      let t = (title || "").toLowerCase();
-      // Strip common season / edition suffixes so related titles share a base.
-      t = t.replace(/\s*[:\-–—]\s*.*$/, ""); // after colon/dash
-      t = t.replace(/\s*\((?:ova|ona|special|movie|tv|season\s*\d+)\)\s*$/i, "");
-      t = t
-        .replace(/\s+(only\s+version|origins?|gaiden|new\s+testament|complete|kanzenban|recap|summary|movie|ova|ona|special|season\s*\d+|s\d+)\s*$/i, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      return t;
-    }
-
-    const byKey = new Map();
-    pool.forEach((a) => byKey.set(itemKey(a), a));
-
-    const parent = new Map();
-    function find(x) {
-      let p = parent.get(x);
-      if (p == null) {
-        parent.set(x, x);
-        return x;
+    // Solo titles (solo_link or display_mode=solo) always appear on their own
+    available.forEach((a) => {
+      if (isSoloCard(a)) {
+        primaries.push(a);
+        visited.add(String(a.id));
       }
-      if (p !== x) {
-        p = find(p);
-        parent.set(x, p);
+    });
+
+    available.forEach((start) => {
+      const startKey = String(start.id);
+      if (visited.has(startKey)) return;
+
+      const group = [];
+      const frontier = [start];
+      const localSeen = new Set([startKey]);
+      while (frontier.length) {
+        const cur = frontier.pop();
+        // Skip solo members — they already have their own card
+        if (isSoloCard(cur)) continue;
+        group.push(cur);
+        (cur.related_ids || []).forEach((rid) => {
+          const relItem = bySourceId.get(String(rid));
+          if (relItem && !localSeen.has(String(relItem.id))) {
+            localSeen.add(String(relItem.id));
+            frontier.push(relItem);
+          }
+        });
       }
-      return p;
+      group.forEach((g) => visited.add(String(g.id)));
+
+      if (!group.length) return;
+      primaries.push(pickGroupPrimary(group));
+    });
+
+    return primaries;
+  }
+
+  function isOngoing(a) {
+    // Ongoing tab: ONLY the season that is airing right now.
+    // Previous seasons (FINISHED / CANCELLED) never appear here — even if they
+    // still have an ongoing_link left over. Announced (NOT_YET_RELEASED) stay out too.
+    const st = (a.status || "").toUpperCase();
+    if (st === "RELEASING" || st === "HIATUS") return true;
+    // Blank status + ongoing_link: keep until AniList refresh fills status
+    if (!st && a.ongoing_link) return true;
+    return false;
+  }
+
+  // Title-based schedule fallback when AniList has no broadcast day
+  const TITLE_AIRING_DAY = [
+    { day: "monday", re: /grand\s*blue/i },
+    { day: "tuesday", re: /clevatess/i },
+    { day: "thursday", re: /smoking\s*behind\s*the\s*supermarket/i },
+    { day: "friday", re: /reincarnated\s*as\s*a\s*slime|tensei\s*shitara\s*slime/i },
+    { day: "saturday", re: /bleach.*thousand|thousand[-\s]?year\s*blood/i },
+    { day: "saturday", re: /detective\s*conan|case\s*closed|meitantei\s*conan/i },
+    { day: "saturday", re: /pok[eé]mon/i },
+    { day: "sunday", re: /mushoku\s*tensei|jobless\s*reincarnation/i },
+    { day: "sunday", re: /\bone\s*piece\b/i },
+  ];
+
+  function effectiveAiringDay(a) {
+    const stored = (a.airing_day || "").toLowerCase().trim();
+    if (stored) return stored;
+    const title = `${a.title || ""} ${a.alt_title || ""}`;
+    for (const row of TITLE_AIRING_DAY) {
+      if (row.re.test(title)) return row.day;
     }
-    function union(a, b) {
-      const ra = find(a);
-      const rb = find(b);
-      if (ra !== rb) parent.set(ra, rb);
+    return null;
+  }
+
+  function effectiveJoinLink(anime) {
+    // Ongoing tab prefers ongoing_link.
+    // Finished: solo cards use solo_link; group cards use join_link (All seasons).
+    if (!anime) return null;
+    if (libraryMode === "ongoing") {
+      return anime.ongoing_link || anime.solo_link || anime.join_link || anime.matchedJoinLink || null;
     }
-
-    // 1) related_ids graph
-    pool.forEach((a) => {
-      const selfKey = itemKey(a);
-      find(selfKey);
-      const src = a.source || "anilist";
-      (a.related_ids || []).forEach((rid) => {
-        const relKey = `${src}:${String(rid)}`;
-        if (byKey.has(relKey)) union(selfKey, relKey);
-      });
-    });
-
-    // 2) shared join_link (franchise link propagation)
-    const byLink = new Map();
-    pool.forEach((a) => {
-      const link = (a.join_link || "").trim();
-      if (!link) return;
-      if (!byLink.has(link)) byLink.set(link, []);
-      byLink.get(link).push(itemKey(a));
-    });
-    byLink.forEach((keys) => {
-      for (let i = 1; i < keys.length; i++) union(keys[0], keys[i]);
-    });
-
-    // 3) shared title base (covers old posts missing related_ids)
-    const byBase = new Map();
-    pool.forEach((a) => {
-      const base = titleBase(a.title);
-      if (!base || base.length < 4) return;
-      if (!byBase.has(base)) byBase.set(base, []);
-      byBase.get(base).push(itemKey(a));
-    });
-    byBase.forEach((keys) => {
-      for (let i = 1; i < keys.length; i++) union(keys[0], keys[i]);
-    });
-
-    const groups = new Map();
-    pool.forEach((a) => {
-      const key = find(itemKey(a));
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(a);
-    });
-
-    // Prefer a full-release season (TV / TV_SHORT / ONA / MANGA) over
-    // OVA / SPECIAL / MOVIE / ONE_SHOT, then the newest by date.
-    const FULL_SEASON = new Set(["TV", "TV_SHORT", "ONA", "MANGA", "NOVEL"]);
-    function isFullSeason(a) {
-      const f = (a.format || "").toUpperCase();
-      if (!f) return true;
-      return FULL_SEASON.has(f);
+    if ((anime.display_mode || "group") === "solo" || anime.solo_link) {
+      return anime.solo_link || anime.join_link || anime.matchedJoinLink || null;
     }
-    function repScore(a) {
-      return [
-        isFullSeason(a) ? 1 : 0,
-        a.year != null ? a.year : -1,
-        a.start_month != null ? a.start_month : -1,
-        a.start_day != null ? a.start_day : -1,
-        a.id != null ? a.id : -1,
-      ];
-    }
-    function better(a, b) {
-      const sa = repScore(a);
-      const sb = repScore(b);
-      for (let i = 0; i < sa.length; i++) {
-        if (sa[i] !== sb[i]) return sa[i] > sb[i];
-      }
+    return anime.join_link || anime.matchedJoinLink || null;
+  }
+
+  function finishedList() {
+    // Finished column: cards with any finished path (group join_link, solo_link, or match).
+    // Fully-released titles with only ongoing_link still appear as a fallback.
+    return primaryAvailableList().filter((a) => {
+      if (a.join_link || a.solo_link || a.matchedJoinLink) return true;
+      if (!isOngoing(a) && a.ongoing_link) return true;
       return false;
-    }
-
-    const out = [];
-    groups.forEach((members) => {
-      let rep = members[0];
-      for (let i = 1; i < members.length; i++) {
-        if (better(members[i], rep)) rep = members[i];
-      }
-      if (members.length > 1) {
-        rep = {
-          ...rep,
-          franchise_count: members.length,
-          franchise_members: members
-            .filter((m) => m.id !== rep.id)
-            .map((m) => ({
-              id: m.id,
-              title: m.title,
-              poster_url: m.poster_url,
-              year: m.year,
-              join_link: m.join_link,
-            })),
-        };
-      }
-      out.push(rep);
     });
-    return out;
   }
 
-  function renderLetterBarFor(type, letterBarEl, activeLetter, setLetter) {
-    if (!letterBarEl) return;
-    letterBarEl.innerHTML = "";
-    const has = new Set(primaryListForType(type).map((a) => indexKeyFor(a.title)));
+  function ongoingList() {
+    // Only currently airing seasons (RELEASING / HIATUS). Previous seasons of
+    // the same franchise drop out once their status is FINISHED. Each airing
+    // season is its own card (no franchise merge on this tab).
+    return available.filter((a) => isOngoing(a));
+  }
+
+  function lettersWithData() {
+    return new Set(finishedList().map((a) => indexKeyFor(a.title)));
+  }
+
+  function daysWithData() {
+    return new Set(ongoingList().map((a) => effectiveAiringDay(a)).filter(Boolean));
+  }
+
+  function filteredFinished() {
+    let list = finishedList();
+    if (libraryQuery.trim()) {
+      list = list.filter((a) => matchesLibraryQuery(a.title));
+    } else if (activeLetter) {
+      list = list.filter((a) => indexKeyFor(a.title) === activeLetter);
+    }
+    return [...list].sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  function filteredOngoing() {
+    // Flat list of currently airing titles — no weekday grouping or day filter.
+    let list = ongoingList();
+    if (libraryQuery.trim()) {
+      list = list.filter((a) => matchesLibraryQuery(a.title));
+    }
+    return [...list].sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  function renderLetterBar() {
+    if (!letterBar) return;
+    letterBar.innerHTML = "";
+    const has = lettersWithData();
     INDEX_KEYS.forEach((l) => {
       const btn = document.createElement("button");
       btn.className = "letter-btn" + (activeLetter === l ? " active" : "");
       btn.textContent = l;
       btn.disabled = !has.has(l);
       btn.addEventListener("click", () => {
-        setLetter(activeLetter === l ? null : l);
-        renderTypeLibrary(type);
+        libraryQuery = "";
+        activeLetter = activeLetter === l ? null : l;
+        renderLibraryTab();
       });
-      letterBarEl.appendChild(btn);
+      letterBar.appendChild(btn);
     });
   }
 
-  function renderTypeLibrary(type) {
-    const isAnime = type === "ANIME";
-    const letterBarEl = isAnime ? hanimeLetterBar : hmanhwaLetterBar;
-    const groupsEl = isAnime ? hanimeGroups : hmanhwaGroups;
-    const emptyEl = isAnime ? hanimeEmpty : hmanhwaEmpty;
-    // Ongoing manhwa: no A–Z / # bar, flat grid
-    const hideLetters = !isAnime && hmanhwaStatus === "ongoing";
-    let activeLetter = isAnime ? hanimeLetter : hmanhwaLetter;
-    const setLetter = (v) => {
-      if (isAnime) hanimeLetter = v;
-      else hmanhwaLetter = v;
-      activeLetter = v;
-    };
+  function renderDayBar() {
+    if (!dayBar) return;
+    dayBar.innerHTML = "";
+    const has = daysWithData();
+    // ALL | Sun | Mon | ...
+    const allBtn = document.createElement("button");
+    allBtn.className = "letter-btn" + (activeDay == null ? " active" : "");
+    allBtn.textContent = "ALL";
+    allBtn.addEventListener("click", () => {
+      libraryQuery = "";
+      activeDay = null;
+      renderLibraryTab();
+    });
+    dayBar.appendChild(allBtn);
 
-    if (letterBarEl) {
-      if (hideLetters) {
-        letterBarEl.innerHTML = "";
-        letterBarEl.classList.add("hidden");
-      } else {
-        letterBarEl.classList.remove("hidden");
-        renderLetterBarFor(type, letterBarEl, activeLetter, setLetter);
-      }
-    }
-    if (!groupsEl) return;
-    groupsEl.innerHTML = "";
-
-    let list = primaryListForType(type);
-    if (!hideLetters && activeLetter) {
-      list = list.filter((a) => indexKeyFor(a.title) === activeLetter);
-    }
-    list = [...list].sort((a, b) => a.title.localeCompare(b.title));
-
-    if (emptyEl) {
-      emptyEl.classList.toggle("hidden", list.length !== 0);
-      if (type === "MANGA") {
-        emptyEl.textContent = list.length === 0
-          ? (hmanhwaStatus === "ongoing"
-              ? "No ongoing manhwa/manga posted yet."
-              : "No finished manhwa/manga posted yet.")
-          : emptyEl.textContent;
-      }
-    }
-
-    if (hideLetters) {
-      // Flat grid — no letter group headers
-      const grid = document.createElement("div");
-      grid.className = "available-grid";
-      list.forEach((item) => {
-        grid.appendChild(simplePosterCard(item, () => openLocalDetail(item)));
+    WEEKDAYS.forEach((d) => {
+      const btn = document.createElement("button");
+      // Always enabled — titles that don't air this day simply aren't listed here;
+      // they still appear under ALL.
+      btn.className = "letter-btn" + (activeDay === d ? " active" : "");
+      btn.textContent = WEEKDAY_LABELS[d];
+      btn.addEventListener("click", () => {
+        libraryQuery = "";
+        activeDay = d;
+        renderLibraryTab();
       });
-      groupsEl.appendChild(grid);
-      return;
-    }
+      dayBar.appendChild(btn);
+    });
+  }
+
+  function renderGroupedGrid(container, emptyEl, list, groupKeyFn, labelFn) {
+    if (!container) return;
+    container.innerHTML = "";
+    if (emptyEl) emptyEl.classList.toggle("hidden", list.length !== 0);
 
     const groups = {};
     list.forEach((a) => {
-      const l = indexKeyFor(a.title);
-      (groups[l] = groups[l] || []).push(a);
+      const k = groupKeyFn(a);
+      (groups[k] = groups[k] || []).push(a);
     });
-    Object.keys(groups).sort().forEach((letter) => {
+
+    const keys = Object.keys(groups).sort((a, b) => {
+      // ALL / TBA bucket first, then weekday order
+      const rank = (k) => {
+        if (k === "all" || k === "tba") return -1;
+        const i = WEEKDAYS.indexOf(k);
+        return i >= 0 ? i : 100;
+      };
+      const ra = rank(a), rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return a.localeCompare(b);
+    });
+
+    keys.forEach((key) => {
       const wrap = document.createElement("div");
       wrap.className = "letter-group";
-      const header = document.createElement("div");
-      header.className = "letter-group-header";
-      header.innerHTML = `<span class="letter-group-label">${letter}</span><span class="letter-group-line"></span>`;
-      wrap.appendChild(header);
+      const label = (labelFn(key) || "").trim();
+      if (label) {
+        const header = document.createElement("div");
+        header.className = "letter-group-header";
+        header.innerHTML = `<span class="letter-group-label">${label}</span><span class="letter-group-line"></span>`;
+        wrap.appendChild(header);
+      }
       const grid = document.createElement("div");
       grid.className = "available-grid";
-      groups[letter].forEach((item) => {
+      groups[key].forEach((item) => {
         grid.appendChild(simplePosterCard(item, () => openLocalDetail(item)));
       });
       wrap.appendChild(grid);
-      groupsEl.appendChild(wrap);
+      container.appendChild(wrap);
     });
+  }
+
+  function setLibraryMode(mode) {
+    libraryMode = mode === "ongoing" ? "ongoing" : "finished";
+    libraryModeTabs.forEach((b) => {
+      b.classList.toggle("active", b.dataset.libraryMode === libraryMode);
+    });
+    if (finishedPanel) finishedPanel.classList.toggle("hidden", libraryMode !== "finished");
+    if (ongoingPanel) ongoingPanel.classList.toggle("hidden", libraryMode !== "ongoing");
+    renderLibraryTab();
+  }
+
+  if (libraryModeTabs && libraryModeTabs.length) {
+    libraryModeTabs.forEach((b) => {
+      b.addEventListener("click", () => setLibraryMode(b.dataset.libraryMode));
+    });
+  }
+
+  let _airingDaysRefreshDone = false;
+
+  async function autoRefreshAiringDays() {
+    // Silent one-shot: pull fresh AniList status + airing_day so Ongoing is
+    // accurate. Many library rows still say FINISHED after a new season started.
+    if (_airingDaysRefreshDone) return;
+    _airingDaysRefreshDone = true;
+    try {
+      // force:true so stale FINISHED / blank status rows get corrected too
+      const result = await api("/api/admin/refresh-airing-days", {
+        method: "POST",
+        body: JSON.stringify({ force: true }),
+      });
+      if (result && ((result.updated || 0) > 0 || (result.status_updated || 0) > 0 || (result.failed || 0) >= 0)) {
+        await loadAvailable();
+        if (libraryMode === "ongoing") renderLibraryTab();
+      }
+    } catch (err) {
+      _airingDaysRefreshDone = false;
+    }
+  }
+
+  function renderLibraryTab() {
+    if (libraryMode === "ongoing") {
+      // Hide day chips — Ongoing is a flat list of airing titles
+      if (dayBar) {
+        dayBar.innerHTML = "";
+        dayBar.classList.add("hidden");
+      }
+      const list = filteredOngoing();
+      if (!ongoingGroups) return;
+      // Single flat grid (A–Z by title), no weekday sections
+      renderGroupedGrid(
+        ongoingGroups,
+        ongoingEmpty,
+        list,
+        () => "all",
+        () => ""
+      );
+      // Still backfill airing_day/status in the background for accuracy
+      autoRefreshAiringDays();
+    } else {
+      if (dayBar) dayBar.classList.add("hidden");
+      renderLetterBar();
+      const list = filteredFinished();
+      renderGroupedGrid(
+        availableGroups,
+        availableEmpty,
+        list,
+        (a) => indexKeyFor(a.title),
+        (k) => k
+      );
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1083,7 +893,6 @@
     const sheetMedia = detailPoster.parentElement;
     const hasRealBanner = !!anime.banner_url;
     const bannerSrc = anime.banner_url || anime.poster_url;
-    const bannerProxied = proxyImg(bannerSrc);
 
     // openDiscoverDetail (and friends) call this twice per tap: once
     // immediately with placeholder data, then again once the full AniList
@@ -1096,19 +905,23 @@
       sheetMedia.querySelectorAll(".generated-thumb").forEach((n) => n.remove());
       detailPoster.src = "";
       detailPoster.style.display = "";
+      // A true banner is already wide, so a centered cover-crop looks right.
+      // A portrait poster forced into that same short, wide box can't be
+      // cover-cropped without zooming in hard and losing most of the art
+      // (usually landing on a jarring close-up of just the eyes). Instead,
+      // show it uncropped over a blurred version of itself as a backdrop.
       detailPoster.classList.toggle("poster-fallback", !hasRealBanner);
-      sheetMedia.classList.toggle("has-blur-bg", !hasRealBanner && !!bannerProxied);
-      if (!hasRealBanner && bannerProxied) {
-        sheetMedia.style.setProperty("--banner-img", `url("${bannerProxied}")`);
+      sheetMedia.classList.toggle("has-blur-bg", !hasRealBanner && !!bannerSrc);
+      if (!hasRealBanner && bannerSrc) {
+        sheetMedia.style.setProperty("--banner-img", `url("${bannerSrc}")`);
       } else {
         sheetMedia.style.removeProperty("--banner-img");
       }
-      if (bannerProxied) {
-        detailPoster.src = bannerProxied;
+      if (bannerSrc) {
+        detailPoster.src = bannerSrc;
         detailPoster.onerror = () => {
           detailPoster.style.display = "none";
           sheetMedia.classList.remove("has-blur-bg");
-          sheetMedia.style.removeProperty("--banner-img");
           const gen = generatedThumb(anime.title);
           gen.style.position = "absolute";
           gen.style.inset = "0";
@@ -1120,7 +933,6 @@
         const gen = generatedThumb(anime.title);
         gen.style.position = "absolute";
         gen.style.inset = "0";
-        gen.style.zIndex = "1";
         sheetMedia.insertBefore(gen, detailPoster);
       }
     }
@@ -1137,7 +949,7 @@
     if (anime.format) addMetaPill(anime.format);
     if (anime.year) addMetaPill(String(anime.year));
     if (anime.duration) addMetaPill(`${anime.duration}m`);
-    if (anime.rating) addMetaPill(`\u2605 ${Number(anime.rating).toFixed(1)}`, true);
+    if (anime.rating) addMetaPill(`\u2605 ${anime.rating.toFixed(1)}`, true);
 
     detailGenres.innerHTML = "";
     (anime.genres || []).forEach((g) => {
@@ -1151,6 +963,7 @@
     renderRelated(anime);
     renderDetailAction(anime, context);
     detailOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
   }
 
   function addMetaPill(text, isRating = false) {
@@ -1165,6 +978,7 @@
     detailDescription.textContent = text;
     detailDescription.scrollTop = 0;
     detailDescription.classList.toggle("clamped", !descriptionExpanded);
+    detailDescription.classList.toggle("expanded", descriptionExpanded);
     detailReadMore.classList.toggle("hidden", text.length < 180);
     detailReadMore.textContent = descriptionExpanded ? "Show Less" : "Read More";
   }
@@ -1226,6 +1040,7 @@
 
   function closeDetailSheet() {
     detailOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
     currentDetail = null;
     currentContext = null;
   }
@@ -1234,85 +1049,97 @@
     if (e.target === detailOverlay) closeDetailSheet();
   });
 
+  function openJoinUrl(url) {
+    if (!url) return;
+    if (tg && tg.openLink) tg.openLink(url);
+    else window.open(url, "_blank");
+  }
+
+  function makeRequestButton(anime) {
+    const requestBtn = document.createElement("button");
+    requestBtn.className = "btn btn-primary";
+    requestBtn.textContent = "Request";
+    requestBtn.addEventListener("click", async () => {
+      requestBtn.disabled = true;
+      try {
+        const result = await api("/api/request", {
+          method: "POST",
+          body: JSON.stringify({
+            title: anime.title,
+            source: anime.source || "anilist",
+            source_id: anime.source_id ?? anime.anilist_id,
+            poster_url: anime.poster_url,
+            genres: anime.genres || [],
+          }),
+        });
+        requestBtn.textContent = "\u2713 Requested";
+        showToast(result.already_requested ? "You already requested this." : "Request sent!");
+      } catch (err) {
+        requestBtn.disabled = false;
+        showToast(err.message || "Couldn't send request right now.");
+      }
+    });
+    return requestBtn;
+  }
+
   function renderDetailAction(anime, context) {
     detailActionArea.innerHTML = "";
-    reportOpenBtn.classList.toggle("hidden", !["available", "discover", "genre"].includes(context));
+    reportOpenBtn.classList.toggle("hidden", !["available", "ongoing", "discover", "genre"].includes(context));
 
-    if (context === "discover" || context === "genre") {
-      const row = document.createElement("div");
-      row.className = "action-row";
+    // Finished: solo card → solo_link; otherwise All-seasons join_link
+    // Ongoing URL = ongoing_link only — never fall back for button split
+    const finishedUrl = (
+      (isSoloCard(anime) && anime.solo_link) ? anime.solo_link : null
+    ) || anime.join_link || anime.solo_link || (
+      (context === "discover" || context === "genre") ? (anime.matchedJoinLink || null) : null
+    );
+    const ongoingUrl = anime.ongoing_link || null;
 
-      if (anime.matchedJoinLink) {
-        const joinBtn = document.createElement("button");
-        joinBtn.className = "btn btn-primary";
-        joinBtn.textContent = "\u25b6 Join";
-        joinBtn.addEventListener("click", () => {
-          if (tg && tg.openLink) tg.openLink(anime.matchedJoinLink);
-          else window.open(anime.matchedJoinLink, "_blank");
-        });
-        row.appendChild(joinBtn);
-      } else {
-        const requestBtn = document.createElement("button");
-        requestBtn.className = "btn btn-primary";
-        requestBtn.textContent = "Request";
-        requestBtn.addEventListener("click", async () => {
-          requestBtn.disabled = true;
-          try {
-            const result = await api("/api/request", {
-              method: "POST",
-              body: JSON.stringify({
-                title: anime.title,
-                source: anime.source || "anilist",
-                source_id: anime.source_id ?? anime.anilist_id,
-                poster_url: anime.poster_url,
-                genres: anime.genres || [],
-              }),
-            });
-            requestBtn.textContent = "\u2713 Requested";
-            showToast(result.already_requested ? "You already requested this." : "Request sent!");
-          } catch (err) {
-            requestBtn.disabled = false;
-            showToast(err.message || "Couldn't send request right now.");
-          }
-        });
-        row.appendChild(requestBtn);
-      }
+    // PREVIOUS | ONGOING split is only for the Ongoing library tab
+    const showOngoingSplit = context === "ongoing" || libraryMode === "ongoing";
 
-      if (profile && profile.role === "admin" && itemSourceId(anime) != null) {
-        const plus = document.createElement("button");
-        plus.className = "plus-btn";
-        plus.textContent = "+";
-        plus.setAttribute("aria-label", "Set join link");
-        plus.addEventListener("click", () => openLinkSheet(anime));
-        row.appendChild(plus);
-      }
-
-      detailActionArea.appendChild(row);
-      return;
-    }
-
-    // context === "available"
     const row = document.createElement("div");
     row.className = "action-row";
 
-    if (anime.join_link) {
+    if (showOngoingSplit && finishedUrl && ongoingUrl) {
+      // Ongoing tab only → PREVIOUS | ONGOING
+      const prevBtn = document.createElement("button");
+      prevBtn.className = "btn btn-primary join-split-btn";
+      prevBtn.textContent = "PREVIOUS";
+      prevBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
+      const ongBtn = document.createElement("button");
+      ongBtn.className = "btn btn-primary join-split-btn";
+      ongBtn.textContent = "ONGOING";
+      ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
+      row.appendChild(prevBtn);
+      row.appendChild(ongBtn);
+    } else if (showOngoingSplit && !finishedUrl && ongoingUrl) {
+      // Ongoing tab, only ongoing link
+      const ongBtn = document.createElement("button");
+      ongBtn.className = "btn btn-primary";
+      ongBtn.textContent = "ONGOING";
+      ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
+      row.appendChild(ongBtn);
+    } else if (finishedUrl) {
+      // Finished / Discover / etc. → single Join (never the PREVIOUS|ONGOING pair)
       const joinBtn = document.createElement("button");
       joinBtn.className = "btn btn-primary";
       joinBtn.textContent = "\u25b6 Join";
-      joinBtn.addEventListener("click", () => {
-        if (tg && tg.openLink) tg.openLink(anime.join_link);
-        else window.open(anime.join_link, "_blank");
-      });
+      joinBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
       row.appendChild(joinBtn);
+    } else if (ongoingUrl) {
+      // No finished link but ongoing exists (e.g. Finished tab fallback)
+      const ongBtn = document.createElement("button");
+      ongBtn.className = "btn btn-primary";
+      ongBtn.textContent = "ONGOING";
+      ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
+      row.appendChild(ongBtn);
     } else {
-      const comingSoon = document.createElement("button");
-      comingSoon.className = "btn btn-disabled";
-      comingSoon.textContent = "Coming Soon";
-      comingSoon.disabled = true;
-      row.appendChild(comingSoon);
+      // Neither → Request
+      row.appendChild(makeRequestButton(anime));
     }
 
-    if (profile && profile.role === "admin" && anime.id) {
+    if (profile && profile.role === "admin" && (anime.id || anime.anilist_id || anime.source_id)) {
       const plus = document.createElement("button");
       plus.className = "plus-btn";
       plus.textContent = "+";
@@ -1325,56 +1152,85 @@
   }
 
   async function openLocalDetail(item) {
-    openDetailSheet(item, "available");
+    // Pass "ongoing" when opened from the Ongoing library tab so PREVIOUS|ONGOING
+    // split buttons only appear there; Finished uses a single Join button.
+    const ctx = libraryMode === "ongoing" ? "ongoing" : "available";
+    openDetailSheet(item, ctx);
     try {
       const full = await api(`/api/anime/${item.id}`);
       if (currentDetail && currentDetail.id === item.id) {
-        openDetailSheet({ ...item, ...full }, "available");
+        openDetailSheet({ ...item, ...full }, ctx);
+      }
+      const merged = { ...item, ...full };
+      // If synopsis / relations still missing, try AniList once more
+      if (
+        merged.source_id &&
+        (!(merged.description || "").trim() || !(merged.related_posted || []).length)
+      ) {
+        try {
+          const al = await api(`/api/anilist/${merged.source_id}`);
+          if (currentDetail && currentDetail.id === item.id) {
+            openDetailSheet({
+              ...merged,
+              ...al,
+              id: merged.id,
+              join_link: merged.join_link || al.join_link,
+              solo_link: merged.solo_link || al.solo_link,
+              ongoing_link: merged.ongoing_link || al.ongoing_link,
+              related_posted: al.related_posted || merged.related_posted || [],
+            }, ctx);
+          }
+        } catch (e) { /* non-fatal */ }
+      }
+      const st = (merged.status || "").toUpperCase();
+      if (
+        profile && profile.role === "admin" &&
+        merged.id && merged.source_id &&
+        !merged.airing_day &&
+        (st === "RELEASING" || st === "NOT_YET_RELEASED")
+      ) {
+        try {
+          const al = await api(`/api/anilist/${merged.source_id}`);
+          const day = (al.airing_day || "").toLowerCase();
+          if (day) {
+            const result = await api(`/api/anime/${merged.id}/airing-day`, {
+              method: "PATCH",
+              body: JSON.stringify({ day }),
+            });
+            const updated = result.anime || {};
+            const idx = available.findIndex((a) => a.id === merged.id);
+            if (idx >= 0) available[idx] = { ...available[idx], airing_day: updated.airing_day };
+            if (currentDetail && currentDetail.id === merged.id) {
+              currentDetail.airing_day = updated.airing_day;
+              openDetailSheet(currentDetail, ctx);
+            }
+            renderLibraryTab();
+          }
+        } catch (err) { /* non-fatal enrichment */ }
       }
     } catch (err) {
-      // Keep showing what we already had — related-title cards just won't
-      // appear if this quiet enrichment fetch fails.
+      if (currentDetail && currentDetail.description === "Loading synopsis...") {
+        detailDescription.textContent = "Couldn't load full details.";
+      }
     }
   }
 
-
-  function itemSource(item) {
-    if (item.source) return item.source;
-    if (item.anilist_id != null) return "anilist";
-    return "anilist";
-  }
-  function itemSourceId(item) {
-    if (item.source_id != null) return item.source_id;
-    if (item.anilist_id != null) return item.anilist_id;
-    return null;
-  }
-
   async function openDiscoverDetail(item) {
-    const source = itemSource(item);
-    const sid = itemSourceId(item);
-    openDetailSheet({
-      ...item,
-      source,
-      source_id: sid,
-      anilist_id: source === "anilist" ? sid : item.anilist_id,
-      description: "Loading synopsis...",
-      genres: item.genres || [],
-    }, "discover");
-    if (sid == null) return;
+    openDetailSheet({ ...item, description: "Loading synopsis...", genres: item.genres || [] }, "discover");
     try {
-      const full = await api(`/api/source/${encodeURIComponent(source)}/${encodeURIComponent(sid)}`);
-      if (currentDetail && currentDetail.title === item.title) {
+      const full = await api(`/api/anilist/${item.anilist_id || item.source_id}`);
+      if (currentDetail && (currentDetail.title === item.title || currentDetail.anilist_id === item.anilist_id)) {
         openDetailSheet({
           ...full,
-          source,
-          source_id: sid,
-          anilist_id: source === "anilist" ? sid : null,
+          anilist_id: item.anilist_id || full.source_id,
           rating: item.rating ?? full.rating,
-          matchedJoinLink: item.matchedJoinLink,
+          matchedJoinLink: item.matchedJoinLink || full.join_link || full.ongoing_link,
+          join_link: full.join_link || item.join_link,
+          ongoing_link: full.ongoing_link || item.ongoing_link,
         }, "discover");
       }
     } catch (err) {
-      if (currentDetail) detailDescription.textContent = item.synopsis || "Couldn't load synopsis.";
+      if (currentDetail) detailDescription.textContent = "Couldn't load full details.";
     }
   }
 
@@ -1394,40 +1250,72 @@
   }
 
   // ---------------------------------------------------------------------
-  // Set Join Link sheet (admin only)
+  // Set Join Link sheet (admin only) — separate Finished / Ongoing fields
   // ---------------------------------------------------------------------
   let linkTargetAnime = null;
+  let linkSheetType = "finished"; // "finished" | "ongoing"
+
+  function setLinkSheetType(type) {
+    linkSheetType = type === "ongoing" ? "ongoing" : "finished";
+    const tabFin = el("link-tab-finished");
+    const tabOng = el("link-tab-ongoing");
+    const finishedFields = el("link-finished-fields");
+    const fieldOng = el("link-ongoing-field");
+    if (tabFin) tabFin.classList.toggle("active", linkSheetType === "finished");
+    if (tabOng) tabOng.classList.toggle("active", linkSheetType === "ongoing");
+    if (finishedFields) finishedFields.classList.toggle("hidden", linkSheetType !== "finished");
+    if (fieldOng) fieldOng.classList.toggle("hidden", linkSheetType !== "ongoing");
+    let focusEl;
+    if (linkSheetType === "ongoing") {
+      focusEl = el("ongoing-link-input");
+    } else {
+      const soloActive = el("link-mode-solo") && el("link-mode-solo").classList.contains("active");
+      focusEl = soloActive ? el("solo-link-input") : linkInput;
+    }
+    if (focusEl) setTimeout(() => focusEl.focus(), 30);
+  }
+
+  function setFinishedMode(mode) {
+    // Underline tabs: All seasons | Solo — each keeps its own independent link.
+    const isSolo = mode === "solo";
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    const groupField = el("link-group-field");
+    const soloField = el("link-solo-field");
+    if (btnGroup) btnGroup.classList.toggle("active", !isSolo);
+    if (btnSolo) btnSolo.classList.toggle("active", isSolo);
+    if (groupField) groupField.classList.toggle("hidden", isSolo);
+    if (soloField) soloField.classList.toggle("hidden", !isSolo);
+    const focusEl = isSolo ? el("solo-link-input") : linkInput;
+    if (focusEl) setTimeout(() => focusEl.focus(), 30);
+  }
 
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
-    linkInput.value = anime.join_link || "";
-    const picker = el("link-section-picker");
-    const hint = el("link-section-hint");
-    const isManga = (anime.media_type || "").toUpperCase() === "MANGA";
-    if (picker) picker.classList.toggle("hidden", !isManga);
-    if (hint) hint.classList.toggle("hidden", !isManga);
-    const preferred = (anime.library_section || (isManga ? "ongoing" : "") || "ongoing").toLowerCase();
-    if (picker) {
-      picker.querySelectorAll("[data-library-section]").forEach((b) => {
-        b.classList.toggle("active", b.dataset.librarySection === preferred);
-      });
-    }
+    // All seasons + Solo are independent — load both, show one via underline tabs.
+    if (linkInput) linkInput.value = anime.join_link || "";
+    const soloInput = el("solo-link-input");
+    if (soloInput) soloInput.value = anime.solo_link || "";
+    const ongoingInput = el("ongoing-link-input");
+    if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
+    setFinishedMode(anime.solo_link ? "solo" : "group");
+    const st = (anime.status && String(anime.status).toUpperCase()) || "";
+    const preferOngoing = (typeof libraryMode !== "undefined" && libraryMode === "ongoing")
+      || st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS";
+    setLinkSheetType(preferOngoing ? "ongoing" : "finished");
     linkOverlay.classList.remove("hidden");
-    linkInput.focus();
   }
 
-  document.querySelectorAll("#link-section-picker [data-library-section]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#link-section-picker [data-library-section]").forEach((b) => {
-        b.classList.toggle("active", b === btn);
-      });
-    });
-  });
-
-  function selectedLibrarySection() {
-    const active = document.querySelector("#link-section-picker [data-library-section].active");
-    return active ? active.dataset.librarySection : "ongoing";
-  }
+  (function wireLinkTabs() {
+    const tabFin = el("link-tab-finished");
+    const tabOng = el("link-tab-ongoing");
+    if (tabFin) tabFin.addEventListener("click", () => setLinkSheetType("finished"));
+    if (tabOng) tabOng.addEventListener("click", () => setLinkSheetType("ongoing"));
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    if (btnGroup) btnGroup.addEventListener("click", () => setFinishedMode("group"));
+    if (btnSolo) btnSolo.addEventListener("click", () => setFinishedMode("solo"));
+  })();
 
   function closeLinkSheet() {
     linkOverlay.classList.add("hidden");
@@ -1439,65 +1327,160 @@
   const linkSaveBtn = el("link-save");
   linkSaveBtn.addEventListener("click", async () => {
     if (!linkTargetAnime || linkSaveBtn.disabled) return;
-    const value = linkInput.value.trim();
+    const groupValue = (linkInput.value || "").trim();
+    const soloInput = el("solo-link-input");
+    const soloValue = soloInput ? (soloInput.value || "").trim() : "";
+    const ongoingInput = el("ongoing-link-input");
+    const ongoingValue = ongoingInput ? (ongoingInput.value || "").trim() : "";
+
+    // Need at least one URL when creating a new post
+    if (!linkTargetAnime.id && !groupValue && !soloValue && !ongoingValue) {
+      showToast("Paste an All seasons, Solo, or Ongoing join URL first");
+      return;
+    }
+
     linkSaveBtn.disabled = true;
     const originalLabel = linkSaveBtn.textContent;
     linkSaveBtn.textContent = "Saving…";
     try {
       let result;
       if (linkTargetAnime.id) {
-        result = await api(`/api/anime/${linkTargetAnime.id}/link`, { method: "PATCH", body: JSON.stringify({ link: value, library_section: ((linkTargetAnime.media_type||'').toUpperCase()==='MANGA') ? selectedLibrarySection() : undefined }) });
+        // Always send both finished fields so they stay independent
+        const body = {
+          group_link: groupValue,
+          solo_link: soloValue,
+          ongoing_link: ongoingValue,
+        };
+        result = await api(`/api/anime/${linkTargetAnime.id}/link`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
         if (result.status === "deleted") {
-          // No link = the post itself (and any related title that only
-          // had this same link) was deleted from the database, not just
-          // hidden — so close out of it rather than trying to re-render
-          // detail actions for an anime that no longer exists.
           closeLinkSheet();
           closeDetailSheet();
           showToast(result.propagated
-            ? `Removed — no join link was set (also removed ${result.propagated} related title(s))`
-            : "Removed — no join link was set");
-          await loadAvailable();
+            ? `Removed from library (and ${result.propagated} related title(s))`
+            : "Removed from library");
+          loadAvailable().catch(() => {});
           return;
         }
-        linkTargetAnime.join_link = value;
+        const saved = result.anime || {};
+        linkTargetAnime.join_link = saved.join_link || null;
+        linkTargetAnime.solo_link = saved.solo_link || null;
+        linkTargetAnime.ongoing_link = saved.ongoing_link || null;
+        linkTargetAnime.display_mode = saved.display_mode || linkTargetAnime.display_mode;
+        linkTargetAnime.matchedJoinLink =
+          linkTargetAnime.solo_link || linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
         if (currentDetail && currentDetail.id === linkTargetAnime.id) {
-          currentDetail.join_link = value;
+          currentDetail.join_link = linkTargetAnime.join_link;
+          currentDetail.solo_link = linkTargetAnime.solo_link;
+          currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
+          currentDetail.display_mode = linkTargetAnime.display_mode;
+          currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
+        }
+        const aidx = available.findIndex((a) => a.id === linkTargetAnime.id);
+        if (aidx >= 0) {
+          available[aidx] = {
+            ...available[aidx],
+            join_link: linkTargetAnime.join_link,
+            solo_link: linkTargetAnime.solo_link,
+            ongoing_link: linkTargetAnime.ongoing_link,
+            display_mode: linkTargetAnime.display_mode,
+          };
         }
       } else {
-        // Not in the local library yet (Discover/Genre post) — this creates
-        // the library entry with the link already set in one step.
-        const src = itemSource(linkTargetAnime);
-        const sid = itemSourceId(linkTargetAnime);
-        const isManga = (linkTargetAnime.media_type || "").toUpperCase() === "MANGA";
-        result = await api(`/api/anime/link-source/${encodeURIComponent(src)}/${encodeURIComponent(sid)}`, {
+        // Discover/Genre — create library entry with independent group/solo/ongoing links
+        const alId = linkTargetAnime.anilist_id || linkTargetAnime.source_id;
+        if (!alId) {
+          throw new Error("Missing AniList id — open the title again and retry");
+        }
+        const createBody = {
+          group_link: groupValue,
+          solo_link: soloValue,
+          ongoing_link: ongoingValue,
+          title: linkTargetAnime.title,
+          alt_title: linkTargetAnime.alt_title,
+          year: linkTargetAnime.year,
+          poster_url: linkTargetAnime.poster_url,
+          banner_url: linkTargetAnime.banner_url,
+          description: linkTargetAnime.description,
+          genres: linkTargetAnime.genres || [],
+          rating: linkTargetAnime.rating,
+          status: linkTargetAnime.status || "FINISHED",
+          episodes: linkTargetAnime.episodes,
+          format: linkTargetAnime.format,
+        };
+        result = await api(`/api/anime/link-anilist/${alId}`, {
           method: "POST",
-          body: JSON.stringify({
-            link: value,
-            library_section: isManga ? selectedLibrarySection() : undefined,
-          }),
+          body: JSON.stringify(createBody),
         });
-        const animeRow = result.anime || result;
-        linkTargetAnime.id = animeRow.id;
-        linkTargetAnime.join_link = animeRow.join_link;
-        linkTargetAnime.matchedJoinLink = animeRow.join_link;
-        if (currentDetail && String(itemSourceId(currentDetail)) === String(sid)) {
-          currentDetail.id = result.anime.id;
-          currentDetail.join_link = result.anime.join_link;
-          currentDetail.matchedJoinLink = result.anime.join_link;
+        const anime = result.anime || {};
+        linkTargetAnime.id = anime.id;
+        linkTargetAnime.join_link = anime.join_link || groupValue || null;
+        linkTargetAnime.solo_link = anime.solo_link || soloValue || null;
+        linkTargetAnime.ongoing_link = anime.ongoing_link || ongoingValue || null;
+        linkTargetAnime.display_mode = anime.display_mode || (soloValue ? "solo" : "group");
+        linkTargetAnime.matchedJoinLink =
+          linkTargetAnime.solo_link || linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
+        // Optimistically add to local library so Finished column updates immediately
+        if (anime.id) {
+          const idx = available.findIndex((a) => a.id === anime.id);
+          const row = {
+            ...linkTargetAnime,
+            ...anime,
+            id: anime.id,
+            join_link: linkTargetAnime.join_link,
+            solo_link: linkTargetAnime.solo_link,
+            ongoing_link: linkTargetAnime.ongoing_link,
+            available: true,
+          };
+          if (idx >= 0) available[idx] = { ...available[idx], ...row };
+          else available.push(row);
+        }
+        if (currentDetail && (currentDetail.anilist_id === alId || currentDetail.source_id === alId)) {
+          currentDetail.id = anime.id;
+          currentDetail.join_link = linkTargetAnime.join_link;
+          currentDetail.solo_link = linkTargetAnime.solo_link;
+          currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
+          currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
         }
       }
+
       if (currentDetail) renderDetailAction(currentDetail, currentContext);
+      // Capture before closeLinkSheet() nulls the target
+      const savedJoin = !!(linkTargetAnime && (linkTargetAnime.join_link || linkTargetAnime.solo_link));
+      const savedOngoing = !!(linkTargetAnime && linkTargetAnime.ongoing_link);
+      const savedTitle = (linkTargetAnime && linkTargetAnime.title)
+        || (currentDetail && currentDetail.title)
+        || "";
       closeLinkSheet();
       showToast(result.propagated
         ? `Link saved — applied to ${result.propagated} related title(s) too`
         : "Link saved");
-      await loadAvailable();
+      // Refresh catalog, then jump to the matching Home column so the card is visible
+      try {
+        await loadAvailable();
+      } catch (e) { /* ignore */ }
+      if (savedJoin) {
+        setLibraryMode("finished");
+        showView("app");
+        try {
+          if (savedTitle && typeof indexKeyFor === "function") {
+            activeLetter = indexKeyFor(savedTitle);
+            activeDay = null;
+            libraryQuery = "";
+            renderLibraryTab();
+          }
+        } catch (e) { /* ignore */ }
+      } else if (savedOngoing) {
+        setLibraryMode("ongoing");
+        showView("app");
+      }
     } catch (err) {
       showToast(err.message || "Couldn't save link");
     } finally {
       linkSaveBtn.disabled = false;
-      linkSaveBtn.textContent = originalLabel;
+      linkSaveBtn.textContent = originalLabel || "Save";
     }
   });
 
@@ -1542,7 +1525,7 @@
   // ---------------------------------------------------------------------
   // Search page
   // ---------------------------------------------------------------------
-  const GENRES = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Romance", "Sci-Fi", "Horror", "Yaoi"];
+  const GENRES = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Romance", "Sci-Fi", "Horror"];
 
   function renderSearchLanding() {
     searchViewInput.value = "";
@@ -1551,6 +1534,10 @@
     renderPopularSearches();
     renderRecentSearches();
     renderGenreTiles();
+    // Discovery sections (Trending / Airing / Popular) live under Genres
+    renderTrending();
+    renderTopAiring();
+    renderPopularGrid();
   }
 
   async function renderPopularSearches() {
@@ -1580,6 +1567,7 @@
   const RECENT_SEARCH_LIMIT = 10;
 
   function getLocalRecentSearches() {
+    return []; // Recent Searches removed
     try {
       const raw = localStorage.getItem(RECENT_SEARCH_KEY);
       const items = raw ? JSON.parse(raw) : [];
@@ -1590,29 +1578,25 @@
   }
 
   function addLocalRecentSearch(query) {
-    try {
-      const items = getLocalRecentSearches().filter((q) => q.toLowerCase() !== query.toLowerCase());
-      items.unshift(query);
-      localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(items.slice(0, RECENT_SEARCH_LIMIT)));
-    } catch (err) { /* localStorage unavailable — not fatal, just no history */ }
+    // no-op — Recent Searches removed
   }
+
 
   function clearLocalRecentSearches() {
     try { localStorage.removeItem(RECENT_SEARCH_KEY); } catch (err) { /* not fatal */ }
   }
 
   function renderRecentSearches() {
-    // Recent Searches removed from Search page UI
-    if (!recentSearchSection || !recentSearchList) return;
-    recentSearchSection.classList.add("hidden");
+    // Recent Searches UI removed
+    if (recentSearchSection) recentSearchSection.classList.add("hidden");
+    if (recentSearchList) recentSearchList.innerHTML = "";
   }
 
-  if (recentSearchClear) {
-    recentSearchClear.addEventListener("click", () => {
-      clearLocalRecentSearches();
-      renderRecentSearches();
-    });
-  }
+
+  recentSearchClear.addEventListener("click", () => {
+    clearLocalRecentSearches();
+    renderRecentSearches();
+  });
 
   popularSearchRefresh.addEventListener("click", async () => {
     popularSearchRefresh.disabled = true;
@@ -1651,9 +1635,6 @@
     "Horror": {
       svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V11a7 7 0 0 1 14 0v10l-2.5-2-2 2-2.5-2-2 2-2.5-2Z"/><path d="M9 11h.01"/><path d="M15 11h.01"/></svg>',
     },
-    "Yaoi": {
-      svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-9.5-9C.9 7.6 3 4 6.5 4 9 4 11 6 12 7.5 13 6 15 4 17.5 4 21 4 23.1 7.6 21.5 11 19 15.6 12 20 12 20Z"/></svg>',
-    },
   };
 
   function renderGenreTiles() {
@@ -1688,20 +1669,6 @@
   let searchLoading = false;
   let searchToken = 0;
 
-  function searchTypeLabel(item) {
-    const t = (item.media_type || "").toUpperCase();
-    const adult = !!item.isAdult;
-    if (t === "MANGA") {
-      const c = (item.countryOfOrigin || "").toUpperCase();
-      if ((item.format || "").toUpperCase() === "NOVEL") return adult ? "H-Novel" : "Novel";
-      if (c === "KR") return adult ? "H-Manhwa" : "Manhwa";
-      if (c === "CN") return adult ? "H-Manhua" : "Manhua";
-      return adult ? "H-Manga" : "Manga";
-    }
-    if (t === "ANIME") return adult ? "H-Anime" : "Anime";
-    return item.format || "";
-  }
-
   function searchResultRow(item, onOpen) {
     const row = document.createElement("div");
     row.className = "search-result-row";
@@ -1714,13 +1681,6 @@
     body.appendChild(title);
     const meta = document.createElement("div");
     meta.className = "search-result-meta";
-    const typeLabel = searchTypeLabel(item);
-    if (typeLabel) {
-      const type = document.createElement("span");
-      type.className = "search-result-type";
-      type.textContent = typeLabel;
-      meta.appendChild(type);
-    }
     if (item.year) {
       const year = document.createElement("span");
       year.className = "search-result-year";
@@ -1730,7 +1690,7 @@
     if (item.rating) {
       const rating = document.createElement("span");
       rating.className = "search-result-rating";
-      rating.textContent = "\u2605 " + Number(item.rating).toFixed(1);
+      rating.textContent = "\u2605 " + item.rating.toFixed(1);
       meta.appendChild(rating);
     }
     body.appendChild(meta);
@@ -1745,7 +1705,6 @@
     return row;
   }
 
-
   async function runLibrarySearch(q) {
     const query = q.trim();
     if (!query) { renderSearchLanding(); return; }
@@ -1756,18 +1715,13 @@
     searchResults.classList.remove("hidden");
     searchResultsGroups.innerHTML = "";
     searchResultsEmpty.classList.add("hidden");
-    searchResultsEmpty.textContent = "Searching…";
+    searchResultsEmpty.textContent = "Searching AniList…";
 
-    const availIndex = buildAvailableIndex();
     const qLower = query.toLowerCase();
-    // Match full query OR every individual word against title + alt_title
-    // so multi-word titles and alt names (e.g. "Landlord Sisters" /
-    // "My Landlady Noona" / "건물주 누나") still appear in search.
-    const words = qLower.split(/\s+/).filter(Boolean);
+    const availIndex = buildAvailableIndex();
     const localMatches = available.filter((a) => {
-      const t = ((a.title || "") + " " + (a.alt_title || "")).toLowerCase();
-      if (t.includes(qLower)) return true;
-      return words.length > 1 && words.every((w) => t.includes(w));
+      const t = `${a.title || ""} ${a.alt_title || ""}`.toLowerCase();
+      return t.includes(qLower);
     });
     localMatches.forEach((item) => {
       searchResultsGroups.appendChild(searchResultRow(item, () => {
@@ -1779,37 +1733,37 @@
     const myToken = ++searchToken;
     searchLoading = true;
     try {
-      // /api/search/anime runs search_all → adult anime + manga/manhwa/novels
       const data = await api(`/api/search/anime?q=${encodeURIComponent(query)}&page=1`);
       if (myToken !== searchToken) return;
-      searchHasNext = !!data.has_next;
-      const localTitles = new Set(localMatches.map((a) => a.title.toLowerCase()));
-      const localIds = new Set(
-        localMatches
-          .filter((a) => a.source_id != null)
-          .map((a) => String(a.source_id))
+      searchHasNext = !!(data && data.has_next);
+      const seenIds = new Set(
+        localMatches.map((a) => String(a.source_id || a.anilist_id || a.id)).filter(Boolean)
       );
+      const localTitles = new Set(localMatches.map((a) => (a.title || "").toLowerCase()));
       (data.results || []).forEach((item) => {
-        const sid = item.source_id != null ? String(item.source_id) : "";
-        if (sid && localIds.has(sid)) return;
+        const idKey = String(item.anilist_id || item.source_id || "");
+        if (idKey && seenIds.has(idKey)) return;
         if (localTitles.has((item.title || "").toLowerCase())) return;
+        if (idKey) seenIds.add(idKey);
         const matched = availIndex.match(item);
-        item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+        if (matched) {
+          item.matchedJoinLink = matched.join_link || matched.ongoing_link || null;
+          item.id = matched.id;
+        }
         searchResultsGroups.appendChild(searchResultRow(item, () => {
           trackConfirmedSearch(item.title);
-          openDiscoverDetail(item);
+          if (matched) openLocalDetail({ ...matched, ...item });
+          else openDiscoverDetail(item);
         }));
       });
       const empty = searchResultsGroups.children.length === 0;
-      searchResultsEmpty.textContent = empty
-        ? "No anime / manga / manhwa / manhua / novel found for that title."
-        : searchResultsEmpty.textContent;
+      searchResultsEmpty.textContent = empty ? "No anime found on AniList." : "";
       searchResultsEmpty.classList.toggle("hidden", !empty);
     } catch (err) {
       const empty = searchResultsGroups.children.length === 0;
       searchResultsEmpty.textContent = empty
-        ? "Search failed — check connection and try again."
-        : searchResultsEmpty.textContent;
+        ? (err.message || "Search failed. Try again.")
+        : "";
       searchResultsEmpty.classList.toggle("hidden", !empty);
     }
     searchLoading = false;
@@ -1862,92 +1816,32 @@
     genreViewName = genre;
     genrePage = 1;
     genreHasNext = false;
-    // Yaoi is primarily manga/manhwa on AniList — default to MANGA so results appear
-    genreType = (genre && genre.toLowerCase() === "yaoi") ? "MANGA" : "ANIME";
     genreViewTitle.textContent = genre;
-    document.querySelectorAll("[data-genre-type]").forEach((b) => {
-      b.classList.toggle("active", b.dataset.genreType === genreType);
-    });
-    await loadGenreGrid(true);
-  }
-
-  async function loadGenreGrid(reset) {
-    if (!genreViewName) return;
-    if (reset) {
-      genrePage = 1;
-      genreHasNext = false;
-      if (genreBrowseGrid) genreBrowseGrid.innerHTML = "";
-    }
-    if (genreLoadMore) {
-      genreLoadMore.disabled = true;
-      genreLoadMore.textContent = "Loading…";
-      genreLoadMore.classList.remove("hidden");
-    }
+    genreBrowseGrid.innerHTML = "";
     try {
-      const data = await safeApi(
-        `/api/genres/${encodeURIComponent(genreViewName)}?page=${genrePage}&type=${encodeURIComponent(genreType || "ANIME")}`,
-        { results: [], has_next: false }
-      );
+      const data = await api(`/api/genres/${encodeURIComponent(genre)}?page=1`);
       genreHasNext = !!data.has_next;
-      const availIndex = buildAvailableIndex();
-      const rows = data.results || [];
-      rows.forEach((item) => {
-        try {
-          const matched = availIndex.match(item);
-          item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
-          genreBrowseGrid.appendChild(simplePosterCard(item, () => openGenreItemDetail(item)));
-        } catch (cardErr) {
-          console.warn("genre card failed", cardErr);
-        }
+      data.results.forEach((item) => {
+        genreBrowseGrid.appendChild(simplePosterCard(item, () => openGenreItemDetail(item)));
       });
-      if (!rows.length && reset) {
-        const p = document.createElement("p");
-        p.className = "empty-note";
-        p.style.padding = "24px 8px";
-        p.textContent = genreType === "MANGA"
-          ? "No H-MANHWA found in this genre."
-          : "No H-ANIME found in this genre.";
-        genreBrowseGrid.appendChild(p);
-      }
     } catch (err) {
-      console.warn("genre load failed", err);
-      if (reset && genreBrowseGrid) {
-        genreBrowseGrid.innerHTML = "";
-        const p = document.createElement("p");
-        p.className = "empty-note";
-        p.style.padding = "24px 8px";
-        p.textContent = "Couldn't load this genre. Try again.";
-        genreBrowseGrid.appendChild(p);
-      }
-    }
-    if (genreLoadMore) {
-      genreLoadMore.disabled = false;
-      genreLoadMore.textContent = "Load more";
-      genreLoadMore.classList.toggle("hidden", !genreHasNext);
+      showToast("Couldn't load that genre right now.");
     }
   }
 
   async function loadMoreGenre() {
     if (genreLoading || !genreHasNext || !genreViewName) return;
     genreLoading = true;
-    genrePage += 1;
-    await loadGenreGrid(false);
+    try {
+      const data = await api(`/api/genres/${encodeURIComponent(genreViewName)}?page=${genrePage + 1}`);
+      genrePage += 1;
+      genreHasNext = !!data.has_next;
+      data.results.forEach((item) => {
+        genreBrowseGrid.appendChild(simplePosterCard(item, () => openGenreItemDetail(item)));
+      });
+    } catch (err) { /* stop silently, user can keep scrolling to retry */ }
     genreLoading = false;
   }
-
-  document.querySelectorAll("[data-genre-type]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const next = btn.dataset.genreType;
-      if (!next || next === genreType) return;
-      genreType = next;
-      document.querySelectorAll("[data-genre-type]").forEach((b) => {
-        b.classList.toggle("active", b === btn);
-      });
-      loadGenreGrid(true);
-    });
-  });
-  if (genreLoadMore) genreLoadMore.addEventListener("click", loadMoreGenre);
-
 
   window.addEventListener("scroll", debounce(() => {
     if (genreView.classList.contains("hidden")) return;
@@ -1982,12 +1876,20 @@
   }
 
   async function openProfile() {
-    profileCard.innerHTML = `<p class="profile-hint">Loading profile…</p>`;
+    profileCard.innerHTML = `<p class="profile-hint">Loading profile\u2026</p>`;
     try {
       profile = await api("/api/profile");
-      const help = await safeApi("/api/profile/help", {
-        title: "Need help?", text: "", links: [], more_links: [], support_chat_url: "",
-      });
+      let help = {
+        title: "ANIME NEXUS NETWORK",
+        text: "",
+        links: [],
+        more_links: [],
+        support_chat_url: "",
+      };
+      try {
+        help = await api("/api/profile/help");
+      } catch (e) { /* use defaults */ }
+
       const displayName = profile.first_name || profile.username || "User";
       const photoUrl = tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.photo_url;
       const avatarHtml = photoUrl
@@ -2018,7 +1920,7 @@
         const supportBtn = document.createElement("button");
         supportBtn.type = "button";
         supportBtn.className = "profile-support-btn";
-        supportBtn.textContent = "Support Chat";
+        supportBtn.textContent = "sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ\u{1F4AD}";
         supportBtn.addEventListener("click", () => {
           if (supportUrl) {
             openExternalLink(supportUrl);
@@ -2046,8 +1948,8 @@
       const intro = document.createElement("div");
       intro.className = "help-card";
       intro.innerHTML = `
-        <h3 class="help-card-title">${escapeHtml(help.title || "Need help?")}</h3>
-        <p class="help-card-text">${escapeHtml(help.text || "Notifications, requests, and channel links are all managed through the bot.")}</p>
+        <h3 class="help-card-title">${escapeHtml(help.title || "ANIME NEXUS NETWORK")}</h3>
+        <p class="help-card-text">${escapeHtml(help.text || "")}</p>
       `;
       stack.appendChild(intro);
 
@@ -2103,12 +2005,17 @@
     el("help-edit-text").value = help.text || "";
     const supportInput = el("help-edit-support");
     if (supportInput) supportInput.value = help.support_chat_url || "";
+    // Main links UI removed — keep container empty so saves clear legacy main links.
     const box = el("help-edit-links");
-    box.innerHTML = "";
-    const links = (help.links && help.links.length)
-      ? help.links
-      : [{ name: "", url: "" }];
-    links.forEach((l) => box.appendChild(helpEditRow(l.name || "", l.url || "")));
+    if (box) box.innerHTML = "";
+    const moreBox = el("help-edit-more-links");
+    if (moreBox) {
+      moreBox.innerHTML = "";
+      const moreLinks = (help.more_links && help.more_links.length)
+        ? help.more_links
+        : [{ name: "", url: "" }];
+      moreLinks.forEach((l) => moreBox.appendChild(helpEditRow(l.name || "", l.url || "")));
+    }
     overlay.classList.remove("hidden");
   }
 
@@ -2148,17 +2055,20 @@
     if (!overlay) return;
     el("help-edit-cancel").addEventListener("click", closeHelpEdit);
     overlay.addEventListener("click", (e) => { if (e.target === overlay) closeHelpEdit(); });
-    el("help-edit-add").addEventListener("click", () => {
-      el("help-edit-links").appendChild(helpEditRow("", ""));
-    });
-    // more-channel add button removed
+    const addMore = el("help-edit-add-more");
+    if (addMore) {
+      addMore.addEventListener("click", () => {
+        el("help-edit-more-links").appendChild(helpEditRow("", ""));
+      });
+    }
     el("help-edit-save").addEventListener("click", async () => {
       const title = el("help-edit-title").value.trim();
       const text = el("help-edit-text").value.trim();
       const supportInput = el("help-edit-support");
       const support_chat_url = supportInput ? supportInput.value.trim() : "";
-      const links = collectLinkRows("help-edit-links");
-      const more_links = [];
+      // Main links removed from UI — always clear them on save.
+      const links = [];
+      const more_links = collectLinkRows("help-edit-more-links");
       try {
         await api("/api/profile/help", {
           method: "PUT",
@@ -2276,17 +2186,162 @@
   // ---------------------------------------------------------------------
   // Data loading
   // ---------------------------------------------------------------------
+  // Client-side AniList GraphQL — runs on the user's phone/network so
+  // Koyeb datacenter IP blocks never empty the Home catalog.
+  const ANILIST_GQL = "https://graphql.anilist.co";
+  const DISCOVER_GQL = `
+    query ($sort: [MediaSort], $page: Int, $status: MediaStatus) {
+      Page(page: $page, perPage: 10) {
+        pageInfo { hasNextPage }
+        media(type: ANIME, sort: $sort, status: $status) {
+          id
+          title { romaji english }
+          coverImage { extraLarge large }
+          averageScore
+          genres
+          episodes
+          description(asHtml: false)
+        }
+      }
+    }`;
+
+  function _mapAniMedia(m) {
+    const score = m.averageScore;
+    const title = (m.title && (m.title.english || m.title.romaji)) || "Untitled";
+    const cover = (m.coverImage && (m.coverImage.extraLarge || m.coverImage.large)) || "";
+    let synopsis = (m.description || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/?i>/gi, "").trim();
+    if (synopsis.length > 140) synopsis = synopsis.slice(0, 140);
+    return {
+      title,
+      poster_url: cover,
+      rating: score ? Math.round((score / 10) * 10) / 10 : null,
+      anilist_id: m.id,
+      genres: (m.genres || []).slice(0, 3),
+      episodes: m.episodes,
+      synopsis,
+    };
+  }
+
+  async function clientAniList(sort, page, status) {
+    const variables = { sort: [sort], page: page || 1 };
+    if (status) variables.status = status;
+    const res = await fetch(ANILIST_GQL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: DISCOVER_GQL, variables }),
+    });
+    if (!res.ok) throw new Error("AniList HTTP " + res.status);
+    const payload = await res.json();
+    if (payload.errors && !payload.data) throw new Error(JSON.stringify(payload.errors[0]));
+    const pageData = payload.data && payload.data.Page;
+    const media = (pageData && pageData.media) || [];
+    return {
+      results: media.map(_mapAniMedia),
+      has_next: !!(pageData && pageData.pageInfo && pageData.pageInfo.hasNextPage),
+      source: "client",
+    };
+  }
+
+  async function loadDiscover() {
+    renderSkeletonRow(trendingRow, 4);
+    renderSkeletonRow(topAiringList, 4);
+    renderSkeletonRow(popularGridList, 6);
+
+    async function safeCatalog(path, clientFn) {
+      try {
+        const data = await api(path);
+        if (data && Array.isArray(data.results) && data.results.length) return data;
+      } catch (e) { /* fall through to client */ }
+      // Server empty / failed → fetch AniList from the user's device
+      try {
+        if (typeof clientFn === "function") return await clientFn();
+      } catch (e2) {
+        return { results: [], has_next: false, error: String(e2 && e2.message || e2) };
+      }
+      return { results: [], has_next: false };
+    }
+
+    // Progressive paint
+    try {
+      const trendingData = await safeCatalog(
+        "/api/catalog/trending",
+        () => clientAniList("TRENDING_DESC", 1, null)
+      );
+      trending = Array.isArray(trendingData.results) ? trendingData.results : [];
+      renderTrending();
+    } catch (e) {
+      trending = [];
+      renderTrending();
+    }
+
+    try {
+      const popularData = await safeCatalog(
+        "/api/catalog/popular",
+        () => clientAniList("POPULARITY_DESC", 1, "RELEASING")
+      );
+      popular = Array.isArray(popularData.results) ? popularData.results : [];
+      popularHasNext = !!popularData.has_next;
+      popularPage = 1;
+      renderTopAiring();
+    } catch (e) {
+      popular = [];
+      popularHasNext = false;
+      renderTopAiring();
+    }
+
+    try {
+      const mostPopularData = await safeCatalog(
+        "/api/catalog/most-popular",
+        () => clientAniList("POPULARITY_DESC", 1, null)
+      );
+      mostPopular = Array.isArray(mostPopularData.results) ? mostPopularData.results : [];
+      mostPopularHasNext = !!mostPopularData.has_next;
+      mostPopularPage = 1;
+      renderPopularGrid();
+      // Prefetch page 2 so the first "Load more" is instant
+      if (mostPopularHasNext) prefetchMostPopularPage(2);
+    } catch (e) {
+      mostPopular = [];
+      mostPopularHasNext = false;
+      renderPopularGrid();
+    }
+
+    if (!trending.length && !popular.length && !mostPopular.length) {
+      if (typeof showToast === "function") showToast("AniList unavailable — retrying…");
+      setTimeout(() => { loadDiscover(); }, 10000);
+    }
+  }
+
   async function loadAvailable() {
     try {
       available = await api("/api/catalog/available");
     } catch (err) {
       available = [];
     }
-    // Refresh join-link badges on ALL + rebuild A–Z lists if Available is open
-    if (tabAll && !tabAll.classList.contains("hidden")) renderAllTab();
-    if (tabHanime && !tabHanime.classList.contains("hidden")) renderTypeLibrary("ANIME");
-    if (tabHmanhwa && !tabHmanhwa.classList.contains("hidden")) {
-      renderTypeLibrary("MANGA");
+    // Home is Available-only — always render the library
+    renderLibraryTab();
+    // After first catalog load, silently fill any missing airing days
+    autoRefreshAiringDays();
+    // Pull newly airing seasons of Finished franchises into Ongoing
+    syncOngoingSeasons();
+  }
+
+  let _syncOngoingBusy = false;
+  async function syncOngoingSeasons() {
+    if (_syncOngoingBusy) return;
+    _syncOngoingBusy = true;
+    try {
+      const res = await api("/api/catalog/sync-ongoing", { method: "POST", body: "{}" });
+      if (res && ((res.added || 0) > 0 || (res.updated || 0) > 0)) {
+        try {
+          available = await api("/api/catalog/available");
+          renderLibraryTab();
+        } catch (e) { /* ignore */ }
+      }
+    } catch (err) {
+      // non-fatal — Ongoing list just won't auto-expand this session
+    } finally {
+      _syncOngoingBusy = false;
     }
   }
 
@@ -2320,7 +2375,7 @@
 
   (async function init() {
     document.title = brandName;
-    await Promise.all([loadAllDiscover(), loadAvailable(), preloadProfile(), loadNotifications()]);
+    await Promise.all([loadDiscover(), loadAvailable(), preloadProfile(), loadNotifications()]);
     applyDeepLink();
   })();
 
