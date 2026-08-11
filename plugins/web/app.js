@@ -563,11 +563,12 @@
   }
 
   // ---------------------------------------------------------------------
-  // Pill tabs: ALL (discovery) / HANIME (A–Z) / HMANHWA (A–Z)
+  // Pill tabs: H-ANIME (A–Z) / H-MANHWA (A–Z)  — ALL discovery moved to Search
   // ---------------------------------------------------------------------
   function setPillTab(tab) {
+    if (tab === "all") tab = "hanime"; // ALL removed from home
     pillTabs.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-    if (tabAll) tabAll.classList.toggle("hidden", tab !== "all");
+    if (tabAll) tabAll.classList.add("hidden");
     if (tabHanime) tabHanime.classList.toggle("hidden", tab !== "hanime");
     if (tabHmanhwa) tabHmanhwa.classList.toggle("hidden", tab !== "hmanhwa");
     if (tab === "hanime") renderTypeLibrary("ANIME");
@@ -2018,7 +2019,7 @@
         const supportBtn = document.createElement("button");
         supportBtn.type = "button";
         supportBtn.className = "profile-support-btn";
-        supportBtn.textContent = "Support Chat";
+        supportBtn.textContent = "ꜱᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ";
         supportBtn.addEventListener("click", () => {
           if (supportUrl) {
             openExternalLink(supportUrl);
@@ -2062,7 +2063,7 @@
         const moreBtn = document.createElement("button");
         moreBtn.type = "button";
         moreBtn.className = "help-link-btn help-more-btn";
-        moreBtn.textContent = "MORE CHANNELS";
+        moreBtn.textContent = "ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟꜱ";
         const morePanel = document.createElement("div");
         morePanel.className = "more-channels-panel hidden";
         allChannelLinks.forEach((l) => {
@@ -2070,7 +2071,7 @@
         });
         moreBtn.addEventListener("click", () => {
           const nowHidden = morePanel.classList.toggle("hidden");
-          moreBtn.textContent = nowHidden ? "MORE CHANNELS" : "HIDE CHANNELS";
+          moreBtn.textContent = nowHidden ? "ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟꜱ" : "ʜɪᴅᴇ ᴄʜᴀɴɴᴇʟꜱ";
         });
         moreCard.appendChild(moreBtn);
         stack.appendChild(moreCard);
@@ -2083,7 +2084,7 @@
         const editBtn = document.createElement("button");
         editBtn.type = "button";
         editBtn.className = "edit-links-btn";
-        editBtn.textContent = allChannelLinks.length ? "Edit links" : "Add links";
+        editBtn.textContent = allChannelLinks.length ? "ᴇᴅɪᴛ ʟɪɴᴋꜱ" : "ᴀᴅᴅ ʟɪɴᴋꜱ";
         editBtn.addEventListener("click", () => openHelpEdit(help));
         admin.appendChild(editBtn);
         stack.appendChild(admin);
@@ -2282,8 +2283,7 @@
     } catch (err) {
       available = [];
     }
-    // Refresh join-link badges on ALL + rebuild A–Z lists if Available is open
-    if (tabAll && !tabAll.classList.contains("hidden")) renderAllTab();
+    // Rebuild A–Z lists for the visible home tab
     if (tabHanime && !tabHanime.classList.contains("hidden")) renderTypeLibrary("ANIME");
     if (tabHmanhwa && !tabHmanhwa.classList.contains("hidden")) {
       renderTypeLibrary("MANGA");
