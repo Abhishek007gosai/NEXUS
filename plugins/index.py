@@ -1,14 +1,13 @@
 """
-Anime Index bot handlers (Touka integrated into NexusV2).
+Anime Index bot handlers (Pyrogram).
 
-Same bot token as the file-store. Commands:
+Commands:
   /anidex              — welcome + Open Mini App button
   plain text (private) — search Available library
 Callbacks:
   searchpick / cancel
   reqaccept / reqreject / reqreason / reqback
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -31,12 +30,11 @@ from config import (
     TOKEN,
     BRAND_NAME,
     WEBAPP_URL,
-    INDEX_URL,
     ADMINS,
     MESSAGES,
 )
 from helper import database as db
-from helper.helper_func import styled_button, safe_edit_text, safe_edit_caption, safe_edit_reply_markup
+from helper.helper_func import styled_button
 
 SESSIONS: dict[str, dict] = {}
 SESSION_TTL = 15 * 60
@@ -73,17 +71,11 @@ def new_session(**kwargs) -> str:
 
 
 def _webapp_button(label: str | None = None) -> InlineKeyboardButton:
-    """/anidex — open index. INDEX_URL = normal link; WEBAPP_URL = mini app."""
+    """/anidex — open the Anime Index mini app."""
     label = label or "ᴏᴘᴇɴ ɪɴᴅᴇx"
-    index_url = (INDEX_URL or "").strip()
-    webapp_url = (WEBAPP_URL or "").strip()
-    if index_url.startswith(("https://", "http://")):
-        return styled_button(label, style="success", url=index_url)
-    if webapp_url.startswith("https://"):
-        return styled_button(label, style="success", web_app=WebAppInfo(url=webapp_url))
-    if webapp_url.startswith("http://"):
-        return styled_button(label, style="success", url=webapp_url)
-    return styled_button(label, style="success", url="https://telegram.org")
+    if WEBAPP_URL.startswith("https://"):
+        return styled_button(label, style="success", web_app=WebAppInfo(url=WEBAPP_URL))
+    return styled_button(label, style="success", url=WEBAPP_URL or "https://telegram.org")
 
 
 def _open_post_button(anime: dict) -> InlineKeyboardButton | None:
@@ -166,7 +158,7 @@ def _display_name(user) -> str:
 @Client.on_message(filters.command("anidex") & filters.private)
 async def cmd_anidex(client: Client, message: Message):
     msgs = getattr(client, "messages", None) or {}
-    raw = msgs.get("INDEX") or ""
+    raw = msgs.get("INDEX") or MESSAGES.get("INDEX", "")
     try:
         text = raw.format(
             first_name=(message.from_user.first_name if message.from_user else None) or "there",
@@ -175,7 +167,7 @@ async def cmd_anidex(client: Client, message: Message):
     except (KeyError, IndexError, ValueError):
         text = raw
     kb = InlineKeyboardMarkup([[_webapp_button()]])
-    photo = (msgs.get("INDEX_PHOTO") or msgs.get("BANNER_IMAGE_URL") or "").strip()
+    photo = (msgs.get("INDEX_PHOTO") or msgs.get("BANNER_IMAGE_URL") or MESSAGES.get("INDEX_PHOTO") or MESSAGES.get("BANNER_IMAGE_URL") or "").strip()
     if photo:
         sent = await message.reply_photo(
             photo, caption=text, reply_markup=kb, protect_content=True,
@@ -200,8 +192,8 @@ async def on_text_search(client: Client, message: Message):
     text = (message.text or "").strip()
     if len(text) < 2 or len(text) > 80:
         return
-    # Skip file-store / link-share deep-link style payloads
-    if text.startswith(("yu3elk", "ls_")):
+    # Skip file-store deep-link style payloads (shortener / batch tokens)
+    if text.startswith("yu3elk"):
         return
     # Don't treat URLs, pure IDs, or command-like text as anime titles
     # (avoids clashing with admin settings input / channel IDs)
@@ -279,7 +271,7 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
         SESSIONS.pop(sid, None)
         await q.answer("Cancelled")
         try:
-            await safe_edit_text(q.message, "Cancelled.")
+            await q.message.edit_text("Cancelled.")
         except Exception:
             pass
         return
@@ -404,3 +396,4 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
                 await q.message.edit_text((q.message.text or "") + label)
         except Exception:
             pass
+        return

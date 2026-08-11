@@ -2,7 +2,7 @@ from helper.helper_func import *
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import humanize
-from config import OWNER_ID, WEBAPP_URL, INDEX_URL
+from config import OWNER_ID, WEBAPP_URL
 from plugins.shortner import get_short
 from helper.helper_func import (
     get_messages,
@@ -11,11 +11,20 @@ from helper.helper_func import (
     batch_auto_del_notification,
     retry_on_flood,
     paced_copy,
+    paced_forward,
+    styled_button,
 )
 import asyncio
 from datetime import datetime, timedelta
 from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait
+
+
+def _start_index_button(label: str = "ᴏᴘᴇɴ ɪɴᴅᴇx") -> InlineKeyboardButton:
+    """Full-width green button that opens the Anime Index mini app."""
+    if WEBAPP_URL and WEBAPP_URL.startswith("https://"):
+        return styled_button(label, style="success", web_app=WebAppInfo(url=WEBAPP_URL))
+    return styled_button(label, style="success", url=WEBAPP_URL or "https://telegram.org")
 
 #===============================================================#
 
@@ -136,118 +145,6 @@ async def start_command(client: Client, message: Message):
         try:
             original_payload = text.split(" ", 1)[1]
             base64_string = original_payload
-
-            # ── Link Share deep-link: /start ls_<token> ──────────────────
-            # Kafka-style: "HERE IS YOUR LINK" + green CLICK HERE button
-            # + auto-delete note. Must run before base64 file-store decode.
-            if original_payload.startswith("ls_"):
-                token = original_payload[3:]  # strip "ls_"
-                token_data = await client.linkshare_db.get_link_share_token(token)
-                chat_id = message.chat.id
-
-                if not token_data:
-                    return await client.send_message(
-                        chat_id,
-                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>",
-                    )
-
-                channel_id = token_data.get("channel_id")
-                is_request = bool(token_data.get("is_request", False))
-                expires_at = token_data.get("expires_at")
-
-                # Normalize + enforce deep-link token expiry
-                exp_dt = None
-                if expires_at is not None:
-                    try:
-                        if isinstance(expires_at, str):
-                            exp_dt = datetime.fromisoformat(expires_at)
-                        elif isinstance(expires_at, datetime):
-                            exp_dt = expires_at
-                    except Exception:
-                        exp_dt = None
-
-                if exp_dt is not None and datetime.utcnow() > exp_dt:
-                    await client.linkshare_db.delete_link_share_token(token)
-                    kind = "request" if is_request else "normal"
-                    try:
-                        await client.linkshare_db.clear_link_share_channel_token(channel_id, kind)
-                    except Exception:
-                        pass
-                    return await client.send_message(
-                        chat_id,
-                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>",
-                    )
-
-                # Invite link expires in 5 minutes (Kafka behaviour)
-                invite_expire = datetime.utcnow() + timedelta(minutes=5)
-                if exp_dt is not None and exp_dt < invite_expire:
-                    invite_expire = exp_dt
-
-                try:
-                    invite = await client.create_chat_invite_link(
-                        chat_id=channel_id,
-                        expire_date=invite_expire,
-                        creates_join_request=is_request,
-                    )
-                    invite_link = invite.invite_link
-                except Exception as e:
-                    client.LOGGER(__name__, client.name).warning(
-                        f"Link Share invite creation failed for {channel_id}: {e}"
-                    )
-                    return await client.send_message(
-                        chat_id,
-                        "<b><blockquote expandable>Failed to generate invite link. Please try again later.</blockquote></b>",
-                    )
-
-                # Brief wait (Kafka UX) — plain message, no reply quote
-                wait_msg = await client.send_message(
-                    chat_id,
-                    "<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>",
-                )
-                await asyncio.sleep(0.5)
-                try:
-                    await wait_msg.delete()
-                except Exception:
-                    pass
-
-                # Green "• CLICK HERE •" button (ButtonStyle.SUCCESS)
-                button = InlineKeyboardMarkup(
-                    [[styled_button("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", style="success", url=invite_link)]]
-                )
-
-                link_share_msg = await client.send_message(
-                    chat_id,
-                    "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
-                    reply_markup=button,
-                    protect_content=True,
-                )
-
-                note_msg = await client.send_message(
-                    chat_id,
-                    "<blockquote><b>Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ɪɴ ғᴇᴡ ᴍɪɴᴜᴛᴇs. "
-                    "Iғ ᴛʜᴇ ʟɪɴᴋ ɪs ᴇxᴘɪʀᴇᴅ so ᴛʀʏ ᴀɢᴀɪɴ.</b></blockquote>",
-                    protect_content=True,
-                )
-
-                async def _delete_after(msg, delay: int):
-                    await asyncio.sleep(delay)
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-
-                async def _revoke_invite_after(delay: int, chat_id: int, link: str):
-                    await asyncio.sleep(delay)
-                    try:
-                        await client.revoke_chat_invite_link(chat_id, link)
-                    except Exception:
-                        pass
-
-                # Note: 5 min · Link message: 15 min · Invite: revoke after 5 min
-                asyncio.create_task(_delete_after(note_msg, 300))
-                asyncio.create_task(_delete_after(link_share_msg, 900))
-                asyncio.create_task(_revoke_invite_after(300, channel_id, invite_link))
-                return
 
             is_short_link = False
             if base64_string.startswith("yu3elk"):
@@ -438,8 +335,7 @@ async def start_command(client: Client, message: Message):
         live_chat = source_channel_id or getattr(client, "primary_db_channel", client.db)
 
         for msg in messages:
-            # Re-fetch THIS message right before send so any edit you made
-            # on the DB post (caption text OR "CLICK HERE" button) is used.
+            # Re-fetch so caption / button edits on the DB post are always current
             try:
                 fresh = await retry_on_flood(
                     lambda mid=msg.id: client.get_messages(chat_id=live_chat, message_ids=mid),
@@ -475,17 +371,17 @@ async def start_command(client: Client, message: Message):
                 # No template override → send exactly what is on the DB post
                 caption = live_caption if live_caption is not None else ""
 
-            # Buttons: always from the live DB post (unless globally disabled)
+            # Buttons from the live DB post (unless globally disabled)
             reply_markup = None if client.disable_btn else msg.reply_markup
             protect_this = True if reply_markup else client.protect
 
             try:
+                # Copy (not forward) so there is no "Forwarded from" tag
                 copy_kwargs = {
                     "chat_id": message.from_user.id,
                     "protect_content": protect_this,
                     "caption": caption,
                 }
-                # Always pass reply_markup so button edits apply (or clear)
                 if not client.disable_btn:
                     copy_kwargs["reply_markup"] = reply_markup
 
@@ -524,35 +420,13 @@ async def start_command(client: Client, message: Message):
 
     # 9. Normal start message
     else:
-        # Layout matches Touka-style start:
-        # [OPEN INDEX]  (green web-app, full width)
-        # [HELP] [CLOSE]
-        # (+ SETTINGS for admins)
-        buttons = []
-
-        # Open Index button — INDEX_URL preferred (normal url link), else WEBAPP_URL (mini app)
-        index_url = (INDEX_URL or "").strip()
-        webapp_url = (WEBAPP_URL or "").strip()
-        if index_url.startswith(("https://", "http://")):
-            buttons.append([
-                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=index_url)
-            ])
-        elif webapp_url.startswith("https://"):
-            buttons.append([
-                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=webapp_url))
-            ])
-        elif webapp_url.startswith("http://"):
-            buttons.append([
-                styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=webapp_url)
-            ])
-
-        buttons.append([
-            styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"),
-            styled_button("ᴄʟᴏsᴇ", style="danger", callback_data="close"),
-        ])
-
+        # Match screenshot layout: full-width OPEN INDEX on top, then HELP + CLOSE
+        buttons = [
+            [_start_index_button("ᴏᴘᴇɴ ɪɴᴅᴇx")],
+            [styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏꜱᴇ", style="danger", callback_data='close')],
+        ]
         if user_id in client.admins:
-            buttons.insert(0, [styled_button("⛩️ sᴇᴛᴛɪɴɢs ⛩️", style="danger", callback_data="settings")])
+            buttons.insert(1, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
 
         photo = client.messages.get("START_PHOTO", "")
         start_caption = client.messages.get('START', 'Welcome, {mention}').format(
@@ -563,45 +437,19 @@ async def start_command(client: Client, message: Message):
             id=message.from_user.id
         )
 
-        async def _send_start(markup):
-            if photo:
-                await client.send_photo(
-                    chat_id=message.chat.id,
-                    photo=photo,
-                    caption=start_caption,
-                    reply_markup=markup,
-                )
-            else:
-                await client.send_message(
-                    chat_id=message.chat.id,
-                    text=start_caption,
-                    reply_markup=markup,
-                )
-
-        try:
-            await _send_start(InlineKeyboardMarkup(buttons))
-        except Exception as e:
-            # BUTTON_URL_INVALID — drop URL/web_app buttons and retry so /start never crashes
-            if "BUTTON_URL" in str(e).upper() or "URL_INVALID" in str(e).upper():
-                safe_buttons = [
-                    row for row in buttons
-                    if all(
-                        getattr(btn, "url", None) is None
-                        and getattr(btn, "web_app", None) is None
-                        for btn in row
-                    )
-                ]
-                if not safe_buttons:
-                    safe_buttons = [[
-                        styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"),
-                        styled_button("ᴄʟᴏsᴇ", style="danger", callback_data="close"),
-                    ]]
-                try:
-                    await _send_start(InlineKeyboardMarkup(safe_buttons))
-                except Exception:
-                    await client.send_message(chat_id=message.chat.id, text=start_caption)
-            else:
-                raise
+        if photo:
+            await client.send_photo(
+                chat_id=message.chat.id,
+                photo=photo,
+                caption=start_caption,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        else:
+            await client.send_message(
+                chat_id=message.chat.id,
+                text=start_caption,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
         return
 
 #===============================================================#

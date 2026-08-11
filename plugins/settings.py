@@ -2,7 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from helper.pyro_listen import ListenerTimeout
 from config import OWNER_ID
-from helper.helper_func import styled_button, safe_edit_text, safe_edit_caption, safe_edit_reply_markup
+from helper.helper_func import styled_button, safe_edit_text
 import humanize
 
 #===============================================================#
@@ -18,12 +18,14 @@ async def settings(client, query):
 ›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}`
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('ʟɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ', style="primary", callback_data='link_share'), styled_button('ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='fsub')],
-        [styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='db_channels'), styled_button('ᴄᴀᴘᴛɪᴏɴ', style="primary", callback_data='custom_caption')],
+        [styled_button('ᴅʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='db_channels'), styled_button('ꜰsᴜʙ ᴄʜᴀɴɴᴇʟs', style="primary", callback_data='fsub')],
         [styled_button('ᴀᴅᴍɪɴꜱ', style="primary", callback_data='admins'), styled_button('ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', style="primary", callback_data='auto_del')],
         [styled_button('ʜᴏᴍᴇ', style="primary", callback_data='home'), styled_button('›› ɴᴇxᴛ', style="primary", callback_data='settings_page_2')]
     ])
     await safe_edit_text(query.message, msg, reply_markup=reply_markup)
+    return
+
+#===============================================================#
 
 @Client.on_callback_query(filters.regex("^settings_page_2$"))
 async def settings_page_2(client, query):
@@ -36,6 +38,7 @@ async def settings_page_2(client, query):
 ›› **ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ:** `{"ᴏɴ" if client.disable_btn else "ᴏꜰꜰ"}`
 """
     reply_markup = InlineKeyboardMarkup([
+        # ON/OFF only in message text — buttons are plain labels, always blue
         [
             styled_button('ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ', style="primary", callback_data='protect'),
             styled_button('ᴅɪsᴀʙʟᴇ ʙᴜᴛᴛᴏɴ', style="primary", callback_data='disable_btn'),
@@ -45,46 +48,7 @@ async def settings_page_2(client, query):
         [styled_button('‹ ᴘʀᴇᴠ', style="primary", callback_data='settings'), styled_button('ʜᴏᴍᴇ', style="primary", callback_data='home')]
     ])
     await safe_edit_text(query.message, msg, reply_markup=reply_markup)
-
-#===============================================================#
-
-@Client.on_callback_query(filters.regex("^custom_caption$"))
-async def custom_caption(client, query):
-    if query.from_user.id not in client.admins:
-        return await query.answer("✗ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs!", show_alert=True)
-
-    current = client.messages.get("CAPTION", "")
-    current_display = current if current else "ɴᴏᴛ sᴇᴛ (ᴏʀɪɢɪɴᴀʟ ᴄᴀᴘᴛɪᴏɴ ᴡɪʟʟ ʙᴇ ᴜsᴇᴅ)"
-    msg = f"""<blockquote>✦ ᴄᴜsᴛᴏᴍ ꜰɪʟᴇ ᴄᴀᴘᴛɪᴏɴ</blockquote>
-›› **ᴄᴜʀʀᴇɴᴛ ᴄᴀᴘᴛɪᴏɴ:**
-<pre>{current_display}</pre>
-
-Send your new caption in the next 60 seconds.
-
-Use <code>{{previouscaption}}</code> where you want the original file caption/name to appear.
-Send <code>/remove</code> to disable the custom caption."""
-    await query.answer()
-    await safe_edit_text(query.message, 
-        msg,
-        reply_markup=InlineKeyboardMarkup([[styled_button("‹ ʙᴀᴄᴋ", style="primary", callback_data="settings_page_2")]])
-    )
-    try:
-        res = await client.listen(user_id=query.from_user.id, filters=filters.text, timeout=60)
-        value = res.text.strip()
-        if value.lower() == "/remove":
-            value = ""
-        await client.mongodb.update_message_setting("CAPTION", value)
-        client.messages["CAPTION"] = value
-        status = "disabled" if not value else "updated"
-        await safe_edit_text(query.message, 
-            f"<b>✓ ᴄᴜsᴛᴏᴍ ᴄᴀᴘᴛɪᴏɴ {status} sᴜᴄᴄᴇssғᴜʟʟʏ.</b>",
-            reply_markup=InlineKeyboardMarkup([[styled_button("‹ ʙᴀᴄᴋ", style="primary", callback_data="settings_page_2")]])
-        )
-    except ListenerTimeout:
-        await safe_edit_text(query.message, 
-            "<b>⌛ ᴛɪᴍᴇᴏᴜᴛ. ɴᴏ ᴄʜᴀɴɢᴇs ᴡᴇʀᴇ ᴍᴀᴅᴇ.</b>",
-            reply_markup=InlineKeyboardMarkup([[styled_button("‹ ʙᴀᴄᴋ", style="primary", callback_data="settings_page_2")]])
-        )
+    return
 
 #===============================================================#
 
@@ -555,7 +519,7 @@ __Enter new link of start image or send the photo, or wait for 60 second timeout
     await safe_edit_text(query.message, msg)
     try:
         res = await client.listen(user_id=query.from_user.id, filters=(filters.text|filters.photo), timeout=60)
-        if res.text and res.text.startswith(('http://', 'https://')):
+        if res.text and res.text.startswith('https://' or 'http://'):
             client.messages['START_PHOTO'] = res.text
             return await safe_edit_text(query.message, "**This link has been set at the place of start photo!!**", reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='photos')]]))
         elif res.photo:
@@ -574,13 +538,13 @@ async def add_fsub_photo(client, query):
     msg = f"""<blockquote>**Change Force Sub Image:**</blockquote>
 **Current Force Sub Image:** `{client.messages.get('FSUB_PHOTO', '')}`
 
-__Enter new link of fsub image or send the photo, or wait for 60 second timeout to be completed!__
+__Enter new link of fsub image or send the photo, or wait for 60 second timeout to be comoleted!__
 """
     await query.answer()
     await safe_edit_text(query.message, msg)
     try:
         res = await client.listen(user_id=query.from_user.id, filters=(filters.text|filters.photo), timeout=60)
-        if res.text and res.text.startswith(('http://', 'https://')):
+        if res.text and res.text.startswith('https://' or 'http://'):
             client.messages['FSUB_PHOTO'] = res.text
             return await safe_edit_text(query.message, "**This link has been set at the place of fsub photo!!**", reply_markup=InlineKeyboardMarkup([[styled_button('◂ ʙᴀᴄᴋ', style="primary", callback_data='photos')]]))
         elif res.photo:

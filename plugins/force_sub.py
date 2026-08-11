@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
-from helper.helper_func import is_bot_admin, styled_button, safe_edit_text, safe_edit_caption, safe_edit_reply_markup
+from helper.helper_func import is_bot_admin, styled_button, safe_edit_text
 
 #===============================================================#
 
