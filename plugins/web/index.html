@@ -199,19 +199,25 @@
           <button type="button" class="pill-tab" data-link-type="ongoing" id="link-tab-ongoing">ONGOING</button>
         </div>
 
-        <!-- Finished: independent All seasons + Solo links (both can be set) -->
+        <!-- Finished: All seasons | Solo underline tabs — independent links (like Ongoing / Finished) -->
         <div id="link-finished-fields">
-          <div class="form-field" id="link-group-field">
-            <label class="form-label" for="link-input" style="display:block;margin-bottom:6px;font-size:12px;opacity:.75">All seasons (franchise)</label>
-            <input id="link-input" class="edit-link-input link-input-full" type="text"
-                   placeholder="https://t.me/... (shared by whole franchise)" autocomplete="off" />
-            <p class="form-hint" style="margin-top:6px">Shared join link for every season in the franchise on Finished.</p>
+          <div class="link-mode-underline" id="link-mode-underline" role="tablist" style="margin-bottom:14px">
+            <button type="button" class="link-mode-tab active" id="link-mode-group" data-mode="group">All seasons</button>
+            <button type="button" class="link-mode-tab" id="link-mode-solo" data-mode="solo">Solo</button>
           </div>
-          <div class="form-field" id="link-solo-field" style="margin-top:14px">
-            <label class="form-label" for="solo-link-input" style="display:block;margin-bottom:6px;font-size:12px;opacity:.75">Solo (this title only)</label>
+          <div class="form-field" id="link-group-field">
+            <input id="link-input" class="edit-link-input link-input-full" type="text"
+                   placeholder="https://t.me/... (whole franchise)" autocomplete="off" />
+            <p class="form-hint" id="link-finished-hint" style="margin-top:10px">
+              All seasons: whole franchise shares this join link on Finished.
+            </p>
+          </div>
+          <div class="form-field hidden" id="link-solo-field">
             <input id="solo-link-input" class="edit-link-input link-input-full" type="text"
-                   placeholder="https://t.me/... (only this title)" autocomplete="off" />
-            <p class="form-hint" style="margin-top:6px">Optional separate link — this title gets its own card with this URL. Does not replace All seasons.</p>
+                   placeholder="https://t.me/... (this title only)" autocomplete="off" />
+            <p class="form-hint" style="margin-top:10px">
+              Solo: only this title gets its own card and this join link on Finished.
+            </p>
           </div>
         </div>
 

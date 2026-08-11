@@ -1249,18 +1249,40 @@
     if (tabOng) tabOng.classList.toggle("active", linkSheetType === "ongoing");
     if (finishedFields) finishedFields.classList.toggle("hidden", linkSheetType !== "finished");
     if (fieldOng) fieldOng.classList.toggle("hidden", linkSheetType !== "ongoing");
-    const focusEl = linkSheetType === "ongoing" ? el("ongoing-link-input") : linkInput;
+    let focusEl;
+    if (linkSheetType === "ongoing") {
+      focusEl = el("ongoing-link-input");
+    } else {
+      const soloActive = el("link-mode-solo") && el("link-mode-solo").classList.contains("active");
+      focusEl = soloActive ? el("solo-link-input") : linkInput;
+    }
+    if (focusEl) setTimeout(() => focusEl.focus(), 30);
+  }
+
+  function setFinishedMode(mode) {
+    // Underline tabs: All seasons | Solo — each keeps its own independent link.
+    const isSolo = mode === "solo";
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    const groupField = el("link-group-field");
+    const soloField = el("link-solo-field");
+    if (btnGroup) btnGroup.classList.toggle("active", !isSolo);
+    if (btnSolo) btnSolo.classList.toggle("active", isSolo);
+    if (groupField) groupField.classList.toggle("hidden", isSolo);
+    if (soloField) soloField.classList.toggle("hidden", !isSolo);
+    const focusEl = isSolo ? el("solo-link-input") : linkInput;
     if (focusEl) setTimeout(() => focusEl.focus(), 30);
   }
 
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
-    // All seasons (franchise) and Solo are independent fields — both can be set.
+    // All seasons + Solo are independent — load both, show one via underline tabs.
     if (linkInput) linkInput.value = anime.join_link || "";
     const soloInput = el("solo-link-input");
     if (soloInput) soloInput.value = anime.solo_link || "";
     const ongoingInput = el("ongoing-link-input");
     if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
+    setFinishedMode(anime.solo_link ? "solo" : "group");
     const st = (anime.status && String(anime.status).toUpperCase()) || "";
     const preferOngoing = (typeof libraryMode !== "undefined" && libraryMode === "ongoing")
       || st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS";
@@ -1273,6 +1295,10 @@
     const tabOng = el("link-tab-ongoing");
     if (tabFin) tabFin.addEventListener("click", () => setLinkSheetType("finished"));
     if (tabOng) tabOng.addEventListener("click", () => setLinkSheetType("ongoing"));
+    const btnGroup = el("link-mode-group");
+    const btnSolo = el("link-mode-solo");
+    if (btnGroup) btnGroup.addEventListener("click", () => setFinishedMode("group"));
+    if (btnSolo) btnSolo.addEventListener("click", () => setFinishedMode("solo"));
   })();
 
   function closeLinkSheet() {
