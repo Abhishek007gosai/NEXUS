@@ -296,9 +296,9 @@ async def home(client: Client, query: CallbackQuery):
         buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", web_app=WebAppInfo(url=webapp_url))])
     elif webapp_url.startswith("http://"):
         buttons.append([styled_button("ᴏᴘᴇɴ ɪɴᴅᴇx", style="success", url=webapp_url)])
-    buttons.append([styled_button("Help", style="danger", callback_data="about"), styled_button("Close", style="danger", callback_data="close")])
+    buttons.append([styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data="close")])
     if query.from_user.id in client.admins:
-        buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
+        buttons.insert(0, [styled_button("⛩️ sᴇᴛᴛɪɴɢs ⛩️", style="danger", callback_data="settings")])
     text = client.messages.get('START', 'No Start Message').format(
         first=query.from_user.first_name,
         last=query.from_user.last_name,
@@ -314,7 +314,7 @@ async def about(client: Client, query: CallbackQuery):
         await query.answer()
     except Exception:
         pass
-    buttons = [[styled_button("Back", style="danger", callback_data="home"), styled_button("Close", style="danger", callback_data="close")]]
+    buttons = [[styled_button("ʙᴀᴄᴋ", style="danger", callback_data="home"), styled_button("ᴄʟᴏsᴇ", style="danger", callback_data="close")]]
     text = client.messages.get('ABOUT', 'No Start Message').format(
         owner_id=client.owner,
         bot_username=client.username,

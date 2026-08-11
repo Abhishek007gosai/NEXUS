@@ -552,7 +552,7 @@ async def start_command(client: Client, message: Message):
         ])
 
         if user_id in client.admins:
-            buttons.insert(0, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
+            buttons.insert(0, [styled_button("⛩️ sᴇᴛᴛɪɴɢs ⛩️", style="danger", callback_data="settings")])
 
         photo = client.messages.get("START_PHOTO", "")
         start_caption = client.messages.get('START', 'Welcome, {mention}').format(
