@@ -601,12 +601,16 @@
   }
 
   function isOngoing(a) {
-    // Ongoing tab: only titles that are actually airing right now (or on hiatus).
-    // NOT_YET_RELEASED (announced sequels, TBA seasons) must NOT appear here —
-    // those belong on Finished / Discover once posted, not under the weekly schedule.
-    // Finished series must never appear here, even if they have links or an old airing_day.
+    // Ongoing tab: currently airing titles.
+    // - RELEASING / HIATUS from AniList status
+    // - OR admin set an Ongoing join link (status in DB is often stale/wrong)
+    // Never include pure NOT_YET_RELEASED announcements without an ongoing link.
     const st = (a.status || "").toUpperCase();
-    return st === "RELEASING" || st === "HIATUS";
+    if (st === "RELEASING" || st === "HIATUS") return true;
+    if (st === "NOT_YET_RELEASED") return false;
+    // Blank / outdated FINISHED etc.: trust explicit ongoing_link from admin
+    if (a.ongoing_link) return true;
+    return false;
   }
 
   // Title-based schedule fallback when AniList has no broadcast day
@@ -682,14 +686,10 @@
   }
 
   function filteredOngoing() {
+    // Flat list of currently airing titles — no weekday grouping or day filter.
     let list = ongoingList();
-    // Weekly schedule only — titles without a known airing day stay hidden
-    // until AniList/backfill assigns a day (no TBA section).
-    list = list.filter((a) => !!effectiveAiringDay(a));
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
-    } else if (activeDay) {
-      list = list.filter((a) => effectiveAiringDay(a) === activeDay);
     }
     return [...list].sort((a, b) => a.title.localeCompare(b.title));
   }
@@ -768,10 +768,13 @@
     keys.forEach((key) => {
       const wrap = document.createElement("div");
       wrap.className = "letter-group";
-      const header = document.createElement("div");
-      header.className = "letter-group-header";
-      header.innerHTML = `<span class="letter-group-label">${labelFn(key)}</span><span class="letter-group-line"></span>`;
-      wrap.appendChild(header);
+      const label = (labelFn(key) || "").trim();
+      if (label) {
+        const header = document.createElement("div");
+        header.className = "letter-group-header";
+        header.innerHTML = `<span class="letter-group-label">${label}</span><span class="letter-group-line"></span>`;
+        wrap.appendChild(header);
+      }
       const grid = document.createElement("div");
       grid.className = "available-grid";
       groups[key].forEach((item) => {
@@ -801,55 +804,46 @@
   let _airingDaysRefreshDone = false;
 
   async function autoRefreshAiringDays() {
-    // Silent one-shot: fill missing airing_day and correct stale status from
-    // AniList so Ongoing day columns work. Runs at most once per page load.
+    // Silent one-shot: pull fresh AniList status + airing_day so Ongoing is
+    // accurate. Many library rows still say FINISHED after a new season started.
     if (_airingDaysRefreshDone) return;
-    // Also refresh when status is blank/wrong so titles stuck as FINISHED
-    // (or with no status) can reappear under Ongoing after AniList correction.
-    const needsFix = available.filter((a) => {
-      if (!a.source_id) return false;
-      const st = (a.status || "").toUpperCase();
-      if (!a.airing_day && (st === "RELEASING" || st === "HIATUS" || !st)) return true;
-      if (!st) return true;
-      return false;
-    });
-    if (!needsFix.length) {
-      _airingDaysRefreshDone = true;
-      return;
-    }
     _airingDaysRefreshDone = true;
     try {
+      // force:true so stale FINISHED / blank status rows get corrected too
       const result = await api("/api/admin/refresh-airing-days", {
         method: "POST",
-        body: JSON.stringify({ force: false }),
+        body: JSON.stringify({ force: true }),
       });
-      if (result && ((result.updated || 0) > 0 || (result.status_updated || 0) > 0)) {
+      if (result && ((result.updated || 0) > 0 || (result.status_updated || 0) > 0 || (result.failed || 0) >= 0)) {
         await loadAvailable();
         if (libraryMode === "ongoing") renderLibraryTab();
       }
     } catch (err) {
-      // Non-fatal — titles stay under TBA; allow retry next open
       _airingDaysRefreshDone = false;
     }
   }
 
   function renderLibraryTab() {
     if (libraryMode === "ongoing") {
-      renderDayBar();
+      // Hide day chips — Ongoing is a flat list of airing titles
+      if (dayBar) {
+        dayBar.innerHTML = "";
+        dayBar.classList.add("hidden");
+      }
       const list = filteredOngoing();
       if (!ongoingGroups) return;
-      // ALL: group by weekday only (SUN…SAT). No TBA section.
-      // Single day chip: only that day's titles under one section.
+      // Single flat grid (A–Z by title), no weekday sections
       renderGroupedGrid(
         ongoingGroups,
         ongoingEmpty,
         list,
-        (a) => effectiveAiringDay(a),
-        (k) => (WEEKDAY_LABELS[k] || k || "").toUpperCase()
+        () => "all",
+        () => ""
       );
-      // Kick off silent AniList backfill after first paint
+      // Still backfill airing_day/status in the background for accuracy
       autoRefreshAiringDays();
     } else {
+      if (dayBar) dayBar.classList.add("hidden");
       renderLetterBar();
       const list = filteredFinished();
       renderGroupedGrid(
