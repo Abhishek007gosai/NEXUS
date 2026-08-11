@@ -601,16 +601,18 @@
   }
 
   function isOngoing(a) {
-    // Ongoing tab: currently airing, not-yet-released, or on hiatus.
+    // Ongoing tab: only titles that are actually airing right now (or on hiatus).
+    // NOT_YET_RELEASED (announced sequels, TBA seasons) must NOT appear here —
+    // those belong on Finished / Discover once posted, not under the weekly schedule.
     // Finished series must never appear here, even if they have links or an old airing_day.
-    // HIATUS is treated as ongoing so mid-season pauses still show under Ongoing.
     const st = (a.status || "").toUpperCase();
-    return st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS";
+    return st === "RELEASING" || st === "HIATUS";
   }
 
   // Title-based schedule fallback when AniList has no broadcast day
   const TITLE_AIRING_DAY = [
     { day: "monday", re: /grand\s*blue/i },
+    { day: "tuesday", re: /clevatess/i },
     { day: "thursday", re: /smoking\s*behind\s*the\s*supermarket/i },
     { day: "friday", re: /reincarnated\s*as\s*a\s*slime|tensei\s*shitara\s*slime/i },
     { day: "saturday", re: /bleach.*thousand|thousand[-\s]?year\s*blood/i },
@@ -618,7 +620,6 @@
     { day: "saturday", re: /pok[eé]mon/i },
     { day: "sunday", re: /mushoku\s*tensei|jobless\s*reincarnation/i },
     { day: "sunday", re: /\bone\s*piece\b/i },
-    { day: "tuesday", re: /clevatess/i },
   ];
 
   function effectiveAiringDay(a) {
@@ -655,10 +656,10 @@
   }
 
   function ongoingList() {
-    // Ongoing column: currently airing / not-yet-released library titles.
-    // No franchise collapse — each airing season is its own card.
-    // When the season ends (status → FINISHED) it drops out of this list
-    // automatically and only the Finished join link remains on Finished.
+    // Ongoing column: every library title that is actually airing right now
+    // (RELEASING / HIATUS). Announced / NOT_YET_RELEASED seasons are excluded
+    // by isOngoing. No franchise collapse — each airing season is its own card.
+    // When the season ends (status → FINISHED) it drops out automatically.
     return available.filter((a) => isOngoing(a));
   }
 
@@ -682,12 +683,12 @@
 
   function filteredOngoing() {
     let list = ongoingList();
-    // Keep titles without a known airing day under a TBA group so they still
-    // appear on ALL (previously they were silently dropped).
+    // Weekly schedule only — titles without a known airing day stay hidden
+    // until AniList/backfill assigns a day (no TBA section).
+    list = list.filter((a) => !!effectiveAiringDay(a));
     if (libraryQuery.trim()) {
       list = list.filter((a) => matchesLibraryQuery(a.title));
     } else if (activeDay) {
-      // Day chips only show titles that actually map to that weekday
       list = list.filter((a) => effectiveAiringDay(a) === activeDay);
     }
     return [...list].sort((a, b) => a.title.localeCompare(b.title));
@@ -808,7 +809,7 @@
     const needsFix = available.filter((a) => {
       if (!a.source_id) return false;
       const st = (a.status || "").toUpperCase();
-      if (!a.airing_day && (st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS" || !st)) return true;
+      if (!a.airing_day && (st === "RELEASING" || st === "HIATUS" || !st)) return true;
       if (!st) return true;
       return false;
     });
@@ -837,14 +838,14 @@
       renderDayBar();
       const list = filteredOngoing();
       if (!ongoingGroups) return;
-      // ALL: group by weekday (SUN…SAT) plus TBA for titles with no known day.
+      // ALL: group by weekday only (SUN…SAT). No TBA section.
       // Single day chip: only that day's titles under one section.
       renderGroupedGrid(
         ongoingGroups,
         ongoingEmpty,
         list,
-        (a) => effectiveAiringDay(a) || "tba",
-        (k) => (k === "tba" ? "TBA" : (WEEKDAY_LABELS[k] || k || "").toUpperCase())
+        (a) => effectiveAiringDay(a),
+        (k) => (WEEKDAY_LABELS[k] || k || "").toUpperCase()
       );
       // Kick off silent AniList backfill after first paint
       autoRefreshAiringDays();
