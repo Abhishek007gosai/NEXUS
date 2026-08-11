@@ -1602,27 +1602,17 @@
   }
 
   function renderRecentSearches() {
-    recentSearchList.innerHTML = "";
-    const items = getLocalRecentSearches();
-    recentSearchSection.classList.toggle("hidden", items.length === 0);
-    items.forEach((query) => {
-      const row = document.createElement("div");
-      row.className = "popular-search-row";
-      row.innerHTML = `<span class="popular-search-icon">\u{1F551}</span>
-        <span class="popular-search-text">${escapeHtml(query)}</span>
-        <span class="popular-search-arrow">\u2197</span>`;
-      row.addEventListener("click", () => {
-        searchViewInput.value = query;
-        runLibrarySearch(query);
-      });
-      recentSearchList.appendChild(row);
-    });
+    // Recent Searches removed from Search page UI
+    if (!recentSearchSection || !recentSearchList) return;
+    recentSearchSection.classList.add("hidden");
   }
 
-  recentSearchClear.addEventListener("click", () => {
-    clearLocalRecentSearches();
-    renderRecentSearches();
-  });
+  if (recentSearchClear) {
+    recentSearchClear.addEventListener("click", () => {
+      clearLocalRecentSearches();
+      renderRecentSearches();
+    });
+  }
 
   popularSearchRefresh.addEventListener("click", async () => {
     popularSearchRefresh.disabled = true;
@@ -1872,7 +1862,8 @@
     genreViewName = genre;
     genrePage = 1;
     genreHasNext = false;
-    genreType = "ANIME";
+    // Yaoi is primarily manga/manhwa on AniList — default to MANGA so results appear
+    genreType = (genre && genre.toLowerCase() === "yaoi") ? "MANGA" : "ANIME";
     genreViewTitle.textContent = genre;
     document.querySelectorAll("[data-genre-type]").forEach((b) => {
       b.classList.toggle("active", b.dataset.genreType === genreType);
