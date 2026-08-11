@@ -766,7 +766,6 @@
     noteEmpty(allAiringManga, "No manga loaded");
     noteEmpty(allPopularManga, "No manga loaded");
     // Fill incomplete last row (3-col grid) by pulling one extra page if needed
-    await fillPopularRow("manga");
 
     // Wave 2: hentai (BL / gay filtered on server)
     const [ht, ha, hp] = await Promise.all([
@@ -788,43 +787,8 @@
     noteEmpty(allTrendingHentai, "Hentai feed unavailable");
     noteEmpty(allAiringHentai, "Hentai feed unavailable");
     noteEmpty(allPopularHentai, "Hentai feed unavailable");
-    await fillPopularRow("hentai");
   }
 
-  // Keep fetching until popular grids end on a full 3-column row (max 3 extra pages)
-  async function fillPopularRow(kind) {
-    const cols = 3;
-    const maxExtra = 3;
-    for (let i = 0; i < maxExtra; i++) {
-      if (kind === "manga") {
-        if (!mPopularHasNext || mPopular.length % cols === 0) return;
-        try {
-          const data = await safeApi(`/api/catalog/manga/popular?page=${mPopularPage + 1}`);
-          const extra = data.results || [];
-          if (!extra.length) { mPopularHasNext = false; return; }
-          mPopularPage += 1;
-          mPopular = mPopular.concat(extra);
-          mPopularHasNext = !!data.has_next;
-          fillGrid(allPopularManga, mPopular);
-          if (allPopularMangaMore) allPopularMangaMore.classList.toggle("hidden", !mPopularHasNext);
-        } catch (err) { return; }
-      } else if (kind === "hentai") {
-        if (!hPopularHasNext || hPopular.length % cols === 0) return;
-        try {
-          const data = await safeApi(`/api/catalog/most-popular?page=${hPopularPage + 1}`);
-          const extra = data.results || [];
-          if (!extra.length) { hPopularHasNext = false; return; }
-          hPopularPage += 1;
-          hPopular = hPopular.concat(extra);
-          hPopularHasNext = !!data.has_next;
-          fillGrid(allPopularHentai, hPopular);
-          if (allPopularHentaiMore) allPopularHentaiMore.classList.toggle("hidden", !hPopularHasNext);
-        } catch (err) { return; }
-      } else {
-        return;
-      }
-    }
-  }
 
   // ---------------------------------------------------------------------
   // HANIME / HMANHWA A–Z libraries (posted titles with join links)
