@@ -265,8 +265,17 @@ def notify_new_report(title: str, reason: str, details: str, reporter_name: str)
     if not LOG_CHANNEL_ID:
         print("[request-log] LOG_CHANNEL_ID not set — report not posted")
         return
+    bot = _bot_username()
+    brand = (BRAND_NAME or "").strip()
+    if bot:
+        bot_line = f"Bot: @{bot}"
+    elif brand:
+        bot_line = f"Bot: {brand}"
+    else:
+        bot_line = "Bot: (unknown)"
     text = (
         "🚨 New Report\n"
+        f"{bot_line}\n"
         f"Anime: {title}\n"
         f"Reason: {reason}\n"
         + (f"Details: {details}\n" if details else "")
@@ -292,8 +301,18 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
     except (TypeError, ValueError):
         chat_id = str(LOG_CHANNEL_ID).strip()
 
+    bot = _bot_username()
+    brand = (BRAND_NAME or "").strip()
+    if bot:
+        bot_line = f"Bot: @{bot}"
+    elif brand:
+        bot_line = f"Bot: {brand}"
+    else:
+        bot_line = "Bot: (unknown)"
+
     text = (
         f"📝 New Request\n"
+        f"{bot_line}\n"
         f"Anime: {title}\n"
         f"By: {requester_name}\n"
         f"ID: {request_id}"
