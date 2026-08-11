@@ -3,39 +3,24 @@ AniList adapter — public GraphQL API, no API key required.
 https://anilist.gitbook.io/anilist-apiv2-docs/
 """
 
+import json
+import os
+import threading
 import time
+from pathlib import Path
 
 import requests
 
-from config import ANILIST_ENDPOINT, CATALOG_CACHE_TTL
+from config import ANILIST_ENDPOINT, ANILIST_PROXY, CATALOG_CACHE_TTL
 from plugins.base import AnimeSource
 
-
+# Persist catalog snapshots so cold starts (Koyeb sleep/restart) still serve
+# Home instantly even before a live AniList round-trip finishes.
+_DISK_CACHE_DIR = Path(os.getenv("CATALOG_CACHE_DIR", "/tmp/nexus_catalog_cache"))
 
 SEARCH_QUERY = """
 query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 50) {
-    pageInfo { hasNextPage }
-    media(search: $search, type: ANIME, isAdult: true, sort: SEARCH_MATCH) {
-      id
-      title { romaji english native }
-      startDate { year }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      format
-      episodes
-      isAdult
-    }
-  }
-}
-"""
-
-# Broader anime search (no isAdult filter) — used as a fallback so titles
-# mis-tagged on AniList still surface; we keep only adult / Hentai hits.
-SEARCH_ANIME_BROAD_QUERY = """
-query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 50) {
+  Page(page: $page, perPage: 25) {
     pageInfo { hasNextPage }
     media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
       id
@@ -46,17 +31,54 @@ query ($search: String, $page: Int) {
       genres
       format
       episodes
-      isAdult
+      status
     }
   }
 }
 """
 
+
+def _airing_day_from_media(m: dict) -> str | None:
+    """Map AniList broadcast / next airing timestamp to sunday…saturday.
+
+    Prefer the explicit broadcast.day (already in local schedule language).
+    Fallback uses nextAiringEpisode in Asia/Tokyo so late-night JST slots
+    don't shift to the previous UTC day.
+    """
+    day_map = {
+        "sundays": "sunday", "mondays": "monday", "tuesdays": "tuesday",
+        "wednesdays": "wednesday", "thursdays": "thursday",
+        "fridays": "friday", "saturdays": "saturday",
+        "sunday": "sunday", "monday": "monday", "tuesday": "tuesday",
+        "wednesday": "wednesday", "thursday": "thursday",
+        "friday": "friday", "saturday": "saturday",
+    }
+    b = m.get("broadcast") or {}
+    raw = (b.get("day") or "").strip().lower()
+    if raw in day_map:
+        return day_map[raw]
+    # Fallback: next episode airing time → weekday in Japan (JST)
+    nae = m.get("nextAiringEpisode") or {}
+    ts = nae.get("airingAt")
+    if ts:
+        try:
+            import datetime as _dt
+            # Prefer zoneinfo; fall back to fixed +09:00 if unavailable
+            try:
+                from zoneinfo import ZoneInfo
+                d = _dt.datetime.fromtimestamp(int(ts), tz=ZoneInfo("Asia/Tokyo"))
+            except Exception:
+                d = _dt.datetime.utcfromtimestamp(int(ts)) + _dt.timedelta(hours=9)
+            return ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][d.weekday()]
+        except Exception:
+            pass
+    return None
+
+
 DETAILS_QUERY = """
 query ($id: Int) {
-  Media(id: $id) {
+  Media(id: $id, type: ANIME) {
     id
-    type
     title { romaji english }
     startDate { year month day }
     coverImage { large extraLarge }
@@ -66,10 +88,10 @@ query ($id: Int) {
     averageScore
     status
     episodes
-    chapters
     format
     duration
-    countryOfOrigin
+    broadcast { day time timezone }
+    nextAiringEpisode { airingAt episode }
     relations {
       edges {
         relationType
@@ -80,19 +102,16 @@ query ($id: Int) {
 }
 """
 
-# Adult discovery — used by Trending / Top Airing / Popular
-# BL / gay / boys love filtered out after fetch (uses full genres + tags)
 DISCOVER_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 10) {
+  Page(page: $page, perPage: 24) {
     pageInfo { hasNextPage }
-    media(type: ANIME, isAdult: true, sort: $sort) {
+    media(type: ANIME, sort: $sort) {
       id
       title { romaji english }
       coverImage { extraLarge large }
       averageScore
       genres
-      tags { name }
       episodes
       description(asHtml: false)
     }
@@ -100,17 +119,19 @@ query ($sort: [MediaSort], $page: Int) {
 }
 """
 
+# Same shape as DISCOVER_QUERY, but restricted to anime that is actually
+# still airing right now — used for the "Top Airing" feed so finished
+# shows (e.g. Death Note) don't show up just because they're popular.
 DISCOVER_AIRING_QUERY = """
 query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 10) {
+  Page(page: $page, perPage: 24) {
     pageInfo { hasNextPage }
-    media(type: ANIME, isAdult: true, sort: $sort, status: RELEASING) {
+    media(type: ANIME, sort: $sort, status: RELEASING) {
       id
       title { romaji english }
       coverImage { extraLarge large }
       averageScore
       genres
-      tags { name }
       episodes
       description(asHtml: false)
     }
@@ -119,228 +140,14 @@ query ($sort: [MediaSort], $page: Int) {
 """
 
 GENRE_QUERY = """
-query ($genre: String, $page: Int, $type: MediaType) {
-  Page(page: $page, perPage: 12) {
+query ($genre: String, $page: Int) {
+  Page(page: $page, perPage: 24) {
     pageInfo { hasNextPage }
-    media(type: $type, isAdult: true, genre: $genre, sort: POPULARITY_DESC) {
+    media(type: ANIME, genre: $genre, sort: POPULARITY_DESC) {
       id
       title { romaji english }
       coverImage { extraLarge large }
       averageScore
-      type
-    }
-  }
-}
-"""
-
-# Adult manga / manhwa / doujinshi (pornhwa). Labels in the UI stay
-# "Manga / Manhwa" — content includes ONE_SHOT (doujin) + KR manhwa + manga.
-MANGA_DISCOVER_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
-    pageInfo { hasNextPage }
-    media(
-      type: MANGA
-      isAdult: true
-      format_in: [MANGA, ONE_SHOT, NOVEL]
-      genre_not_in: ["Yaoi"]
-      sort: $sort
-    ) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      tags { name }
-      chapters
-      format
-      countryOfOrigin
-      description(asHtml: false)
-    }
-  }
-}
-"""
-
-MANHWA_DISCOVER_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
-    pageInfo { hasNextPage }
-    media(
-      type: MANGA
-      isAdult: true
-      countryOfOrigin: KR
-      format_in: [MANGA, ONE_SHOT]
-      genre_not_in: ["Yaoi"]
-      sort: $sort
-    ) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      tags { name }
-      chapters
-      format
-      countryOfOrigin
-      description(asHtml: false)
-    }
-  }
-}
-"""
-
-# Ongoing adult manga / manhwa / doujin (status RELEASING)
-MANGA_AIRING_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
-    pageInfo { hasNextPage }
-    media(
-      type: MANGA
-      isAdult: true
-      status: RELEASING
-      format_in: [MANGA, ONE_SHOT, NOVEL]
-      genre_not_in: ["Yaoi"]
-      sort: $sort
-    ) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      tags { name }
-      chapters
-      format
-      countryOfOrigin
-      description(asHtml: false)
-    }
-  }
-}
-"""
-
-MANGA_SEARCH_QUERY = """
-query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 50) {
-    pageInfo { hasNextPage }
-    media(
-      search: $search
-      type: MANGA
-      isAdult: true
-      sort: SEARCH_MATCH
-    ) {
-      id
-      title { romaji english native }
-      startDate { year }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      format
-      chapters
-      countryOfOrigin
-      isAdult
-    }
-  }
-}
-"""
-
-# Broader manga/manhwa/manhua/novel search without isAdult — filter after.
-SEARCH_MANGA_BROAD_QUERY = """
-query ($search: String, $page: Int) {
-  Page(page: $page, perPage: 50) {
-    pageInfo { hasNextPage }
-    media(
-      search: $search
-      type: MANGA
-      sort: SEARCH_MATCH
-    ) {
-      id
-      title { romaji english native }
-      startDate { year }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      format
-      chapters
-      countryOfOrigin
-      isAdult
-    }
-  }
-}
-"""
-
-# Explicit BL / Yaoi adult manga+manhwa — general adult feeds are dominated by
-# hetero hentai, so Yaoi titles rarely surface in the top page without a
-# dedicated query. Genre "Yaoi" is AniList's adult BL label.
-BL_DISCOVER_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
-    pageInfo { hasNextPage }
-    media(
-      type: MANGA
-      isAdult: true
-      genre: "Yaoi"
-      format_in: [MANGA, ONE_SHOT, NOVEL]
-      sort: $sort
-    ) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      chapters
-      format
-      countryOfOrigin
-      description(asHtml: false)
-    }
-  }
-}
-"""
-
-BL_AIRING_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
-    pageInfo { hasNextPage }
-    media(
-      type: MANGA
-      isAdult: true
-      genre: "Yaoi"
-      status: RELEASING
-      format_in: [MANGA, ONE_SHOT, NOVEL]
-      sort: $sort
-    ) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      chapters
-      format
-      countryOfOrigin
-      description(asHtml: false)
-    }
-  }
-}
-"""
-
-BL_MANHWA_QUERY = """
-query ($sort: [MediaSort], $page: Int) {
-  Page(page: $page, perPage: 12) {
-    pageInfo { hasNextPage }
-    media(
-      type: MANGA
-      isAdult: true
-      genre: "Yaoi"
-      countryOfOrigin: KR
-      format_in: [MANGA, ONE_SHOT]
-      sort: $sort
-    ) {
-      id
-      title { romaji english }
-      coverImage { extraLarge large }
-      averageScore
-      genres
-      chapters
-      format
-      countryOfOrigin
-      description(asHtml: false)
     }
   }
 }
@@ -358,70 +165,106 @@ def _best_title(title_obj: dict) -> str:
     return title_obj.get("english") or title_obj.get("romaji") or "Untitled"
 
 
-# Genres / tags that should never appear in Trending / Top Airing / Popular
-# Only gay / BL / boys love — adult hentai and regular (hetero) manhwa stay
-_BLOCKED_GENRES = {
-    "yaoi", "boys love", "boys' love", "boy's love",
-    "bl", "gay", "shounen ai", "bara",
-}
-
-_BLOCKED_TAGS = {
-    "yaoi", "boys' love", "boys love", "boy's love",
-    "shounen ai", "bara", "gay", "male on male",
-    "mlm", "bl",
-}
-
-_BLOCKED_TITLE_KW = (
-    "yaoi", "boys love", "boy's love", "boys' love",
-    " (bl)", "[bl]", " bl ", "-bl ", " bl-",
-)
-
-
-def _is_blocked_item(item: dict) -> bool:
-    """Return True if the item should be hidden (gay / BL / boys love)."""
-    # Full genre list (not the truncated display list)
-    for g in item.get("genres") or []:
-        if g and str(g).strip().lower() in _BLOCKED_GENRES:
-            return True
-    # AniList tags (stronger signal for KR BL manhwa)
-    for t in item.get("tags") or []:
-        name = t if isinstance(t, str) else (t.get("name") if isinstance(t, dict) else None)
-        if name and str(name).strip().lower() in _BLOCKED_TAGS:
-            return True
-    # Title safety net
-    title = (item.get("title") or "").lower()
-    if any(kw in title for kw in _BLOCKED_TITLE_KW):
-        return True
-    return False
-
-
-def _filter_blocked(results: list) -> list:
-    """Drop gay / BL / Yaoi / boys love items from a results list."""
-    return [r for r in results if not _is_blocked_item(r)]
-
-
 class AniListSource(AnimeSource):
     name = "anilist"
 
+    # Home feeds change slowly — keep them longer than generic search/details.
+    # Soft TTL: serve from memory without refresh.
+    # Hard TTL: still serve stale, but force a background refresh.
+    HOME_SOFT_TTL = max(CATALOG_CACHE_TTL, 1800)       # ≥ 30 min
+    HOME_HARD_TTL = max(CATALOG_CACHE_TTL * 4, 7200)    # ≥ 2 h (stale-ok)
+    DEFAULT_SOFT_TTL = CATALOG_CACHE_TTL                # 10 min default
+    DEFAULT_HARD_TTL = max(CATALOG_CACHE_TTL * 3, 1800)
+
     def __init__(self):
+        # key -> (stored_at, value)
         self._cache: dict[str, tuple[float, dict]] = {}
-        self._session = requests.Session()
-        self._session.headers.update({
-            "User-Agent": "HIndexBot/1.0 (catalog)",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        })
+        self._lock = threading.Lock()
+        # Single-flight: one in-flight refresh per key (no stampede)
+        self._inflight: dict[str, threading.Event] = {}
+        try:
+            _DISK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    def _ttls_for(self, key: str) -> tuple[float, float]:
+        """Return (soft_ttl, hard_ttl) seconds for this cache key."""
+        if key.startswith(("TRENDING", "airing:", "popular-all:")):
+            return float(self.HOME_SOFT_TTL), float(self.HOME_HARD_TTL)
+        return float(self.DEFAULT_SOFT_TTL), float(self.DEFAULT_HARD_TTL)
+
+    def _disk_path(self, key: str) -> Path:
+        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in key)
+        return _DISK_CACHE_DIR / f"{safe}.json"
+
+    def _read_mongo(self, key: str):
+        """Persistent cache in MongoDB (survives Render/Koyeb redeploys)."""
+        try:
+            from helper import database as db
+            return db.get_catalog_cache(key)
+        except Exception:
+            return None
+
+    def _write_mongo(self, key: str, value: dict):
+        try:
+            from helper import database as db
+            db.set_catalog_cache(key, value)
+        except Exception:
+            pass
+
+    def _read_disk(self, key: str):
+        # Prefer Mongo (durable) then local disk (/tmp — wiped on redeploy)
+        mongo = self._read_mongo(key)
+        if mongo:
+            return mongo
+        try:
+            p = self._disk_path(key)
+            if not p.is_file():
+                return None
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            # New format: {"t": epoch, "v": payload}
+            if isinstance(raw, dict) and "v" in raw and isinstance(raw["v"], dict):
+                return float(raw.get("t") or 0), raw["v"]
+            # Legacy format: bare payload
+            if isinstance(raw, dict) and "results" in raw:
+                return 0.0, raw
+        except Exception:
+            return None
+        return None
+
+    def _write_disk(self, key: str, value: dict):
+        # Always write Mongo first so next cold start is fast
+        self._write_mongo(key, value)
+        try:
+            p = self._disk_path(key)
+            p.write_text(
+                json.dumps({"t": time.time(), "v": value}, separators=(",", ":")),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
     def _post(self, query: str, variables: dict) -> dict:
-        # AniList rate-limits aggressively. Retry 429s; also tolerate
-        # GraphQL error payloads so one bad variable never 500s the app.
+        # AniList rate-limits aggressively. Retry 429/5xx with backoff.
+        # Optional ANILIST_PROXY routes via residential/static proxy when
+        # Koyeb datacenter IPs are blocked or throttled by Cloudflare/AniList.
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        proxies = None
+        if ANILIST_PROXY:
+            proxies = {"http": ANILIST_PROXY, "https": ANILIST_PROXY}
         last_exc = None
-        for attempt in range(3):
+        for attempt in range(4):
             try:
-                resp = self._session.post(
+                resp = requests.post(
                     ANILIST_ENDPOINT,
                     json={"query": query, "variables": variables},
-                    timeout=15,
+                    headers=headers,
+                    timeout=12,
+                    proxies=proxies,
                 )
             except requests.RequestException as e:
                 last_exc = e
@@ -432,122 +275,70 @@ class AniListSource(AnimeSource):
                     f"429 rate limited (attempt {attempt + 1})", response=resp
                 )
                 retry_after = resp.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after else 0.8 * (attempt + 1)
-                time.sleep(delay)
+                try:
+                    delay = float(retry_after) if retry_after else 2.5 * (2 ** attempt)
+                except (TypeError, ValueError):
+                    delay = 2.5 * (2 ** attempt)
+                time.sleep(min(delay, 20))
                 continue
-            if resp.status_code >= 400:
+            if resp.status_code >= 500:
                 last_exc = requests.HTTPError(
-                    f"AniList HTTP {resp.status_code}", response=resp
+                    f"{resp.status_code} server error (attempt {attempt + 1})", response=resp
                 )
-                time.sleep(0.4 * (attempt + 1))
+                time.sleep(0.6 * (attempt + 1))
                 continue
             try:
-                body = resp.json()
-            except ValueError as e:
+                resp.raise_for_status()
+                payload = resp.json()
+            except Exception as e:
                 last_exc = e
+                time.sleep(0.4 * (attempt + 1))
                 continue
-            if body.get("errors") and not body.get("data"):
-                last_exc = requests.HTTPError(
-                    f"AniList GraphQL error: {body['errors'][0].get('message', 'unknown')}"
-                )
-                break
-            data = body.get("data")
+            if payload.get("errors") and not payload.get("data"):
+                last_exc = RuntimeError(str(payload["errors"][:1]))
+                time.sleep(0.4 * (attempt + 1))
+                continue
+            data = payload.get("data")
             if data is None:
-                last_exc = requests.HTTPError("AniList returned empty data")
-                break
+                last_exc = RuntimeError("AniList returned empty data")
+                time.sleep(0.4 * (attempt + 1))
+                continue
             return data
-        raise last_exc if last_exc else requests.HTTPError("AniList request failed")
-
-    def _map_search_item(self, m: dict, media_type: str) -> dict:
-        score = m.get("averageScore")
-        item = {
-            "source": self.name,
-            "source_id": m["id"],
-            "anilist_id": m["id"],
-            "title": _best_title(m.get("title") or {}),
-            "year": (m.get("startDate") or {}).get("year"),
-            "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
-            "rating": round(score / 10, 1) if score else None,
-            "genres": (m.get("genres") or [])[:3],
-            "format": m.get("format"),
-            "media_type": media_type,
-            "isAdult": bool(m.get("isAdult")),
-        }
-        if media_type == "ANIME":
-            item["episodes"] = m.get("episodes")
-        else:
-            item["chapters"] = m.get("chapters")
-            item["countryOfOrigin"] = m.get("countryOfOrigin")
-        return item
-
-    @staticmethod
-    def _is_adult_result(m: dict) -> bool:
-        if m.get("isAdult"):
-            return True
-        genres = {str(g).strip().lower() for g in (m.get("genres") or [])}
-        # Include common adult-adjacent genres so mis-tagged pornhwa / hentai
-        # (and novels) still appear in search.
-        return bool(genres & {"hentai", "yaoi", "yuri", "ecchi"})
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("AniList request failed")
 
     def search(self, query: str, page: int = 1) -> dict:
-        """Search ALL anime on AniList (no isAdult filter).
+        """Search AniList; results are cached in memory + MongoDB catalog_cache."""
+        key = f"search:{(query or '').strip().lower()}:{int(page or 1)}"
 
-        Returns every matching anime title so search surfaces hentai,
-        regular anime, and everything else.
-        """
-        results = []
-        seen = set()
-        has_next = False
-        try:
-            data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
-            for m in data["Page"]["media"]:
-                mid = m["id"]
-                if mid in seen:
-                    continue
-                seen.add(mid)
-                results.append(self._map_search_item(m, "ANIME"))
-            has_next = data["Page"]["pageInfo"]["hasNextPage"]
-        except Exception:
-            pass
-        return {"results": results, "has_next": has_next}
+        def fetch():
+            data = self._post(SEARCH_QUERY, {"search": query, "page": page})
+            media = data["Page"]["media"]
+            results = []
+            for m in media:
+                score = m.get("averageScore")
+                titles = m.get("title") or {}
+                results.append({
+                    "source_id": m["id"],
+                    "anilist_id": m["id"],
+                    "title": _best_title(titles),
+                    "alt_title": titles.get("romaji") or titles.get("native"),
+                    "year": (m.get("startDate") or {}).get("year"),
+                    "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
+                    "rating": round(score / 10, 1) if score else None,
+                    "genres": (m.get("genres") or [])[:3],
+                    "format": m.get("format"),
+                    "episodes": m.get("episodes"),
+                    "status": m.get("status"),
+                })
+            return {"results": results, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
-    def search_all(self, query: str, page: int = 1) -> dict:
-        """Search ALL AniList anime + manga/manhwa/manhua/novels together.
-
-        No adult-only filter — every matching title is returned so the
-        search page shows pornhwa, hentai, novels, manhua, manhwa, and
-        regular titles in one list.
-        """
-        anime = {"results": [], "has_next": False}
-        manga = {"results": [], "has_next": False}
-        try:
-            anime = self.search(query, page)
-        except Exception:
-            pass
-        try:
-            manga = self.search_manga(query, page)
-        except Exception:
-            pass
-        seen = set()
-        merged = []
-        for item in (anime.get("results") or []) + (manga.get("results") or []):
-            aid = item.get("anilist_id") or item.get("source_id")
-            if aid in seen:
-                continue
-            seen.add(aid)
-            merged.append(item)
-        return {
-            "results": merged,
-            "has_next": bool(anime.get("has_next") or manga.get("has_next")),
-        }
+        return self._cached(key, fetch)
 
     def get_details(self, source_id, use_cache: bool = True) -> dict:
         if use_cache:
-            return self._cached(
-                f"details:{source_id}",
-                lambda: self._fetch_details(source_id),
-                ttl=CATALOG_CACHE_TTL,
-            )
+            return self._cached(f"details:{source_id}", lambda: self._fetch_details(source_id))
         return self._fetch_details(source_id)
 
     def _fetch_details(self, source_id) -> dict:
@@ -571,13 +362,11 @@ class AniListSource(AnimeSource):
             "PREQUEL", "SEQUEL", "SIDE_STORY", "PARENT",
             "ALTERNATIVE", "SPIN_OFF", "SUMMARY", "COMPILATION", "CONTAINS",
         }
-        media_type = m.get("type") or "ANIME"
         related_ids = []
         relations = []
         for edge in (m.get("relations") or {}).get("edges", []):
             node = edge.get("node") or {}
-            # Keep franchise links within the same media type (anime↔anime, manga↔manga)
-            if edge.get("relationType") in SAME_FRANCHISE_RELATIONS and node.get("type") == media_type:
+            if edge.get("relationType") in SAME_FRANCHISE_RELATIONS and node.get("type") == "ANIME":
                 related_ids.append(node["id"])
                 relations.append({
                     "source_id": node["id"],
@@ -589,7 +378,6 @@ class AniListSource(AnimeSource):
         return {
             "source": self.name,
             "source_id": m["id"],
-            "media_type": media_type,
             "title": main_title,
             "alt_title": alt_title,
             "year": (m.get("startDate") or {}).get("year"),
@@ -602,221 +390,176 @@ class AniListSource(AnimeSource):
             "rating": round(score / 10, 1) if score else None,
             "status": m.get("status"),
             "episodes": m.get("episodes"),
-            "chapters": m.get("chapters"),
             "format": m.get("format"),
             "duration": m.get("duration"),
-            "countryOfOrigin": m.get("countryOfOrigin"),
+            "airing_day": _airing_day_from_media(m),
             "related_ids": related_ids,
             "relations": relations,
         }
 
     # -- Extra: powers Home's Trending/Top Airing feeds (not part of the shared interface) --
 
-    def _cached(self, key: str, fetch, ttl: int | None = None):
-        """L1 memory + L2 Mongo with per-entry TTL (seconds)."""
-        key = f"al3:{key}"
-        ttl = int(ttl if ttl is not None else CATALOG_CACHE_TTL)
-        now = time.time()
-        cached = self._cache.get(key)
-        # tuple: (stored_at, value, entry_ttl)
-        if cached and now - cached[0] < (cached[2] if len(cached) > 2 else ttl):
-            return cached[1]
-        try:
-            from helper import database as db
-            mongo_hit = db.cache_get(key)
-            if mongo_hit is not None:
-                self._cache[key] = (now, mongo_hit, ttl)
-                return mongo_hit
-        except Exception:
-            pass
-        value = fetch()
-        self._cache[key] = (now, value, ttl)
-        try:
-            from helper import database as db
-            db.cache_set(key, value, ttl_seconds=ttl)
-        except Exception:
-            pass
-        return value
+    def _store(self, key: str, value: dict):
+        if not value:
+            return
+        with self._lock:
+            self._cache[key] = (time.time(), value)
+        if value.get("results") is not None or value.get("title") is not None:
+            self._write_disk(key, value)
 
-    def _discover(self, sort: str, page: int = 1, query: str = DISCOVER_QUERY, cache_prefix: str = "", ttl: int | None = None) -> dict:
+    def _cached(self, key: str, fetch):
+        """Optimized catalog cache:
+
+        1. Fresh memory (age < soft TTL)  → return immediately
+        2. Soft-stale memory              → return + single-flight bg refresh
+        3. Disk snapshot                  → hydrate memory, return + bg refresh
+        4. Cold                           → blocking fetch, then store
+
+        Home keys use longer TTLs so Koyeb restarts / rate limits rarely
+        force users to wait on live AniList.
+        """
+        soft_ttl, hard_ttl = self._ttls_for(key)
+        now = time.time()
+
+        with self._lock:
+            cached = self._cache.get(key)
+        if cached:
+            age = now - cached[0]
+            if age < soft_ttl:
+                return cached[1]
+            # Soft-stale or hard-stale: still serve, refresh in background
+            if cached[1]:
+                self._bg_refresh(key, fetch)
+                return cached[1]
+
+        # Cold memory → try disk (survives process restart)
+        disk = self._read_disk(key)
+        if disk:
+            disk_t, disk_v = disk
+            if disk_v:
+                with self._lock:
+                    # Keep original disk timestamp so soft/hard logic stays honest
+                    self._cache[key] = (disk_t or (now - soft_ttl - 1), disk_v)
+                age = now - (disk_t or 0)
+                if age >= soft_ttl:
+                    self._bg_refresh(key, fetch)
+                return disk_v
+
+        # True cold start — block on live AniList (single-flight)
+        return self._blocking_fetch(key, fetch)
+
+    def _blocking_fetch(self, key: str, fetch):
+        """Ensure only one thread hits AniList for a cold key."""
+        with self._lock:
+            ev = self._inflight.get(key)
+            if ev is None:
+                ev = threading.Event()
+                self._inflight[key] = ev
+                leader = True
+            else:
+                leader = False
+
+        if not leader:
+            # Wait briefly for the leader; fall through to own fetch if timeout
+            ev.wait(timeout=15)
+            with self._lock:
+                cached = self._cache.get(key)
+            if cached and cached[1]:
+                return cached[1]
+            # Leader failed — try ourselves
+            value = fetch()
+            self._store(key, value)
+            return value
+
+        try:
+            value = fetch()
+            self._store(key, value)
+            return value
+        finally:
+            with self._lock:
+                self._inflight.pop(key, None)
+            ev.set()
+
+    def _bg_refresh(self, key: str, fetch):
+        """Single-flight background refresh — skips if already in-flight."""
+        with self._lock:
+            if key in self._inflight:
+                return
+            ev = threading.Event()
+            self._inflight[key] = ev
+
+        def _run():
+            try:
+                value = fetch()
+                if value:
+                    self._store(key, value)
+            except Exception:
+                pass
+            finally:
+                with self._lock:
+                    self._inflight.pop(key, None)
+                ev.set()
+
+        threading.Thread(target=_run, daemon=True, name=f"anilist-refresh:{key[:24]}").start()
+
+    def warm_home(self, pages: int = 2):
+        """Preload discovery feeds sequentially to avoid AniList 429 storms.
+
+        Parallel warm-up was flooding AniList (many pages × 3 feeds) and
+        burning the rate limit right after redeploy. Sequential + small gaps
+        keeps the cache useful without tripping 429 on every page.
+        """
+        pages = max(1, min(int(pages or 1), 3))
+        jobs = []
+        for p in range(1, pages + 1):
+            jobs.append(("trending", p, self.get_trending))
+            jobs.append(("airing", p, self.get_popular))
+            jobs.append(("popular", p, self.get_most_popular))
+
+        for i, (label, page, fn) in enumerate(jobs):
+            try:
+                fn(page)
+            except Exception as e:
+                print(f"[catalog] warm {label} page={page} failed: {e}")
+            # Space out calls so AniList doesn't rate-limit the whole warm
+            if i < len(jobs) - 1:
+                time.sleep(0.8)
+
+    def _discover(self, sort: str, page: int = 1, query: str = DISCOVER_QUERY, cache_prefix: str = "") -> dict:
         def fetch():
             data = self._post(query, {"sort": [sort], "page": page})
             out = []
             for m in data["Page"]["media"]:
                 score = m.get("averageScore")
-                full_genres = m.get("genres") or []
-                tags = [t.get("name") for t in (m.get("tags") or []) if t.get("name")]
                 out.append({
                     "title": _best_title(m["title"]),
                     "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
                     "rating": round(score / 10, 1) if score else None,
                     "anilist_id": m["id"],
-                    "source": self.name,
-                    "source_id": m["id"],
-                    "media_type": "ANIME",
-                    "genres": full_genres,  # full list for BL filter; trimmed after
-                    "tags": tags,
+                    "genres": (m.get("genres") or [])[:3],
                     "episodes": m.get("episodes"),
                     "synopsis": _clean_description(m.get("description"))[:140],
                 })
-            # Drop gay / BL / Yaoi before truncating genres for display
-            out = _filter_blocked(out)
-            for item in out:
-                item["genres"] = (item.get("genres") or [])[:3]
-                item.pop("tags", None)
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
-        return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
+        return self._cached(f"{cache_prefix}{sort}:{page}", fetch)
 
     def get_trending(self, page: int = 1) -> dict:
-        # Adult anime — BL / gay filtered out after fetch
-        return self._discover(
-            "TRENDING_DESC", page, cache_prefix="trend-v3:",
-            ttl=CATALOG_CACHE_TTL,
-        )
+        return self._discover("TRENDING_DESC", page)
 
     def get_popular(self, page: int = 1) -> dict:
-        # Top Airing (currently releasing) — BL / gay filtered out
-        return self._discover(
-            "POPULARITY_DESC", page, query=DISCOVER_AIRING_QUERY,
-            cache_prefix="airing-v3:", ttl=CATALOG_CACHE_TTL,
-        )
+        # Backs the "Top Airing" section — must only include anime that is
+        # currently releasing, not just anime that is popular overall.
+        return self._discover("POPULARITY_DESC", page, query=DISCOVER_AIRING_QUERY, cache_prefix="airing:")
 
     def get_most_popular(self, page: int = 1) -> dict:
-        # Popular overall — BL / gay filtered out
-        return self._discover(
-            "POPULARITY_DESC", page, cache_prefix="popular-v3:",
-            ttl=CATALOG_CACHE_TTL,
-        )
+        # Backs the "Popular" section — most popular anime overall,
+        # regardless of airing status (unlike get_popular/"Top Airing").
+        return self._discover("POPULARITY_DESC", page, cache_prefix="popular-all:")
 
-    def _discover_manga(self, sort: str, page: int = 1, query: str = MANGA_DISCOVER_QUERY, cache_prefix: str = "manga:", ttl: int | None = None) -> dict:
+    def browse_genre(self, genre: str, page: int = 1) -> dict:
         def fetch():
-            data = self._post(query, {"sort": [sort], "page": page})
-            out = []
-            for m in data["Page"]["media"]:
-                score = m.get("averageScore")
-                full_genres = m.get("genres") or []
-                tags = [t.get("name") for t in (m.get("tags") or []) if t.get("name")]
-                out.append({
-                    "title": _best_title(m["title"]),
-                    "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
-                    "rating": round(score / 10, 1) if score else None,
-                    "anilist_id": m["id"],
-                    "source": self.name,
-                    "source_id": m["id"],
-                    "genres": full_genres,  # full list for BL filter; trimmed after
-                    "tags": tags,
-                    "chapters": m.get("chapters"),
-                    "format": m.get("format"),
-                    "countryOfOrigin": m.get("countryOfOrigin"),
-                    "media_type": "MANGA",
-                    "synopsis": _clean_description(m.get("description"))[:140],
-                })
-            # Drop gay / BL / Yaoi before truncating genres for display
-            out = _filter_blocked(out)
-            for item in out:
-                item["genres"] = (item.get("genres") or [])[:3]
-                item.pop("tags", None)
-            return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
-        return self._cached(f"{cache_prefix}{sort}:{page}", fetch, ttl=ttl)
-
-    def _merge_manga_pages(self, *pages: dict) -> dict:
-        """Deduplicate adult manga/manhwa/doujin results from several queries."""
-        seen = set()
-        out = []
-        has_next = False
-        for page in pages:
-            has_next = has_next or bool(page.get("has_next"))
-            for item in page.get("results") or []:
-                sid = item.get("source_id") or item.get("anilist_id")
-                if sid in seen:
-                    continue
-                seen.add(sid)
-                out.append(item)
-        return {"results": out, "has_next": has_next}
-
-    def get_trending_manga(self, page: int = 1) -> dict:
-        """Trending adult manga + manhwa + doujinshi (BL/Yaoi excluded)."""
-        def fetch():
-            general = self._discover_manga(
-                "TRENDING_DESC", page, query=MANGA_DISCOVER_QUERY,
-                cache_prefix="m-trend-v3:", ttl=CATALOG_CACHE_TTL,
-            )
-            manhwa = self._discover_manga(
-                "TRENDING_DESC", page, query=MANHWA_DISCOVER_QUERY,
-                cache_prefix="m-trend-kr-v3:", ttl=CATALOG_CACHE_TTL,
-            )
-            # BL / Yaoi queries intentionally omitted — filtered out of discovery
-            return self._merge_manga_pages(manhwa, general)
-        return self._cached(
-            f"manga-trend-merged-v6:{page}", fetch, ttl=CATALOG_CACHE_TTL
-        )
-
-    def get_airing_manga(self, page: int = 1) -> dict:
-        """Ongoing adult manga / manhwa / doujin (BL excluded) — Top Airing row."""
-        def fetch():
-            general = self._discover_manga(
-                "POPULARITY_DESC", page, query=MANGA_AIRING_QUERY,
-                cache_prefix="m-air-v3:", ttl=CATALOG_CACHE_TTL,
-            )
-            # BL / Yaoi queries intentionally omitted
-            return self._merge_manga_pages(general)
-        return self._cached(
-            f"manga-air-merged-v6:{page}", fetch, ttl=CATALOG_CACHE_TTL
-        )
-
-    def get_popular_manga(self, page: int = 1) -> dict:
-        """Popular adult manga + manhwa + doujinshi (BL/Yaoi excluded)."""
-        def fetch():
-            general = self._discover_manga(
-                "POPULARITY_DESC", page, query=MANGA_DISCOVER_QUERY,
-                cache_prefix="m-pop-v3:", ttl=CATALOG_CACHE_TTL,
-            )
-            manhwa = self._discover_manga(
-                "POPULARITY_DESC", page, query=MANHWA_DISCOVER_QUERY,
-                cache_prefix="m-pop-kr-v3:", ttl=CATALOG_CACHE_TTL,
-            )
-            # BL / Yaoi queries intentionally omitted
-            return self._merge_manga_pages(manhwa, general)
-        return self._cached(
-            f"manga-pop-merged-v6:{page}", fetch, ttl=CATALOG_CACHE_TTL
-        )
-
-    # Back-compat aliases used by older routes
-    def get_trending_manhwa(self, page: int = 1) -> dict:
-        return self.get_trending_manga(page)
-
-    def get_popular_manhwa(self, page: int = 1) -> dict:
-        return self.get_airing_manga(page)
-
-    def search_manga(self, query: str, page: int = 1) -> dict:
-        """Search ALL manga / manhwa / manhua / novels on AniList (no isAdult filter).
-
-        Returns every matching title so pornhwa, manhwa, manhua, novels,
-        and regular manga all appear in search.
-        """
-        results = []
-        seen = set()
-        has_next = False
-        try:
-            data = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
-            for m in data["Page"]["media"]:
-                mid = m["id"]
-                if mid in seen:
-                    continue
-                seen.add(mid)
-                results.append(self._map_search_item(m, "MANGA"))
-            has_next = data["Page"]["pageInfo"]["hasNextPage"]
-        except Exception:
-            pass
-        return {"results": results, "has_next": has_next}
-
-    def browse_genre(self, genre: str, page: int = 1, media_type: str = "ANIME") -> dict:
-        """Browse adult titles in a genre. media_type: ANIME (H-ANIME) or MANGA (H-MANHWA)."""
-        media_type = "MANGA" if str(media_type).upper() == "MANGA" else "ANIME"
-
-        def fetch():
-            data = self._post(GENRE_QUERY, {"genre": genre, "page": page, "type": media_type})
+            data = self._post(GENRE_QUERY, {"genre": genre, "page": page})
             out = []
             for m in data["Page"]["media"]:
                 score = m.get("averageScore")
@@ -825,14 +568,7 @@ class AniListSource(AnimeSource):
                     "poster_url": (m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large"),
                     "rating": round(score / 10, 1) if score else None,
                     "anilist_id": m["id"],
-                    "source": self.name,
-                    "source_id": m["id"],
-                    "media_type": media_type,
                 })
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
-        return self._cached(
-            f"genre:{media_type}:{genre}:{page}",
-            fetch,
-            ttl=CATALOG_CACHE_TTL,
-        )
+        return self._cached(f"genre:{genre}:{page}", fetch)
