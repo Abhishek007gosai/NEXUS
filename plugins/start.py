@@ -20,7 +20,7 @@ from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait
 
 
-def _start_index_button(label: str = "OPEN INDEX") -> InlineKeyboardButton:
+def _start_index_button(label: str = "ᴏᴘᴇɴ ɪɴᴅᴇx") -> InlineKeyboardButton:
     """Full-width green button that opens the Anime Index mini app."""
     if WEBAPP_URL and WEBAPP_URL.startswith("https://"):
         return styled_button(label, style="success", web_app=WebAppInfo(url=WEBAPP_URL))
@@ -422,8 +422,8 @@ async def start_command(client: Client, message: Message):
     else:
         # Match screenshot layout: full-width OPEN INDEX on top, then HELP + CLOSE
         buttons = [
-            [_start_index_button("OPEN INDEX")],
-            [styled_button("HELP", style="danger", callback_data="about"), styled_button("CLOSE", style="danger", callback_data='close')],
+            [_start_index_button("ᴏᴘᴇɴ ɪɴᴅᴇx")],
+            [styled_button("ʜᴇʟᴘ", style="danger", callback_data="about"), styled_button("ᴄʟᴏꜱᴇ", style="danger", callback_data='close')],
         ]
         if user_id in client.admins:
             buttons.insert(1, [styled_button("⛩️ ꜱᴇᴛᴛɪɴɢꜱ ⛩️", style="danger", callback_data="settings")])
