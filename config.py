@@ -24,11 +24,11 @@ API_HASH = os.environ.get("API_HASH", "") #Your API Hash from my.telegram.org
 #--------------------------------------------
 
 # Primary DB channel (files stored here). Can also add more via /adddbchnl
-_channel_raw = os.environ.get("CHANNEL_ID", "") or "0"
+_channel_raw = os.environ.get("CHANNEL_ID", "0") or "0"
 CHANNEL_ID = int(_channel_raw) if str(_channel_raw).lstrip("-").isdigit() else 0
 
 OWNER = os.environ.get("OWNER", "")  # Owner username without @
-_owner_raw = os.environ.get("OWNER_ID", "") or "0"
+_owner_raw = os.environ.get("OWNER_ID", "0") or "0"
 OWNER_ID = int(_owner_raw) if str(_owner_raw).isdigit() else 0
 #--------------------------------------------
 PORT = os.environ.get("PORT", "8001")
