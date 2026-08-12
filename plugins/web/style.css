@@ -823,38 +823,7 @@ html, body {
 
 .subview-title { font-size: 18px; font-weight: 800; }
 
-/* ---------------- Genre browse (Nari Noona style) ---------------- */
-
-.genre-topbar {
-  padding-bottom: 14px;
-}
-
-.genre-type-tabs {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.genre-type-tab {
-  flex: 1;
-  padding: 11px 0;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.genre-type-tab.active {
-  background: var(--green-dark);
-  border-color: var(--green-dark);
-  color: #fff;
-}
+/* ---------------- Genre browse (3-col + Load more) ---------------- */
 
 .genre-grid {
   display: grid;
@@ -876,7 +845,6 @@ html, body {
   aspect-ratio: 2 / 3;
   object-fit: cover;
   display: block;
-  border-radius: 10px 10px 0 0;
 }
 
 .genre-grid .poster-meta {

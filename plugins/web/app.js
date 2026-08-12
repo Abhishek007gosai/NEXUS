@@ -144,7 +144,6 @@
   const genreViewTitle = el("genre-view-title");
   const genreLoadMoreBtn = el("genre-load-more");
   const genreEmptyNote = el("genre-empty");
-  const genreTypeTabs = el("genre-type-tabs");
 
   const pillTabs = document.querySelectorAll(".pill-tab[data-tab]");
   const tabAll = el("tab-all");
@@ -1236,7 +1235,14 @@
   }
 
   async function openDiscoverDetail(item) {
-    openDetailSheet({ ...item, description: "Loading synopsis...", genres: item.genres || [] }, "discover");
+    // Prefer short synopsis from list payload so the sheet isn't stuck on
+    // "Loading synopsis..." while AniList is slow / rate-limited.
+    const preview = (item.description || item.synopsis || "").trim();
+    openDetailSheet({
+      ...item,
+      description: preview || "Loading synopsis...",
+      genres: item.genres || [],
+    }, "discover");
     try {
       const full = await api(`/api/anilist/${item.anilist_id || item.source_id}`);
       if (currentDetail && (currentDetail.title === item.title || currentDetail.anilist_id === item.anilist_id)) {
@@ -1250,7 +1256,7 @@
         }, "discover");
       }
     } catch (err) {
-      if (currentDetail) detailDescription.textContent = "Couldn't load full details.";
+      if (currentDetail && !preview) detailDescription.textContent = "Couldn't load full details.";
     }
   }
 
@@ -1823,14 +1829,13 @@
   }
 
   // ---------------------------------------------------------------------
-  // Genre browse view (Nari Noona style — 3-col grid + type tabs + Load more)
+  // Genre browse view — 3-col grid + Load more (faster feel)
   // ---------------------------------------------------------------------
   let genreViewName = "";
   let genrePage = 1;
   let genreHasNext = false;
   let genreLoading = false;
-  let genreType = "anime"; // "anime" | "manga"
-  let genrePrefetch = null; // { page, promise } for next page
+  let genrePrefetch = null; // { page, promise }
   let genreRequestId = 0;
 
   function showGenreSkeletons(count = 9) {
@@ -1842,16 +1847,6 @@
     }
   }
 
-  function setGenreTypeTabs(activeType) {
-    genreType = activeType;
-    if (!genreTypeTabs) return;
-    genreTypeTabs.querySelectorAll(".genre-type-tab").forEach((btn) => {
-      const isActive = btn.dataset.genreType === activeType;
-      btn.classList.toggle("active", isActive);
-      btn.setAttribute("aria-selected", isActive ? "true" : "false");
-    });
-  }
-
   function updateGenreLoadMore() {
     if (!genreLoadMoreBtn) return;
     genreLoadMoreBtn.classList.toggle("hidden", !genreHasNext);
@@ -1859,9 +1854,8 @@
     genreLoadMoreBtn.textContent = genreLoading ? "Loading…" : "Load more";
   }
 
-  function genreApiUrl(genre, page, type) {
-    const t = type === "manga" ? "manga" : "anime";
-    return `/api/genres/${encodeURIComponent(genre)}?page=${page}&type=${t}`;
+  function genreApiUrl(genre, page) {
+    return `/api/genres/${encodeURIComponent(genre)}?page=${page}`;
   }
 
   async function openGenreView(genre) {
@@ -1871,7 +1865,6 @@
     genreHasNext = false;
     genrePrefetch = null;
     genreViewTitle.textContent = genre;
-    setGenreTypeTabs(genreType || "anime");
     if (genreEmptyNote) {
       genreEmptyNote.textContent = "No titles found in this genre.";
       genreEmptyNote.classList.add("hidden");
@@ -1881,7 +1874,7 @@
 
     const reqId = ++genreRequestId;
     try {
-      const data = await api(genreApiUrl(genre, 1, genreType));
+      const data = await api(genreApiUrl(genre, 1));
       if (reqId !== genreRequestId) return;
       genreHasNext = !!data.has_next;
       genreBrowseGrid.innerHTML = "";
@@ -1893,7 +1886,6 @@
         genreEmptyNote.classList.toggle("hidden", results.length > 0);
       }
       updateGenreLoadMore();
-      // Prefetch next page so "Load more" feels instant
       if (genreHasNext) prefetchGenreNext();
     } catch (err) {
       if (reqId !== genreRequestId) return;
@@ -1913,7 +1905,7 @@
     if (genrePrefetch && genrePrefetch.page === nextPage) return;
     genrePrefetch = {
       page: nextPage,
-      promise: api(genreApiUrl(genreViewName, nextPage, genreType)).catch(() => null),
+      promise: api(genreApiUrl(genreViewName, nextPage)).catch(() => null),
     };
   }
 
@@ -1930,7 +1922,7 @@
         genrePrefetch = null;
       }
       if (!data) {
-        data = await api(genreApiUrl(genreViewName, nextPage, genreType));
+        data = await api(genreApiUrl(genreViewName, nextPage));
       }
       if (reqId !== genreRequestId) return;
       genrePage = nextPage;
@@ -1950,18 +1942,6 @@
     genreLoadMoreBtn.addEventListener("click", () => loadMoreGenre());
   }
 
-  if (genreTypeTabs) {
-    genreTypeTabs.addEventListener("click", (e) => {
-      const btn = e.target.closest(".genre-type-tab");
-      if (!btn || !genreViewName) return;
-      const nextType = btn.dataset.genreType || "anime";
-      if (nextType === genreType) return;
-      setGenreTypeTabs(nextType);
-      openGenreView(genreViewName);
-    });
-  }
-
-  // Soft infinite scroll still works, but Load more is primary (less janky)
   window.addEventListener("scroll", debounce(() => {
     if (genreView.classList.contains("hidden")) return;
     const nearBottom = window.scrollY + window.innerHeight > document.documentElement.scrollHeight - 500;
