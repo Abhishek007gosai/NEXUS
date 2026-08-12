@@ -7,11 +7,69 @@ import asyncio
 import time
 from pyrogram import filters
 from pyrogram.enums import ChatMemberStatus
+from pyrogram.types import InlineKeyboardButton
 from config import *
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram.errors import FloodWait
 from database.database import *
 
+# Telegram Bot API button colors (Kurigram / ButtonStyle)
+# PRIMARY = blue, SUCCESS = green, DANGER = red, DEFAULT = client theme
+try:
+    from pyrogram.enums import ButtonStyle
+except ImportError:  # older forks without the enum
+    ButtonStyle = None
+
+_STYLE_MAP = {}
+if ButtonStyle is not None:
+    _STYLE_MAP = {
+        "primary": ButtonStyle.PRIMARY,
+        "success": ButtonStyle.SUCCESS,
+        "danger": ButtonStyle.DANGER,
+        "default": getattr(ButtonStyle, "DEFAULT", None),
+        ButtonStyle.PRIMARY: ButtonStyle.PRIMARY,
+        ButtonStyle.SUCCESS: ButtonStyle.SUCCESS,
+        ButtonStyle.DANGER: ButtonStyle.DANGER,
+    }
+    if hasattr(ButtonStyle, "DEFAULT"):
+        _STYLE_MAP[ButtonStyle.DEFAULT] = ButtonStyle.DEFAULT
+
+
+def styled_button(text, style=None, **kwargs):
+    """Create an InlineKeyboardButton with Telegram native colors.
+
+    style: "primary" (blue) | "success" (green) | "danger" (red)
+           or ButtonStyle.PRIMARY / SUCCESS / DANGER
+
+    Needs Kurigram (ButtonStyle). Always attaches the enum on the button
+    object so write() serializes bg_primary / bg_success / bg_danger.
+    """
+    resolved = None
+    if style is not None and ButtonStyle is not None:
+        if isinstance(style, ButtonStyle):
+            resolved = style
+        elif isinstance(style, str):
+            resolved = _STYLE_MAP.get(style.lower().strip())
+        else:
+            resolved = _STYLE_MAP.get(style)
+
+    # Prefer constructor with style=
+    if resolved is not None:
+        try:
+            btn = InlineKeyboardButton(text, style=resolved, **kwargs)
+            # Guarantee enum (never a bare string — strings make all bg_* False)
+            btn.style = resolved
+            return btn
+        except TypeError:
+            pass
+
+    btn = InlineKeyboardButton(text, **kwargs)
+    if resolved is not None:
+        try:
+            btn.style = resolved
+        except Exception:
+            pass
+    return btn
 
 
 #used for cheking if a user is admin ~Owner also treated as admin level

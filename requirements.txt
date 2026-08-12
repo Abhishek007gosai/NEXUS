@@ -1,6 +1,6 @@
 
 #https://codeload.github.com/KurimuzonAkuma/pyrogram/zip/refs/heads/dev
-pyrofork==2.3.61
+kurigram>=2.2.24
 TgCrypto
 pyromod==1.5
 schedule
@@ -18,3 +18,4 @@ requests
 bs4
 aiofiles
 asyncio
+psutil
