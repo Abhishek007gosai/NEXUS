@@ -1941,12 +1941,7 @@
   if (genreLoadMoreBtn) {
     genreLoadMoreBtn.addEventListener("click", () => loadMoreGenre());
   }
-
-  window.addEventListener("scroll", debounce(() => {
-    if (genreView.classList.contains("hidden")) return;
-    const nearBottom = window.scrollY + window.innerHeight > document.documentElement.scrollHeight - 500;
-    if (nearBottom && genreHasNext && !genreLoading) loadMoreGenre();
-  }, 200));
+  // No auto-load on scroll — user must tap "Load more"
 
   // ---------------------------------------------------------------------
   // Profile
