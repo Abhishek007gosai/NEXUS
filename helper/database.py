@@ -1026,6 +1026,9 @@ def _to_anime(doc) -> dict | None:
     d["genres"] = d.get("genres") or []
     # Available if it has any join path: franchise, solo-only, or ongoing
     d["available"] = bool(d.get("join_link") or d.get("solo_link") or d.get("ongoing_link"))
+    # Default: Ongoing button is enabled unless explicitly turned off
+    if "ongoing_enabled" not in d:
+        d["ongoing_enabled"] = True
     return d
 
 
@@ -1342,6 +1345,40 @@ def update_ongoing_link(anime_id: int, link: str | None):
         {"$set": {"ongoing_link": (link or None), "updated_at": time.time()}},
     )
     return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
+def update_ongoing_enabled(anime_id: int, enabled: bool):
+    """Per-post toggle: whether the ONGOING button is shown on this card.
+    Default is True when the field is missing."""
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"ongoing_enabled": bool(enabled), "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
+def propagate_ongoing_link(anime_id: int, link: str | None) -> int:
+    """Apply the same ongoing_link to every other title that is currently
+    treated as Ongoing (has an ongoing_link already, or status is
+    RELEASING / HIATUS / NOT_YET_RELEASED). Returns how many other posts
+    were updated."""
+    doc = anime_col.find_one({"_id": anime_id})
+    if not doc:
+        return 0
+    import time as _time
+    status_match = {
+        "status": {"$in": ["RELEASING", "HIATUS", "NOT_YET_RELEASED", "releasing", "hiatus", "not_yet_released"]}
+    }
+    link_match = {"ongoing_link": {"$nin": [None, ""]}}
+    query = {
+        "_id": {"$ne": anime_id},
+        "$or": [status_match, link_match],
+    }
+    result = anime_col.update_many(
+        query,
+        {"$set": {"ongoing_link": (link or None), "updated_at": _time.time()}},
+    )
+    return int(result.modified_count or 0)
 
 
 def update_airing_day(anime_id: int, day: str | None):
