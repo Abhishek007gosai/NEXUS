@@ -142,6 +142,9 @@
   const genreTileGrid = el("genre-tile-grid");
   const genreBrowseGrid = el("genre-browse-grid");
   const genreViewTitle = el("genre-view-title");
+  const genreLoadMoreBtn = el("genre-load-more");
+  const genreEmptyNote = el("genre-empty");
+  const genreTypeTabs = el("genre-type-tabs");
 
   const pillTabs = document.querySelectorAll(".pill-tab[data-tab]");
   const tabAll = el("tab-all");
@@ -1104,8 +1107,9 @@
     );
     const ongoingUrl = anime.ongoing_link || null;
 
-    // PREVIOUS | ONGOING split is only for the Ongoing library tab
-    const showOngoingSplit = context === "ongoing" || libraryMode === "ongoing";
+    // PREVIOUS | ONGOING only when opened from the Ongoing library column.
+    // Never key off libraryMode — Search/Home/Genre keep mode but use other contexts.
+    const showOngoingSplit = context === "ongoing";
 
     const row = document.createElement("div");
     row.className = "action-row";
@@ -1167,10 +1171,10 @@
     detailActionArea.appendChild(row);
   }
 
-  async function openLocalDetail(item) {
-    // Pass "ongoing" when opened from the Ongoing library tab so PREVIOUS|ONGOING
-    // split buttons only appear there; Finished uses a single Join button.
-    const ctx = libraryMode === "ongoing" ? "ongoing" : "available";
+  async function openLocalDetail(item, forceContext) {
+    // PREVIOUS|ONGOING only when opened from the Ongoing library column.
+    // Search / Home matches must force "available" so PREVIOUS never appears there.
+    const ctx = forceContext || (libraryMode === "ongoing" ? "ongoing" : "available");
     openDetailSheet(item, ctx);
     try {
       const full = await api(`/api/anime/${item.id}`);
@@ -1741,7 +1745,7 @@
     localMatches.forEach((item) => {
       searchResultsGroups.appendChild(searchResultRow(item, () => {
         trackConfirmedSearch(item.title);
-        openLocalDetail(item);
+        openLocalDetail(item, "available"); // never PREVIOUS from Search
       }));
     });
 
@@ -1767,7 +1771,7 @@
         }
         searchResultsGroups.appendChild(searchResultRow(item, () => {
           trackConfirmedSearch(item.title);
-          if (matched) openLocalDetail({ ...matched, ...item });
+          if (matched) openLocalDetail({ ...matched, ...item }, "available"); // never PREVIOUS from Search
           else openDiscoverDetail(item);
         }));
       });
@@ -1819,50 +1823,150 @@
   }
 
   // ---------------------------------------------------------------------
-  // Genre browse view
+  // Genre browse view (Nari Noona style — 3-col grid + type tabs + Load more)
   // ---------------------------------------------------------------------
   let genreViewName = "";
   let genrePage = 1;
   let genreHasNext = false;
   let genreLoading = false;
+  let genreType = "anime"; // "anime" | "manga"
+  let genrePrefetch = null; // { page, promise } for next page
+  let genreRequestId = 0;
+
+  function showGenreSkeletons(count = 9) {
+    genreBrowseGrid.innerHTML = "";
+    for (let i = 0; i < count; i++) {
+      const sk = document.createElement("div");
+      sk.className = "skeleton-card";
+      genreBrowseGrid.appendChild(sk);
+    }
+  }
+
+  function setGenreTypeTabs(activeType) {
+    genreType = activeType;
+    if (!genreTypeTabs) return;
+    genreTypeTabs.querySelectorAll(".genre-type-tab").forEach((btn) => {
+      const isActive = btn.dataset.genreType === activeType;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+  }
+
+  function updateGenreLoadMore() {
+    if (!genreLoadMoreBtn) return;
+    genreLoadMoreBtn.classList.toggle("hidden", !genreHasNext);
+    genreLoadMoreBtn.disabled = genreLoading;
+    genreLoadMoreBtn.textContent = genreLoading ? "Loading…" : "Load more";
+  }
+
+  function genreApiUrl(genre, page, type) {
+    const t = type === "manga" ? "manga" : "anime";
+    return `/api/genres/${encodeURIComponent(genre)}?page=${page}&type=${t}`;
+  }
 
   async function openGenreView(genre) {
     showView("genre");
     genreViewName = genre;
     genrePage = 1;
     genreHasNext = false;
+    genrePrefetch = null;
     genreViewTitle.textContent = genre;
-    genreBrowseGrid.innerHTML = "";
+    setGenreTypeTabs(genreType || "anime");
+    if (genreEmptyNote) {
+      genreEmptyNote.textContent = "No titles found in this genre.";
+      genreEmptyNote.classList.add("hidden");
+    }
+    if (genreLoadMoreBtn) genreLoadMoreBtn.classList.add("hidden");
+    showGenreSkeletons(9);
+
+    const reqId = ++genreRequestId;
     try {
-      const data = await api(`/api/genres/${encodeURIComponent(genre)}?page=1`);
+      const data = await api(genreApiUrl(genre, 1, genreType));
+      if (reqId !== genreRequestId) return;
       genreHasNext = !!data.has_next;
-      data.results.forEach((item) => {
+      genreBrowseGrid.innerHTML = "";
+      const results = data.results || [];
+      results.forEach((item) => {
         genreBrowseGrid.appendChild(simplePosterCard(item, () => openGenreItemDetail(item)));
       });
+      if (genreEmptyNote) {
+        genreEmptyNote.classList.toggle("hidden", results.length > 0);
+      }
+      updateGenreLoadMore();
+      // Prefetch next page so "Load more" feels instant
+      if (genreHasNext) prefetchGenreNext();
     } catch (err) {
+      if (reqId !== genreRequestId) return;
+      genreBrowseGrid.innerHTML = "";
+      if (genreEmptyNote) {
+        genreEmptyNote.textContent = "Couldn't load that genre right now.";
+        genreEmptyNote.classList.remove("hidden");
+      }
       showToast("Couldn't load that genre right now.");
+      updateGenreLoadMore();
     }
+  }
+
+  function prefetchGenreNext() {
+    if (!genreViewName || !genreHasNext) return;
+    const nextPage = genrePage + 1;
+    if (genrePrefetch && genrePrefetch.page === nextPage) return;
+    genrePrefetch = {
+      page: nextPage,
+      promise: api(genreApiUrl(genreViewName, nextPage, genreType)).catch(() => null),
+    };
   }
 
   async function loadMoreGenre() {
     if (genreLoading || !genreHasNext || !genreViewName) return;
     genreLoading = true;
+    updateGenreLoadMore();
+    const nextPage = genrePage + 1;
+    const reqId = genreRequestId;
     try {
-      const data = await api(`/api/genres/${encodeURIComponent(genreViewName)}?page=${genrePage + 1}`);
-      genrePage += 1;
-      genreHasNext = !!data.has_next;
-      data.results.forEach((item) => {
+      let data = null;
+      if (genrePrefetch && genrePrefetch.page === nextPage) {
+        data = await genrePrefetch.promise;
+        genrePrefetch = null;
+      }
+      if (!data) {
+        data = await api(genreApiUrl(genreViewName, nextPage, genreType));
+      }
+      if (reqId !== genreRequestId) return;
+      genrePage = nextPage;
+      genreHasNext = !!(data && data.has_next);
+      (data.results || []).forEach((item) => {
         genreBrowseGrid.appendChild(simplePosterCard(item, () => openGenreItemDetail(item)));
       });
-    } catch (err) { /* stop silently, user can keep scrolling to retry */ }
+      if (genreHasNext) prefetchGenreNext();
+    } catch (err) {
+      showToast("Couldn't load more right now.");
+    }
     genreLoading = false;
+    updateGenreLoadMore();
   }
 
+  if (genreLoadMoreBtn) {
+    genreLoadMoreBtn.addEventListener("click", () => loadMoreGenre());
+  }
+
+  if (genreTypeTabs) {
+    genreTypeTabs.addEventListener("click", (e) => {
+      const btn = e.target.closest(".genre-type-tab");
+      if (!btn || !genreViewName) return;
+      const nextType = btn.dataset.genreType || "anime";
+      if (nextType === genreType) return;
+      setGenreTypeTabs(nextType);
+      openGenreView(genreViewName);
+    });
+  }
+
+  // Soft infinite scroll still works, but Load more is primary (less janky)
   window.addEventListener("scroll", debounce(() => {
     if (genreView.classList.contains("hidden")) return;
-    const nearBottom = window.scrollY + window.innerHeight > document.documentElement.scrollHeight - 400;
-    if (nearBottom) loadMoreGenre();
-  }, 150));
+    const nearBottom = window.scrollY + window.innerHeight > document.documentElement.scrollHeight - 500;
+    if (nearBottom && genreHasNext && !genreLoading) loadMoreGenre();
+  }, 200));
 
   // ---------------------------------------------------------------------
   // Profile

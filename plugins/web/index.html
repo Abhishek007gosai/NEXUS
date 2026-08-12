@@ -118,13 +118,21 @@
     </div>
   </section>
 
-  <!-- ===================== Genre browse view ===================== -->
+  <!-- ===================== Genre browse view (Nari Noona style) ===================== -->
   <section id="genre-view" class="hidden">
-    <div class="subview-topbar">
-      <button class="back-btn" data-back="search">&#8249; back</button>
+    <div class="subview-topbar genre-topbar">
+      <button class="back-btn" data-back="search">&lt; back</button>
       <span class="subview-title" id="genre-view-title">Genre</span>
     </div>
-    <div id="genre-browse-grid" class="grid-2"></div>
+
+    <div class="genre-type-tabs" id="genre-type-tabs" role="tablist">
+      <button type="button" class="genre-type-tab active" data-genre-type="anime" role="tab" aria-selected="true">H-ANIME</button>
+      <button type="button" class="genre-type-tab" data-genre-type="manga" role="tab" aria-selected="false">H-MANHWA</button>
+    </div>
+
+    <div id="genre-browse-grid" class="genre-grid"></div>
+    <p id="genre-empty" class="empty-note hidden">No titles found in this genre.</p>
+    <button id="genre-load-more" class="load-more-btn hidden">Load more</button>
   </section>
 
   <!-- ===================== Profile view ===================== -->

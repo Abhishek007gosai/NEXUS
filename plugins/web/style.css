@@ -823,6 +823,84 @@ html, body {
 
 .subview-title { font-size: 18px; font-weight: 800; }
 
+/* ---------------- Genre browse (Nari Noona style) ---------------- */
+
+.genre-topbar {
+  padding-bottom: 14px;
+}
+
+.genre-type-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.genre-type-tab {
+  flex: 1;
+  padding: 11px 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.genre-type-tab.active {
+  background: var(--green-dark);
+  border-color: var(--green-dark);
+  color: #fff;
+}
+
+.genre-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px 8px;
+  padding-bottom: 8px;
+  align-items: start;
+}
+
+.genre-grid .poster-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.genre-grid .poster-card img,
+.genre-grid .poster-card .generated-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
+  border-radius: 10px 10px 0 0;
+}
+
+.genre-grid .poster-meta {
+  padding: 6px 2px 2px;
+}
+
+.genre-grid .poster-title {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  -webkit-line-clamp: 2;
+}
+
+.genre-grid .skeleton-card {
+  height: auto;
+  aspect-ratio: 2 / 3;
+  border-radius: 10px;
+}
+
+#genre-load-more {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
 .search-result-row {
   display: flex;
   align-items: center;
