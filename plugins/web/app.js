@@ -26,16 +26,41 @@
     return initData ? { "X-Telegram-Init-Data": initData } : {};
   }
 
+  function showWebsiteDown() {
+    if (document.getElementById("website-down-overlay")) return;
+    const overlay = document.createElement("div");
+    overlay.id = "website-down-overlay";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:#0d0d0d;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;";
+    overlay.innerHTML = `
+      <div style="max-width:340px;width:100%;background:#1a1a1a;border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:32px 24px;">
+        <div style="font-size:42px;margin-bottom:12px;">⚠</div>
+        <h1 style="font-size:20px;font-weight:700;margin:0 0 8px;color:#e8e8e8;">Website is temporarily down</h1>
+        <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.45;margin:0 0 20px;">We're updating the service. Please try again in a few minutes.</p>
+        <button type="button" style="border:none;border-radius:12px;padding:12px 22px;background:linear-gradient(135deg,#1f5628,#2d7a3a);color:#fff;font-weight:700;font-size:14px;cursor:pointer;width:100%;" onclick="location.reload()">Try Again</button>
+      </div>`;
+    document.body.appendChild(overlay);
+  }
+
   async function api(path, options = {}) {
-    const res = await fetch(path, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders(),
-        ...(options.headers || {}),
-      },
-    });
+    let res;
+    try {
+      res = await fetch(path, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+          ...(options.headers || {}),
+        },
+      });
+    } catch (e) {
+      // Network / DNS / offline — show friendly down screen
+      showWebsiteDown();
+      throw new Error("Network error");
+    }
     if (!res.ok) {
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        showWebsiteDown();
+      }
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `Request failed (${res.status})`);
     }
@@ -1108,8 +1133,15 @@
       ongBtn.textContent = "𝙾𝙽𝙶𝙾𝙸𝙽𝙶";
       ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
       row.appendChild(ongBtn);
+    } else if (showOngoingSplit && finishedUrl && !ongoingUrl) {
+      // Ongoing column, no ongoing link set → show PREVIOUS (Finished link)
+      const prevBtn = document.createElement("button");
+      prevBtn.className = "btn btn-primary";
+      prevBtn.textContent = "PREVIOUS";
+      prevBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
+      row.appendChild(prevBtn);
     } else if (finishedUrl) {
-      // Finished / Discover / etc. → single Join (never the PREVIOUS|ONGOING pair)
+      // Finished / Discover / etc. → single Join
       const joinBtn = document.createElement("button");
       joinBtn.className = "btn btn-primary";
       joinBtn.textContent = "\u25b6 Join";
