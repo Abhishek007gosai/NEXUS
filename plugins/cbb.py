@@ -11,6 +11,7 @@ from pyrogram import Client
 from bot import Bot
 from config import *
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from helper_func import styled_button
 from database.database import *
 
 @Bot.on_callback_query()
@@ -22,8 +23,8 @@ async def cb_handler(client: Bot, query: CallbackQuery):
             text=HELP_TXT.format(first=query.from_user.first_name),
             disable_web_page_preview=True,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton('ʜᴏᴍᴇ', callback_data='start'),
-                 InlineKeyboardButton("ᴄʟᴏꜱᴇ", callback_data='close')]
+                [styled_button('ʜᴏᴍᴇ', style="primary", callback_data='start'),
+                 styled_button("ᴄʟᴏꜱᴇ", style="danger", callback_data='close')]
             ])
         )
 
@@ -32,8 +33,8 @@ async def cb_handler(client: Bot, query: CallbackQuery):
             text=ABOUT_TXT.format(first=query.from_user.first_name),
             disable_web_page_preview=True,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton('ʜᴏᴍᴇ', callback_data='start'),
-                 InlineKeyboardButton('ᴄʟᴏꜱᴇ', callback_data='close')]
+                [styled_button('ʜᴏᴍᴇ', style="primary", callback_data='start'),
+                 styled_button('ᴄʟᴏꜱᴇ', style="danger", callback_data='close')]
             ])
         )
 
@@ -42,8 +43,8 @@ async def cb_handler(client: Bot, query: CallbackQuery):
             text=START_MSG.format(first=query.from_user.first_name),
             disable_web_page_preview=True,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("ʜᴇʟᴘ", callback_data='help'),
-                 InlineKeyboardButton("ᴀʙᴏᴜᴛ", callback_data='about')]
+                [styled_button("ʜᴇʟᴘ", style="primary", callback_data='help'),
+                 styled_button("ᴀʙᴏᴜᴛ", style="primary", callback_data='about')]
             ])
         )
 
@@ -62,8 +63,8 @@ async def cb_handler(client: Bot, query: CallbackQuery):
             status = "🟢 ᴏɴ" if mode == "on" else "🔴 ᴏғғ"
             new_mode = "ᴏғғ" if mode == "on" else "on"
             buttons = [
-                [InlineKeyboardButton(f"ʀᴇǫ ᴍᴏᴅᴇ {'OFF' if mode == 'on' else 'ON'}", callback_data=f"rfs_toggle_{cid}_{new_mode}")],
-                [InlineKeyboardButton("‹ ʙᴀᴄᴋ", callback_data="fsub_back")]
+                [styled_button(f"ʀᴇǫ ᴍᴏᴅᴇ {'OFF' if mode == 'on' else 'ON'}", style="primary", callback_data=f"rfs_toggle_{cid}_{new_mode}")],
+                [styled_button("‹ ʙᴀᴄᴋ", style="danger", callback_data="fsub_back")]
             ]
             await query.message.edit_text(
                 f"Channel: {chat.title}\nCurrent Force-Sub Mode: {status}",
@@ -85,8 +86,8 @@ async def cb_handler(client: Bot, query: CallbackQuery):
         status = "🟢 ON" if mode == "on" else "🔴 OFF"
         new_mode = "off" if mode == "on" else "on"
         buttons = [
-            [InlineKeyboardButton(f"ʀᴇǫ ᴍᴏᴅᴇ {'OFF' if mode == 'on' else 'ON'}", callback_data=f"rfs_toggle_{cid}_{new_mode}")],
-            [InlineKeyboardButton("‹ ʙᴀᴄᴋ", callback_data="fsub_back")]
+            [styled_button(f"ʀᴇǫ ᴍᴏᴅᴇ {'OFF' if mode == 'on' else 'ON'}", style="primary", callback_data=f"rfs_toggle_{cid}_{new_mode}")],
+            [styled_button("‹ ʙᴀᴄᴋ", style="danger", callback_data="fsub_back")]
         ]
         await query.message.edit_text(
             f"Channel: {chat.title}\nCurrent Force-Sub Mode: {status}",
@@ -101,7 +102,7 @@ async def cb_handler(client: Bot, query: CallbackQuery):
                 chat = await client.get_chat(cid)
                 mode = await db.get_channel_mode(cid)
                 status = "🟢" if mode == "on" else "🔴"
-                buttons.append([InlineKeyboardButton(f"{status} {chat.title}", callback_data=f"rfs_ch_{cid}")])
+                buttons.append([styled_button(f"{status} {chat.title}", style="primary", callback_data=f"rfs_ch_{cid}")])
             except:
                 continue
 

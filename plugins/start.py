@@ -34,7 +34,7 @@ async def start_command(client: Client, message: Message):
             "<b>⛔️ You are Bᴀɴɴᴇᴅ from using this bot.</b>\n\n"
             "<i>Contact support if you think this is a mistake.</i>",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Contact Support", url=BAN_SUPPORT)]]
+                [[styled_button("Contact Support", style="primary", url=BAN_SUPPORT)]]
             )
         )
     # ✅ Check Force Subscription
@@ -88,9 +88,8 @@ async def start_command(client: Client, message: Message):
             caption = (CUSTOM_CAPTION.format(previouscaption="" if not msg.caption else msg.caption.html, 
                                              filename=msg.document.file_name) if bool(CUSTOM_CAPTION) and bool(msg.document)
                        else ("" if not msg.caption else msg.caption.html))
-            # Keep whatever buttons the DB channel post itself has (e.g. a
-            # season-list keyboard) — always passed through to the user.
-            reply_markup = msg.reply_markup
+            # Pass through DB-channel buttons but strip "Share URL" / share links
+            reply_markup = _strip_share_buttons(msg.reply_markup)
             try:
                 copied_msg = await msg.copy(
                     chat_id=message.from_user.id,
@@ -119,13 +118,11 @@ async def start_command(client: Client, message: Message):
     else:
         reply_markup = InlineKeyboardMarkup(
             [
-                    [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/AnimeNexusNetwork/158")],
-
-    [
-                    InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data = "about"),
-                    InlineKeyboardButton('ʜᴇʟᴘ •', callback_data = "help")
-
-    ]
+                [styled_button("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", style="primary", url="https://t.me/AnimeNexusNetwork/158")],
+                [
+                    styled_button("• ᴀʙᴏᴜᴛ", style="primary", callback_data="about"),
+                    styled_button("ʜᴇʟᴘ •", style="primary", callback_data="help"),
+                ],
             ]
         )
         await message.reply_photo(
@@ -153,11 +150,21 @@ async def start_command(client: Client, message: Message):
 # Create a global dictionary to store chat data
 chat_data_cache = {}
 
+
+async def _silent_delete_later(msg, delay_seconds: int):
+    """Delete a message after delay with no notification to the user."""
+    try:
+        await asyncio.sleep(delay_seconds)
+        await msg.delete()
+    except Exception:
+        pass
+
+
 async def not_joined(client: Client, message: Message):
     temp = await message.reply("<b><i>ᴡᴀɪᴛ ᴀ sᴇᴄ..</i></b>")
 
     user_id = message.from_user.id
-    buttons = []
+    join_buttons = []  # individual channel buttons
     count = 0
 
     try:
@@ -195,32 +202,48 @@ async def not_joined(client: Client, message: Message):
                             )
                             link = invite.invite_link
 
-                    buttons.append([
-                        InlineKeyboardButton(
-                            "• 𝙹𝙾𝙸𝙽 𝙲𝙷𝙰𝙽𝙽𝙴𝙻 •",
+                    count += 1
+                    # Numbered small-caps style + primary (blue) color like KAYA/Shinobu
+                    join_buttons.append(
+                        styled_button(
+                            f"ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ {count}",
+                            style="primary",
                             url=link
                         )
-                    ])
-
-                    count += 1
+                    )
                     await temp.edit(f"<b>{'! ' * count}</b>")
 
                 except Exception as e:
                     print(f"Error with chat {chat_id}: {e}")
 
+        # Arrange buttons: 2 per row when possible (matches your screenshots)
+        buttons = []
+        for i in range(0, len(join_buttons), 2):
+            if i + 1 < len(join_buttons):
+                buttons.append([join_buttons[i], join_buttons[i + 1]])
+            else:
+                buttons.append([join_buttons[i]])
 
-        # Try Again button
+        # Try Again button (full width, primary/blue)
         try:
             buttons.append([
-                InlineKeyboardButton(
-                    "♻️ ᴛʀʏ ᴀɢᴀɪɴ",
+                styled_button(
+                    "• ᴛʀʏ ᴀɢᴀɪɴ •",
+                    style="primary",
                     url=f"https://t.me/{client.username}?start={message.command[1]}"
                 )
             ])
         except IndexError:
-            pass
+            # No deep-link payload — still show a generic try again that restarts the bot
+            buttons.append([
+                styled_button(
+                    "• ᴛʀʏ ᴀɢᴀɪɴ •",
+                    style="primary",
+                    url=f"https://t.me/{client.username}?start=start"
+                )
+            ])
 
-        await message.reply_photo(
+        fsub_msg = await message.reply_photo(
             photo=FORCE_PIC,
             caption=FORCE_MSG.format(
                 first=message.from_user.first_name,
@@ -230,19 +253,19 @@ async def not_joined(client: Client, message: Message):
                 id=message.from_user.id
             ),
             reply_markup=InlineKeyboardMarkup(buttons),
+            protect_content=True,  # Prevents forwarding / saving of the fsub message
         )
 
         await temp.delete()
+
+        # Silently auto-delete fsub message after 15 minutes (no "will be deleted" notice)
+        asyncio.create_task(_silent_delete_later(fsub_msg, 15 * 60))
 
     except Exception as e:
         print(e)
         await temp.edit(str(e))
 #=====================================================================================##
 
-@Bot.on_message(filters.command('commands') & filters.private & admin)
-async def bcmd(bot: Bot, message: Message):        
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data = "close")]])
-    await message.reply(text=CMD_TXT, reply_markup = reply_markup, quote= True)
 
 async def schedule_auto_delete(client, codeflix_msgs, notification_msg, file_auto_delete, reload_url):
     await asyncio.sleep(file_auto_delete)
@@ -255,7 +278,10 @@ async def schedule_auto_delete(client, codeflix_msgs, notification_msg, file_aut
 
     try:
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("ɢᴇᴛ ᴀɢᴀɪɴ!", url=reload_url),InlineKeyboardButton("ᴄʟᴏꜱᴇ", callback_data='close')]]
+            [[
+                styled_button("ɢᴇᴛ ᴀɢᴀɪɴ!", style="success", url=reload_url),
+                styled_button("ᴄʟᴏꜱᴇ", style="danger", callback_data="close"),
+            ]]
         ) if reload_url else None
 
         await notification_msg.edit(
