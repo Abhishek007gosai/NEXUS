@@ -39,31 +39,15 @@ query ($search: String, $page: Int) {
 
 
 def _airing_day_from_media(m: dict) -> str | None:
-    """Map AniList broadcast / next airing timestamp to sunday…saturday.
+    """Map nextAiringEpisode timestamp to sunday…saturday (JST).
 
-    Prefer the explicit broadcast.day (already in local schedule language).
-    Fallback uses nextAiringEpisode in Asia/Tokyo so late-night JST slots
-    don't shift to the previous UTC day.
+    AniList removed the Media.broadcast field; use nextAiringEpisode only.
     """
-    day_map = {
-        "sundays": "sunday", "mondays": "monday", "tuesdays": "tuesday",
-        "wednesdays": "wednesday", "thursdays": "thursday",
-        "fridays": "friday", "saturdays": "saturday",
-        "sunday": "sunday", "monday": "monday", "tuesday": "tuesday",
-        "wednesday": "wednesday", "thursday": "thursday",
-        "friday": "friday", "saturday": "saturday",
-    }
-    b = m.get("broadcast") or {}
-    raw = (b.get("day") or "").strip().lower()
-    if raw in day_map:
-        return day_map[raw]
-    # Fallback: next episode airing time → weekday in Japan (JST)
     nae = m.get("nextAiringEpisode") or {}
     ts = nae.get("airingAt")
     if ts:
         try:
             import datetime as _dt
-            # Prefer zoneinfo; fall back to fixed +09:00 if unavailable
             try:
                 from zoneinfo import ZoneInfo
                 d = _dt.datetime.fromtimestamp(int(ts), tz=ZoneInfo("Asia/Tokyo"))
@@ -90,7 +74,6 @@ query ($id: Int) {
     episodes
     format
     duration
-    broadcast { day time timezone }
     nextAiringEpisode { airingAt episode }
     relations {
       edges {
@@ -287,6 +270,16 @@ class AniListSource(AnimeSource):
                 )
                 time.sleep(0.6 * (attempt + 1))
                 continue
+            # 400/404 = bad query or missing media — do not retry (burns rate limit)
+            if resp.status_code in (400, 404):
+                try:
+                    err_body = resp.json()
+                    msg = (err_body.get("errors") or [{}])[0].get("message") or resp.text[:200]
+                except Exception:
+                    msg = resp.text[:200]
+                raise requests.HTTPError(
+                    f"{resp.status_code} Client Error: {msg}", response=resp
+                )
             try:
                 resp.raise_for_status()
                 payload = resp.json()
@@ -295,9 +288,8 @@ class AniListSource(AnimeSource):
                 time.sleep(0.4 * (attempt + 1))
                 continue
             if payload.get("errors") and not payload.get("data"):
-                last_exc = RuntimeError(str(payload["errors"][:1]))
-                time.sleep(0.4 * (attempt + 1))
-                continue
+                # GraphQL validation / not found — no retry
+                raise RuntimeError(str(payload["errors"][:1]))
             data = payload.get("data")
             if data is None:
                 last_exc = RuntimeError("AniList returned empty data")
