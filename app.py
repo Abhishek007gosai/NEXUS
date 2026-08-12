@@ -502,6 +502,79 @@ def _cache_headers(resp):
     return resp
 
 
+
+_DOWN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Website Down</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0d0d0d;
+      color: #e8e8e8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+      text-align: center;
+    }
+    .card {
+      max-width: 340px;
+      width: 100%;
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 32px 24px;
+    }
+    .icon { font-size: 42px; margin-bottom: 12px; }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    p { font-size: 14px; color: rgba(255,255,255,0.55); line-height: 1.45; margin-bottom: 20px; }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 22px;
+      background: linear-gradient(135deg, #1f5628, #2d7a3a);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:active { opacity: 0.9; transform: scale(0.98); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠</div>
+    <h1>Website is temporarily down</h1>
+    <p>We're updating the service. Please try again in a few minutes.</p>
+    <button onclick="location.reload()">Try Again</button>
+  </div>
+</body>
+</html>
+"""
+
+
+@app.errorhandler(404)
+def not_found(_e):
+    if request.path.startswith("/api/"):
+        return jsonify(error="Not found"), 404
+    return _DOWN_HTML, 404, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.errorhandler(502)
+@app.errorhandler(503)
+@app.errorhandler(504)
+def service_unavailable(_e):
+    if request.path.startswith("/api/"):
+        return jsonify(error="Service unavailable"), 503
+    return _DOWN_HTML, 503, {"Content-Type": "text/html; charset=utf-8"}
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     # Telegram may still POST updates here if an old webhook points at WEBAPP_URL.
