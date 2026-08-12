@@ -309,18 +309,7 @@ async def link_share_list(client, query):
         lines = []
         for cid, data in channels.items():
             name = data.get("name", "Unknown")
-            parts = [f"• <b>{name}</b>\n  <code>{cid}</code>"]
-            for kind, label in (("normal", "Normal"), ("request", "Request")):
-                tok = await client.linkshare_db.get_link_share_channel_token(int(cid), kind)
-                if not tok:
-                    parts.append(f"  {label}: <i>no token</i>")
-                    continue
-                td = await client.linkshare_db.get_link_share_token(tok)
-                if not td:
-                    parts.append(f"  {label}: <i>missing</i>")
-                else:
-                    parts.append(f"  {label}: {_format_expires(td.get('expires_at'))}")
-            lines.append("\n".join(parts))
+            lines.append(f"• <b>{name}</b>\n  <code>{cid}</code>")
         text = "<b>Link Share Channels</b>\n\n" + "\n\n".join(lines)
     await _edit_query_message(
         query,

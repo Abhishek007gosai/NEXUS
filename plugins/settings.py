@@ -150,7 +150,7 @@ async def db_channels(client, query):
 __ᴜsᴇ ᴛʜᴇ ᴀᴘᴘʀᴏᴘʀɪᴀᴛᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ᴍᴀɴᴀɢᴇ ʏᴏᴜʀ ᴅᴀᴛᴀʙᴀsᴇ ᴄʜᴀɴɴᴇʟs!__
 """
     reply_markup = InlineKeyboardMarkup([
-        [styled_button('›› ᴀᴅᴅ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='add_db_channel'), styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ', style="primary", callback_data='rm_db_channel')],
+        [styled_button('›› ᴀᴅᴅ ᴅʙ', style="primary", callback_data='add_db_channel'), styled_button('›› ʀᴇᴍᴏᴠᴇ ᴅʙ', style="primary", callback_data='rm_db_channel')],
         [styled_button('›› sᴇᴛ ᴘʀɪᴍᴀʀʏ', style="primary", callback_data='set_primary_db'), styled_button('›› sᴛᴀᴛᴜs', style="primary", callback_data='toggle_db_status')],
         [styled_button('‹ ʙᴀᴄᴋ', style="primary", callback_data='settings')]
     ])
