@@ -120,10 +120,10 @@ query ($sort: [MediaSort], $page: Int) {
 """
 
 GENRE_QUERY = """
-query ($genre: String, $page: Int) {
+query ($genre: String, $page: Int, $type: MediaType) {
   Page(page: $page, perPage: 24) {
     pageInfo { hasNextPage }
-    media(type: ANIME, genre: $genre, sort: POPULARITY_DESC) {
+    media(type: $type, genre: $genre, sort: POPULARITY_DESC) {
       id
       title { romaji english }
       coverImage { extraLarge large }
@@ -546,9 +546,11 @@ class AniListSource(AnimeSource):
         # regardless of airing status (unlike get_popular/"Top Airing").
         return self._discover("POPULARITY_DESC", page, cache_prefix="popular-all:")
 
-    def browse_genre(self, genre: str, page: int = 1) -> dict:
+    def browse_genre(self, genre: str, page: int = 1, media_type: str = "anime") -> dict:
+        mtype = "MANGA" if (media_type or "").lower() == "manga" else "ANIME"
+
         def fetch():
-            data = self._post(GENRE_QUERY, {"genre": genre, "page": page})
+            data = self._post(GENRE_QUERY, {"genre": genre, "page": page, "type": mtype})
             out = []
             for m in data["Page"]["media"]:
                 score = m.get("averageScore")
@@ -560,4 +562,4 @@ class AniListSource(AnimeSource):
                 })
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
-        return self._cached(f"genre:{genre}:{page}", fetch)
+        return self._cached(f"genre:{mtype}:{genre}:{page}", fetch)
