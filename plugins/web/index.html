@@ -190,16 +190,9 @@
     <div class="sheet">
       <div class="sheet-body">
         <h3 class="sheet-title">Set Join Link</h3>
-        <p class="form-hint" style="margin-top:-4px;margin-bottom:12px">
-          Separate links for Finished and Ongoing. Clear a field and Save to remove that link from the database.
-        </p>
+        <p class="form-hint hidden" style="margin-top:-4px;margin-bottom:12px" id="link-sheet-hint"></p>
 
-        <div class="pill-tabs link-type-tabs" id="link-type-tabs" style="margin-bottom:14px">
-          <button type="button" class="pill-tab active" data-link-type="finished" id="link-tab-finished">FINISHED</button>
-          <button type="button" class="pill-tab" data-link-type="ongoing" id="link-tab-ongoing">ONGOING</button>
-        </div>
-
-        <!-- Finished: All seasons | Solo underline tabs — independent links (like Ongoing / Finished) -->
+        <!-- Finished: All seasons | Solo underline tabs — only shown in Finished / Discover context -->
         <div id="link-finished-fields">
           <div class="link-mode-underline" id="link-mode-underline" role="tablist" style="margin-bottom:14px">
             <button type="button" class="link-mode-tab active" id="link-mode-group" data-mode="group">All seasons</button>
@@ -215,16 +208,18 @@
           <div class="form-field hidden" id="link-solo-field">
             <input id="solo-link-input" class="edit-link-input link-input-full" type="text"
                    placeholder="https://t.me/... (this title only)" autocomplete="off" />
-            <p class="form-hint" style="margin-top:10px">
-              Solo: only this title gets its own card and this join link on Finished.
-            </p>
           </div>
         </div>
 
+        <!-- Ongoing field — only shown when opened from the Ongoing column -->
         <div class="form-field hidden" id="link-ongoing-field">
           <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
                  placeholder="https://t.me/..." autocomplete="off" />
-          <p class="form-hint" style="margin-top:10px">Used on the Ongoing tab. Leave empty + Save to remove ongoing link.</p>
+          <div class="pill-tabs" id="ongoing-enable-tabs" style="margin-top:14px">
+            <button type="button" class="pill-tab active" id="ongoing-enable-on" data-enabled="1">ENABLED</button>
+            <button type="button" class="pill-tab" id="ongoing-enable-off" data-enabled="0">DISABLED</button>
+          </div>
+          <p class="form-hint" style="margin-top:8px">Link is shared to all Ongoing posts. Toggle only affects this post’s button.</p>
         </div>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>

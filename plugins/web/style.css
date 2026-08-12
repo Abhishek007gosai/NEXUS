@@ -1447,7 +1447,7 @@ html, body {
 }
 .action-row .btn { margin-bottom: 0; flex: 1; }
 
-/* PREVIOUS | ONGOING — both green */
+/* PREVIOUS (green) | 𝙾𝙽𝙶𝙾𝙸𝙽𝙶 (fancy gradient) */
 .action-row .join-split-btn {
   flex: 1;
   font-size: 12px;
@@ -1455,10 +1455,29 @@ html, body {
   text-transform: uppercase;
   font-weight: 700;
   padding: 12px 8px;
+  border: none !important;
+}
+.action-row .join-split-btn.btn-primary {
   background: var(--grad) !important;
   color: #fff !important;
-  border: none !important;
   box-shadow: 0 6px 18px rgba(31, 86, 40, 0.35);
+}
+.btn-ongoing-fancy {
+  background: linear-gradient(90deg, #ec4899 0%, #a855f7 55%, #8b5cf6 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 6px 18px rgba(168, 85, 247, 0.28);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.btn-ongoing-fancy:active {
+  transform: scale(0.98);
+  opacity: 0.95;
+}
+.action-row .btn-ongoing-fancy {
+  flex: 1;
+  font-size: 12px;
+  padding: 12px 8px;
 }
 
 /* All seasons | Solo underline tabs (Finished link sheet) — same style as Ongoing/Finished */

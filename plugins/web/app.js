@@ -324,14 +324,7 @@
     title.className = "poster-title";
     title.textContent = item.title || "Untitled";
     meta.appendChild(title);
-
-    if (item.genres && item.genres.length) {
-      const genres = document.createElement("p");
-      genres.className = "poster-genres";
-      // Show first 2 genres max to keep cards clean (matches Nari Noona style)
-      genres.textContent = item.genres.slice(0, 2).join(", ");
-      meta.appendChild(genres);
-    }
+    // Genres removed from front/grid view — title only
 
     card.appendChild(meta);
     card.addEventListener("click", onOpen);
@@ -386,12 +379,7 @@
     title.className = "poster-title";
     title.textContent = item.title || "Untitled";
     meta.appendChild(title);
-    if (item.genres && item.genres.length) {
-      const genres = document.createElement("p");
-      genres.className = "poster-genres";
-      genres.textContent = item.genres.slice(0, 2).join(", ");
-      meta.appendChild(genres);
-    }
+    // Genres removed from front/grid view — title only
     card.appendChild(meta);
 
     card.addEventListener("click", onOpen);
@@ -1094,6 +1082,10 @@
       (context === "discover" || context === "genre") ? (anime.matchedJoinLink || null) : null
     );
     const ongoingUrl = anime.ongoing_link || null;
+    // Per-post toggle (default Enabled). When disabled, hide ONGOING button
+    // and fall back to PREVIOUS using the Finished link.
+    const ongoingEnabled = anime.ongoing_enabled !== false;
+    const canShowOngoing = !!(ongoingUrl && ongoingEnabled);
 
     // PREVIOUS | ONGOING split is only for the Ongoing library tab
     const showOngoingSplit = context === "ongoing" || libraryMode === "ongoing";
@@ -1101,25 +1093,32 @@
     const row = document.createElement("div");
     row.className = "action-row";
 
-    if (showOngoingSplit && finishedUrl && ongoingUrl) {
-      // Ongoing tab only → PREVIOUS | ONGOING
+    if (showOngoingSplit && finishedUrl && canShowOngoing) {
+      // Ongoing tab → PREVIOUS + fancy 𝙾𝙽𝙶𝙾𝙸𝙽𝙶
       const prevBtn = document.createElement("button");
       prevBtn.className = "btn btn-primary join-split-btn";
       prevBtn.textContent = "PREVIOUS";
       prevBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
       const ongBtn = document.createElement("button");
-      ongBtn.className = "btn btn-primary join-split-btn";
-      ongBtn.textContent = "ONGOING";
+      ongBtn.className = "btn btn-ongoing-fancy join-split-btn";
+      ongBtn.textContent = "𝙾𝙽𝙶𝙾𝙸𝙽𝙶";
       ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
       row.appendChild(prevBtn);
       row.appendChild(ongBtn);
-    } else if (showOngoingSplit && !finishedUrl && ongoingUrl) {
+    } else if (showOngoingSplit && !finishedUrl && canShowOngoing) {
       // Ongoing tab, only ongoing link
       const ongBtn = document.createElement("button");
-      ongBtn.className = "btn btn-primary";
-      ongBtn.textContent = "ONGOING";
+      ongBtn.className = "btn btn-ongoing-fancy";
+      ongBtn.textContent = "𝙾𝙽𝙶𝙾𝙸𝙽𝙶";
       ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
       row.appendChild(ongBtn);
+    } else if (showOngoingSplit && finishedUrl && !canShowOngoing) {
+      // Ongoing disabled on this post → only PREVIOUS (Finished link)
+      const prevBtn = document.createElement("button");
+      prevBtn.className = "btn btn-primary";
+      prevBtn.textContent = "PREVIOUS";
+      prevBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
+      row.appendChild(prevBtn);
     } else if (finishedUrl) {
       // Finished / Discover / etc. → single Join (never the PREVIOUS|ONGOING pair)
       const joinBtn = document.createElement("button");
@@ -1127,11 +1126,11 @@
       joinBtn.textContent = "\u25b6 Join";
       joinBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
       row.appendChild(joinBtn);
-    } else if (ongoingUrl) {
-      // No finished link but ongoing exists (e.g. Finished tab fallback)
+    } else if (canShowOngoing) {
+      // No finished link but ongoing exists and enabled
       const ongBtn = document.createElement("button");
-      ongBtn.className = "btn btn-primary";
-      ongBtn.textContent = "ONGOING";
+      ongBtn.className = "btn btn-ongoing-fancy";
+      ongBtn.textContent = "𝙾𝙽𝙶𝙾𝙸𝙽𝙶";
       ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
       row.appendChild(ongBtn);
     } else {
@@ -1250,19 +1249,17 @@
   }
 
   // ---------------------------------------------------------------------
-  // Set Join Link sheet (admin only) — separate Finished / Ongoing fields
+  // Set Join Link sheet (admin only)
+  // Finished context → All seasons / Solo fields
+  // Ongoing column   → only Ongoing link field
   // ---------------------------------------------------------------------
   let linkTargetAnime = null;
   let linkSheetType = "finished"; // "finished" | "ongoing"
 
   function setLinkSheetType(type) {
     linkSheetType = type === "ongoing" ? "ongoing" : "finished";
-    const tabFin = el("link-tab-finished");
-    const tabOng = el("link-tab-ongoing");
     const finishedFields = el("link-finished-fields");
     const fieldOng = el("link-ongoing-field");
-    if (tabFin) tabFin.classList.toggle("active", linkSheetType === "finished");
-    if (tabOng) tabOng.classList.toggle("active", linkSheetType === "ongoing");
     if (finishedFields) finishedFields.classList.toggle("hidden", linkSheetType !== "finished");
     if (fieldOng) fieldOng.classList.toggle("hidden", linkSheetType !== "ongoing");
     let focusEl;
@@ -1290,6 +1287,18 @@
     if (focusEl) setTimeout(() => focusEl.focus(), 30);
   }
 
+  function setOngoingEnabledUI(enabled) {
+    const onBtn = el("ongoing-enable-on");
+    const offBtn = el("ongoing-enable-off");
+    if (onBtn) onBtn.classList.toggle("active", !!enabled);
+    if (offBtn) offBtn.classList.toggle("active", !enabled);
+  }
+
+  function getOngoingEnabledFromUI() {
+    const onBtn = el("ongoing-enable-on");
+    return !!(onBtn && onBtn.classList.contains("active"));
+  }
+
   function openLinkSheet(anime) {
     linkTargetAnime = anime;
     // All seasons + Solo are independent — load both, show one via underline tabs.
@@ -1298,23 +1307,23 @@
     if (soloInput) soloInput.value = anime.solo_link || "";
     const ongoingInput = el("ongoing-link-input");
     if (ongoingInput) ongoingInput.value = anime.ongoing_link || "";
+    setOngoingEnabledUI(anime.ongoing_enabled !== false);
     setFinishedMode(anime.solo_link ? "solo" : "group");
-    const st = (anime.status && String(anime.status).toUpperCase()) || "";
-    const preferOngoing = (typeof libraryMode !== "undefined" && libraryMode === "ongoing")
-      || st === "RELEASING" || st === "NOT_YET_RELEASED" || st === "HIATUS";
+    // Ongoing link can only be set from the Ongoing column
+    const preferOngoing = (typeof libraryMode !== "undefined" && libraryMode === "ongoing");
     setLinkSheetType(preferOngoing ? "ongoing" : "finished");
     linkOverlay.classList.remove("hidden");
   }
 
   (function wireLinkTabs() {
-    const tabFin = el("link-tab-finished");
-    const tabOng = el("link-tab-ongoing");
-    if (tabFin) tabFin.addEventListener("click", () => setLinkSheetType("finished"));
-    if (tabOng) tabOng.addEventListener("click", () => setLinkSheetType("ongoing"));
     const btnGroup = el("link-mode-group");
     const btnSolo = el("link-mode-solo");
     if (btnGroup) btnGroup.addEventListener("click", () => setFinishedMode("group"));
     if (btnSolo) btnSolo.addEventListener("click", () => setFinishedMode("solo"));
+    const onBtn = el("ongoing-enable-on");
+    const offBtn = el("ongoing-enable-off");
+    if (onBtn) onBtn.addEventListener("click", () => setOngoingEnabledUI(true));
+    if (offBtn) offBtn.addEventListener("click", () => setOngoingEnabledUI(false));
   })();
 
   function closeLinkSheet() {
@@ -1332,11 +1341,19 @@
     const soloValue = soloInput ? (soloInput.value || "").trim() : "";
     const ongoingInput = el("ongoing-link-input");
     const ongoingValue = ongoingInput ? (ongoingInput.value || "").trim() : "";
+    const isOngoingSheet = linkSheetType === "ongoing";
+    const ongoingEnabled = isOngoingSheet ? getOngoingEnabledFromUI() : true;
 
     // Need at least one URL when creating a new post
-    if (!linkTargetAnime.id && !groupValue && !soloValue && !ongoingValue) {
-      showToast("Paste an All seasons, Solo, or Ongoing join URL first");
-      return;
+    if (!linkTargetAnime.id) {
+      if (isOngoingSheet && !ongoingValue) {
+        showToast("Paste an Ongoing join URL first");
+        return;
+      }
+      if (!isOngoingSheet && !groupValue && !soloValue) {
+        showToast("Paste an All seasons or Solo join URL first");
+        return;
+      }
     }
 
     linkSaveBtn.disabled = true;
@@ -1345,12 +1362,11 @@
     try {
       let result;
       if (linkTargetAnime.id) {
-        // Always send both finished fields so they stay independent
-        const body = {
-          group_link: groupValue,
-          solo_link: soloValue,
-          ongoing_link: ongoingValue,
-        };
+        // Only send the fields relevant to the current sheet so we never
+        // accidentally clear the other type of link.
+        const body = isOngoingSheet
+          ? { ongoing_link: ongoingValue, ongoing_enabled: ongoingEnabled }
+          : { group_link: groupValue, solo_link: soloValue };
         result = await api(`/api/anime/${linkTargetAnime.id}/link`, {
           method: "PATCH",
           body: JSON.stringify(body),
@@ -1368,6 +1384,7 @@
         linkTargetAnime.join_link = saved.join_link || null;
         linkTargetAnime.solo_link = saved.solo_link || null;
         linkTargetAnime.ongoing_link = saved.ongoing_link || null;
+        linkTargetAnime.ongoing_enabled = saved.ongoing_enabled !== false;
         linkTargetAnime.display_mode = saved.display_mode || linkTargetAnime.display_mode;
         linkTargetAnime.matchedJoinLink =
           linkTargetAnime.solo_link || linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
@@ -1375,6 +1392,7 @@
           currentDetail.join_link = linkTargetAnime.join_link;
           currentDetail.solo_link = linkTargetAnime.solo_link;
           currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
+          currentDetail.ongoing_enabled = linkTargetAnime.ongoing_enabled;
           currentDetail.display_mode = linkTargetAnime.display_mode;
           currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
         }
@@ -1385,19 +1403,21 @@
             join_link: linkTargetAnime.join_link,
             solo_link: linkTargetAnime.solo_link,
             ongoing_link: linkTargetAnime.ongoing_link,
+            ongoing_enabled: linkTargetAnime.ongoing_enabled,
             display_mode: linkTargetAnime.display_mode,
           };
         }
       } else {
-        // Discover/Genre — create library entry with independent group/solo/ongoing links
+        // Discover/Genre — create library entry (Finished fields only from this sheet)
         const alId = linkTargetAnime.anilist_id || linkTargetAnime.source_id;
         if (!alId) {
           throw new Error("Missing AniList id — open the title again and retry");
         }
         const createBody = {
-          group_link: groupValue,
-          solo_link: soloValue,
-          ongoing_link: ongoingValue,
+          group_link: isOngoingSheet ? "" : groupValue,
+          solo_link: isOngoingSheet ? "" : soloValue,
+          ongoing_link: isOngoingSheet ? ongoingValue : "",
+          ongoing_enabled: isOngoingSheet ? ongoingEnabled : true,
           title: linkTargetAnime.title,
           alt_title: linkTargetAnime.alt_title,
           year: linkTargetAnime.year,
@@ -1416,9 +1436,10 @@
         });
         const anime = result.anime || {};
         linkTargetAnime.id = anime.id;
-        linkTargetAnime.join_link = anime.join_link || groupValue || null;
-        linkTargetAnime.solo_link = anime.solo_link || soloValue || null;
-        linkTargetAnime.ongoing_link = anime.ongoing_link || ongoingValue || null;
+        linkTargetAnime.join_link = anime.join_link || (isOngoingSheet ? null : groupValue) || null;
+        linkTargetAnime.solo_link = anime.solo_link || (isOngoingSheet ? null : soloValue) || null;
+        linkTargetAnime.ongoing_link = anime.ongoing_link || (isOngoingSheet ? ongoingValue : null) || null;
+        linkTargetAnime.ongoing_enabled = anime.ongoing_enabled !== false;
         linkTargetAnime.display_mode = anime.display_mode || (soloValue ? "solo" : "group");
         linkTargetAnime.matchedJoinLink =
           linkTargetAnime.solo_link || linkTargetAnime.join_link || linkTargetAnime.ongoing_link || null;
@@ -1432,6 +1453,7 @@
             join_link: linkTargetAnime.join_link,
             solo_link: linkTargetAnime.solo_link,
             ongoing_link: linkTargetAnime.ongoing_link,
+            ongoing_enabled: linkTargetAnime.ongoing_enabled,
             available: true,
           };
           if (idx >= 0) available[idx] = { ...available[idx], ...row };
@@ -1442,6 +1464,7 @@
           currentDetail.join_link = linkTargetAnime.join_link;
           currentDetail.solo_link = linkTargetAnime.solo_link;
           currentDetail.ongoing_link = linkTargetAnime.ongoing_link;
+          currentDetail.ongoing_enabled = linkTargetAnime.ongoing_enabled;
           currentDetail.matchedJoinLink = linkTargetAnime.matchedJoinLink;
         }
       }
