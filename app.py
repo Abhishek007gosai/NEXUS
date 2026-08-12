@@ -773,8 +773,11 @@ def api_search_anime():
 @app.get("/api/genres/<genre>")
 def api_genre_browse(genre):
     page = request.args.get("page", 1, type=int)
+    media_type = (request.args.get("type") or "anime").lower()
+    if media_type not in ("anime", "manga"):
+        media_type = "anime"
     try:
-        return jsonify(SOURCES["anilist"].browse_genre(genre, page))
+        return jsonify(SOURCES["anilist"].browse_genre(genre, page, media_type=media_type))
     except requests.RequestException:
         return jsonify({"results": [], "has_next": False})
 
