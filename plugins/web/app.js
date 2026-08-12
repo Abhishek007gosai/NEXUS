@@ -364,7 +364,7 @@
   let availableSub = "hanime"; // hanime | hmanhwa
   let hanimeLetter = null;
   let hmanhwaLetter = null;
-  let hmanhwaStatus = "ongoing"; // ongoing | finished
+  let hmanhwaStatus = "finished"; // finished first | ongoing
   let hanimeDiscTrending = [];
   let hanimeDiscPopular = [];
   let hanimeDiscPopularPage = 1;
@@ -572,7 +572,7 @@
     if (tabHanime) tabHanime.classList.toggle("hidden", tab !== "hanime");
     if (tabHmanhwa) tabHmanhwa.classList.toggle("hidden", tab !== "hmanhwa");
     if (tab === "hanime") renderTypeLibrary("ANIME");
-    if (tab === "hmanhwa") showHmanhwaStatus(hmanhwaStatus || "ongoing");
+    if (tab === "hmanhwa") showHmanhwaStatus(hmanhwaStatus || "finished");
   }
   pillTabs.forEach((b) => b.addEventListener("click", () => setPillTab(b.dataset.tab)));
 
@@ -1798,7 +1798,7 @@
       });
       const empty = searchResultsGroups.children.length === 0;
       searchResultsEmpty.textContent = empty
-        ? "No anime / manga / manhwa / manhua / novel found for that title."
+        ? "No adult titles found for that search."
         : searchResultsEmpty.textContent;
       searchResultsEmpty.classList.toggle("hidden", !empty);
     } catch (err) {
@@ -1858,11 +1858,15 @@
     genreViewName = genre;
     genrePage = 1;
     genreHasNext = false;
-    // Yaoi is primarily manga/manhwa on AniList — default to MANGA so results appear
-    genreType = (genre && genre.toLowerCase() === "yaoi") ? "MANGA" : "ANIME";
+    const isYaoi = !!(genre && genre.toLowerCase() === "yaoi");
+    // Yaoi is manga/manhwa/pornhwa only — always MANGA, hide type tabs
+    genreType = isYaoi ? "MANGA" : "ANIME";
     genreViewTitle.textContent = genre;
     document.querySelectorAll("[data-genre-type]").forEach((b) => {
       b.classList.toggle("active", b.dataset.genreType === genreType);
+    });
+    document.querySelectorAll(".genre-type-tabs").forEach((el) => {
+      el.classList.toggle("hidden", isYaoi);
     });
     await loadGenreGrid(true);
   }
