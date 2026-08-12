@@ -142,7 +142,7 @@ query ($page: Int) {
     media(
       type: MANGA
       isAdult: true
-      genre: "Yaoi"
+      tag: "Boys' Love"
       format_in: [MANGA, ONE_SHOT, NOVEL]
       sort: POPULARITY_DESC
     ) {
@@ -881,7 +881,7 @@ class AniListSource(AnimeSource):
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
         return self._cached(
-            f"genre:{media_type}:{genre}:{page}:v3",
+            f"genre:{media_type}:{genre}:{page}:v4",
             fetch,
             ttl=CATALOG_CACHE_TTL,
         )
