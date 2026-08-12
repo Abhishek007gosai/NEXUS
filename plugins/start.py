@@ -150,6 +150,27 @@ async def start_command(client: Client, message: Message):
 # Create a global dictionary to store chat data
 chat_data_cache = {}
 
+def _strip_share_buttons(reply_markup):
+    """Remove Share URL / telegram.me/share buttons; keep other keyboards (e.g. seasons)."""
+    if not reply_markup or not getattr(reply_markup, "inline_keyboard", None):
+        return None
+    cleaned = []
+    for row in reply_markup.inline_keyboard:
+        new_row = []
+        for btn in row:
+            url = (getattr(btn, "url", None) or "").lower()
+            label = (getattr(btn, "text", None) or "").lower()
+            if "share" in label or "telegram.me/share" in url or "t.me/share" in url:
+                continue
+            new_row.append(btn)
+        if new_row:
+            cleaned.append(new_row)
+    if not cleaned:
+        return None
+    return InlineKeyboardMarkup(cleaned)
+
+
+
 
 async def _silent_delete_later(msg, delay_seconds: int):
     """Delete a message after delay with no notification to the user."""
