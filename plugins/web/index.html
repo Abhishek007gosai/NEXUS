@@ -192,22 +192,19 @@
         <h3 class="sheet-title">Set Join Link</h3>
         <p class="form-hint hidden" style="margin-top:-4px;margin-bottom:12px" id="link-sheet-hint"></p>
 
-        <!-- Finished: All seasons | Solo underline tabs — only shown in Finished / Discover context -->
+        <!-- Finished: sᴇᴀsᴏɴs | sᴏʟᴏ underline tabs — only shown in Finished / Discover context -->
         <div id="link-finished-fields">
           <div class="link-mode-underline" id="link-mode-underline" role="tablist" style="margin-bottom:14px">
-            <button type="button" class="link-mode-tab active" id="link-mode-group" data-mode="group">All seasons</button>
-            <button type="button" class="link-mode-tab" id="link-mode-solo" data-mode="solo">Solo</button>
+            <button type="button" class="link-mode-tab active" id="link-mode-group" data-mode="group">sᴇᴀsᴏɴs</button>
+            <button type="button" class="link-mode-tab" id="link-mode-solo" data-mode="solo">sᴏʟᴏ</button>
           </div>
           <div class="form-field" id="link-group-field">
             <input id="link-input" class="edit-link-input link-input-full" type="text"
-                   placeholder="https://t.me/... (whole franchise)" autocomplete="off" />
-            <p class="form-hint" id="link-finished-hint" style="margin-top:10px">
-              All seasons: whole franchise shares this join link on Finished.
-            </p>
+                   placeholder="https://t.me/..." autocomplete="off" />
           </div>
           <div class="form-field hidden" id="link-solo-field">
             <input id="solo-link-input" class="edit-link-input link-input-full" type="text"
-                   placeholder="https://t.me/... (this title only)" autocomplete="off" />
+                   placeholder="https://t.me/..." autocomplete="off" />
           </div>
         </div>
 
@@ -215,11 +212,6 @@
         <div class="form-field hidden" id="link-ongoing-field">
           <input id="ongoing-link-input" class="edit-link-input link-input-full" type="text"
                  placeholder="https://t.me/..." autocomplete="off" />
-          <div class="pill-tabs" id="ongoing-enable-tabs" style="margin-top:14px">
-            <button type="button" class="pill-tab active" id="ongoing-enable-on" data-enabled="1">ENABLED</button>
-            <button type="button" class="pill-tab" id="ongoing-enable-off" data-enabled="0">DISABLED</button>
-          </div>
-          <p class="form-hint" style="margin-top:8px">Link is shared to all Ongoing posts. Toggle only affects this post’s button.</p>
         </div>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>
