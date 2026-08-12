@@ -532,33 +532,33 @@ class AniListSource(AnimeSource):
         return bool(genres & {"hentai", "yaoi", "yuri", "ecchi"})
 
     def search(self, query: str, page: int = 1) -> dict:
-        """Search ALL anime on AniList (no isAdult filter).
-
-        Returns every matching anime title so search surfaces hentai,
-        regular anime, and everything else.
-        """
+        """Search adult / hentai / ecchi anime only (no regular anime)."""
         results = []
         seen = set()
         has_next = False
         try:
-            data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
+            # Prefer explicit adult search first
+            try:
+                data = self._post(SEARCH_QUERY, {"search": query, "page": page})
+            except Exception:
+                data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
             for m in data["Page"]["media"]:
                 mid = m["id"]
                 if mid in seen:
+                    continue
+                if not self._is_adult_result(m):
                     continue
                 seen.add(mid)
                 results.append(self._map_search_item(m, "ANIME"))
             has_next = data["Page"]["pageInfo"]["hasNextPage"]
         except Exception:
             pass
+        results = _filter_blocked(results)
         return {"results": results, "has_next": has_next}
 
     def search_all(self, query: str, page: int = 1) -> dict:
-        """Search ALL AniList anime + manga/manhwa/manhua/novels together.
-
-        No adult-only filter — every matching title is returned so the
-        search page shows pornhwa, hentai, novels, manhua, manhwa, and
-        regular titles in one list.
+        """Search adult content only: hentai, ecchi, pornhwa, adult manhwa/manga.
+        Regular (non-adult) anime/manga are excluded. Yaoi/BL only via Genres.
         """
         anime = {"results": [], "has_next": False}
         manga = {"results": [], "has_next": False}
@@ -578,6 +578,7 @@ class AniListSource(AnimeSource):
                 continue
             seen.add(aid)
             merged.append(item)
+        merged = _filter_blocked(merged)
         return {
             "results": merged,
             "has_next": bool(anime.get("has_next") or manga.get("has_next")),
@@ -832,11 +833,7 @@ class AniListSource(AnimeSource):
         return self.get_airing_manga(page)
 
     def search_manga(self, query: str, page: int = 1) -> dict:
-        """Search ALL manga / manhwa / manhua / novels on AniList (no isAdult filter).
-
-        Returns every matching title so pornhwa, manhwa, manhua, novels,
-        and regular manga all appear in search.
-        """
+        """Search adult manga / manhwa / pornhwa / novels only (no regular manga)."""
         results = []
         seen = set()
         has_next = False
@@ -846,26 +843,29 @@ class AniListSource(AnimeSource):
                 mid = m["id"]
                 if mid in seen:
                     continue
+                if not self._is_adult_result(m):
+                    continue
                 seen.add(mid)
                 results.append(self._map_search_item(m, "MANGA"))
             has_next = data["Page"]["pageInfo"]["hasNextPage"]
         except Exception:
             pass
+        results = _filter_blocked(results)
         return {"results": results, "has_next": has_next}
 
     def browse_genre(self, genre: str, page: int = 1, media_type: str = "ANIME") -> dict:
-        """Browse adult titles in a genre. media_type: ANIME (H-ANIME) or MANGA (H-MANHWA).
-        Yaoi is only available via Genres (filtered out of main catalog feeds)."""
+        """Browse adult titles in a genre. Yaoi is Genres-only (manga/manhwa/pornhwa)."""
         media_type = "MANGA" if str(media_type).upper() == "MANGA" else "ANIME"
         is_yaoi = (genre or "").strip().lower() == "yaoi"
 
         def fetch():
-            if is_yaoi and media_type == "MANGA":
+            if is_yaoi:
+                # Yaoi = adult BL manga/manhwa/pornhwa (not regular anime)
                 data = self._post(YAOI_MANGA_GENRE_QUERY, {"page": page})
-            elif is_yaoi and media_type == "ANIME":
-                data = self._post(YAOI_ANIME_GENRE_QUERY, {"page": page})
+                out_type = "MANGA"
             else:
                 data = self._post(GENRE_QUERY, {"genre": genre, "page": page, "type": media_type})
+                out_type = media_type
             out = []
             for m in data["Page"]["media"]:
                 score = m.get("averageScore")
@@ -876,12 +876,12 @@ class AniListSource(AnimeSource):
                     "anilist_id": m["id"],
                     "source": self.name,
                     "source_id": m["id"],
-                    "media_type": media_type,
+                    "media_type": out_type,
                 })
             return {"results": out, "has_next": data["Page"]["pageInfo"]["hasNextPage"]}
 
         return self._cached(
-            f"genre:{media_type}:{genre}:{page}:v2",
+            f"genre:{media_type}:{genre}:{page}:v3",
             fetch,
             ttl=CATALOG_CACHE_TTL,
         )
