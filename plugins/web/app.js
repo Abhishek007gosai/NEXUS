@@ -638,17 +638,13 @@
   }
 
   function isOngoing(a) {
-    // Ongoing tab: ONLY the season that is airing right now.
-    // Previous seasons (FINISHED / CANCELLED) never appear here — even if they
-    // still have an ongoing_link left over. Announced (NOT_YET_RELEASED) stay out too.
+    // Ongoing tab: ONLY currently airing seasons (AniList RELEASING).
+    // FINISHED / CANCELLED / HIATUS / NOT_YET_RELEASED / blank never appear here.
     const st = (a.status || "").toUpperCase();
-    if (st === "RELEASING" || st === "HIATUS") return true;
-    // Blank status + ongoing_link: keep until AniList refresh fills status
-    if (!st && a.ongoing_link) return true;
-    return false;
+    return st === "RELEASING";
   }
 
-  // Title-based schedule fallback when AniList has no broadcast day
+  // Title-based schedule fallback when AniList has no airing day
   const TITLE_AIRING_DAY = [
     { day: "monday", re: /grand\s*blue/i },
     { day: "tuesday", re: /clevatess/i },
