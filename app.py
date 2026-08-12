@@ -845,7 +845,8 @@ def api_anime_detail(anime_id):
                     pass
                 anime.update(patch)
         except Exception as e:
-            print(f"[detail] enrich failed for {anime_id}: {e}")
+            # Avoid flooding logs on repeated opens of the same broken source_id
+            print(f"[detail] enrich failed for {anime_id} (source_id={sid}): {e}")
 
     anime["related_posted"] = _related_posted(anime)
     return jsonify(anime)
@@ -857,6 +858,13 @@ def api_anilist_details(anilist_id):
     the lightweight discovery query doesn't include those fields."""
     try:
         details = SOURCES["anilist"].get_details(anilist_id)
+    except LookupError:
+        abort(404)
+    except (ValueError, requests.HTTPError) as e:
+        msg = str(e)
+        if "400" in msg or "404" in msg or "not found" in msg:
+            abort(404)
+        abort(502)
     except requests.RequestException:
         abort(502)
     except Exception:
