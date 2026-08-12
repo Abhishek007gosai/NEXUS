@@ -384,21 +384,21 @@
   }
 
   function buildAvailableIndex() {
-    // Matching purely by title text (the old approach) silently breaks
-    // whenever the posted library entry's title and the AniList discovery
-    // feed's title differ even slightly — different EN/romaji preference,
-    // punctuation, a manually edited title, etc. — so a join link you just
-    // added shows up in "Available" but the same anime in "All" still
-    // looks unlinked. AniList ids are stable, so prefer matching on that
-    // and only fall back to title text when an id isn't available.
+    // Prefer AniList id match; fall back to normalized title so join links
+    // show on Search / Popular / Genre cards as well as Home library.
     const byId = new Map();
     const byTitle = new Map();
+    function normTitle(t) {
+      return (t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    }
     available.forEach((a) => {
       if (a.source_id != null) {
         byId.set(`${a.source || "anilist"}:${a.source_id}`, a);
-        byId.set(String(a.source_id), a); // legacy plain-id match
+        byId.set(String(a.source_id), a);
       }
-      byTitle.set(a.title.toLowerCase(), a);
+      const raw = (a.title || "").toLowerCase();
+      byTitle.set(raw, a);
+      byTitle.set(normTitle(a.title), a);
     });
     return {
       match(item) {
@@ -408,9 +408,24 @@
           const m = byId.get(`${src}:${sid}`) || byId.get(String(sid));
           if (m) return m;
         }
-        return byTitle.get((item.title || "").toLowerCase()) || null;
+        const raw = (item.title || "").toLowerCase();
+        return byTitle.get(raw) || byTitle.get(normTitle(item.title)) || null;
       },
     };
+  }
+
+
+  function resolveJoinLink(anime) {
+    if (!anime) return null;
+    const direct = (anime.join_link || anime.matchedJoinLink || "").trim();
+    if (direct) return direct;
+    try {
+      const matched = buildAvailableIndex().match(anime);
+      const link = matched && (matched.join_link || "").trim();
+      return link || null;
+    } catch (err) {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1238,13 +1253,14 @@
       const row = document.createElement("div");
       row.className = "action-row";
 
-      if (anime.matchedJoinLink) {
+      const joinUrl = resolveJoinLink(anime);
+      if (joinUrl) {
         const joinBtn = document.createElement("button");
         joinBtn.className = "btn btn-primary";
         joinBtn.textContent = "\u25b6 Join";
         joinBtn.addEventListener("click", () => {
-          if (tg && tg.openLink) tg.openLink(anime.matchedJoinLink);
-          else window.open(anime.matchedJoinLink, "_blank");
+          if (tg && tg.openLink) tg.openLink(joinUrl);
+          else window.open(joinUrl, "_blank");
         });
         row.appendChild(joinBtn);
       } else {
@@ -1291,13 +1307,14 @@
     const row = document.createElement("div");
     row.className = "action-row";
 
-    if (anime.join_link) {
+    const availJoin = resolveJoinLink(anime);
+    if (availJoin) {
       const joinBtn = document.createElement("button");
       joinBtn.className = "btn btn-primary";
-      joinBtn.textContent = "\u25b6 Join";
+      joinBtn.textContent = "▶ Join";
       joinBtn.addEventListener("click", () => {
-        if (tg && tg.openLink) tg.openLink(anime.join_link);
-        else window.open(anime.join_link, "_blank");
+        if (tg && tg.openLink) tg.openLink(availJoin);
+        else window.open(availJoin, "_blank");
       });
       row.appendChild(joinBtn);
     } else {
@@ -1348,6 +1365,9 @@
   async function openDiscoverDetail(item) {
     const source = itemSource(item);
     const sid = itemSourceId(item);
+    const matched = buildAvailableIndex().match(item);
+    const joinLink = (matched && matched.join_link) || item.matchedJoinLink || item.join_link || null;
+    item.matchedJoinLink = joinLink;
     openDetailSheet({
       ...item,
       source,
@@ -1355,6 +1375,8 @@
       anilist_id: source === "anilist" ? sid : item.anilist_id,
       description: "Loading synopsis...",
       genres: item.genres || [],
+      matchedJoinLink: joinLink,
+      join_link: joinLink,
     }, "discover");
     if (sid == null) return;
     try {
@@ -1366,7 +1388,8 @@
           source_id: sid,
           anilist_id: source === "anilist" ? sid : null,
           rating: item.rating ?? full.rating,
-          matchedJoinLink: item.matchedJoinLink,
+          matchedJoinLink: joinLink,
+          join_link: joinLink,
         }, "discover");
       }
     } catch (err) {
@@ -2042,14 +2065,7 @@
       const stack = document.createElement("div");
       stack.className = "help-stack";
 
-      // Intro card (title + description) — always shown
-      const intro = document.createElement("div");
-      intro.className = "help-card";
-      intro.innerHTML = `
-        <h3 class="help-card-title">${escapeHtml(help.title || "Need help?")}</h3>
-        <p class="help-card-text">${escapeHtml(help.text || "Notifications, requests, and channel links are all managed through the bot.")}</p>
-      `;
-      stack.appendChild(intro);
+      // Title / Description removed from profile display
 
       // All channel links live behind MORE CHANNELS (not shown until tapped)
       const allChannelLinks = []

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#131310" />
   <title>{{ brand_name }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=48" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=51" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body data-brand="{{ brand_name }}">
@@ -202,12 +202,10 @@
         <input id="link-input" class="edit-link-input link-input-full" type="text"
                placeholder="Join URL" autocomplete="off" />
         <div id="link-section-picker" class="status-tabs hidden" style="margin: 0 0 14px;">
-          <button type="button" class="status-tab active" data-library-section="ongoing">Ongoing</button>
-          <button type="button" class="status-tab" data-library-section="finished">Finished</button>
+          <button type="button" class="status-tab active" data-library-section="finished">𝙵𝙸𝙽𝙸𝚂𝙷𝙴𝙳</button>
+          <button type="button" class="status-tab" data-library-section="ongoing">𝙾𝙽𝙶𝙾𝙸𝙽𝙶</button>
         </div>
-        <p id="link-section-hint" class="empty-note hidden" style="padding:0 0 12px;text-align:left;font-size:12px;">
-          Choose which H-MANHWA section this title appears in.
-        </p>
+        <p id="link-section-hint" class="empty-note hidden" style="display:none"></p>
         <div class="btn-row">
           <button id="link-cancel" class="btn btn-secondary">Cancel</button>
           <button id="link-save" class="btn btn-primary">Save</button>
@@ -222,10 +220,8 @@
     <div class="sheet">
       <div class="sheet-body">
         <h3 class="sheet-title">Edit profile links</h3>
-        <label class="empty-note" style="display:block;text-align:left;padding:0 0 4px">Title</label>
-        <input id="help-edit-title" class="edit-link-input link-input-full" type="text" placeholder="Need help?" />
-        <label class="empty-note" style="display:block;text-align:left;padding:8px 0 4px">Description</label>
-        <input id="help-edit-text" class="edit-link-input link-input-full" type="text" placeholder="Short help text" />
+        <input id="help-edit-title" class="edit-link-input link-input-full hidden" type="text" placeholder="Need help?" />
+        <input id="help-edit-text" class="edit-link-input link-input-full hidden" type="text" placeholder="Short help text" />
         <label class="empty-note" style="display:block;text-align:left;padding:8px 0 4px">Support Chat URL</label>
         <input id="help-edit-support" class="edit-link-input link-input-full" type="text" placeholder="https://t.me/your_support" />
         <p class="empty-note" style="text-align:left;padding:12px 0 6px">Main links (name + URL)</p>
@@ -274,6 +270,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="{{ url_for('static', filename='app.js') }}?v=48"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=51"></script>
 </body>
 </html>
