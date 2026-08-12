@@ -1181,6 +1181,18 @@ def api_edit_link(anime_id):
 
     if has_ongoing:
         db.update_ongoing_link(anime_id, ongoing_link or None)
+        # Share the same ongoing link across all other Ongoing posts
+        try:
+            propagated += db.propagate_ongoing_link(anime_id, ongoing_link or None)
+        except Exception as e:
+            print(f"[link] ongoing propagate failed: {e}")
+
+    # Per-post toggle: show / hide the ONGOING button on this card
+    if "ongoing_enabled" in payload:
+        try:
+            db.update_ongoing_enabled(anime_id, bool(payload.get("ongoing_enabled")))
+        except Exception as e:
+            print(f"[link] ongoing_enabled update failed: {e}")
 
     try:
         db.accept_requests_for_title((anime or {}).get("title") or "")
@@ -1194,6 +1206,7 @@ def api_edit_link(anime_id):
         link=(updated or {}).get("join_link") or "",
         solo_link=(updated or {}).get("solo_link") or "",
         ongoing_link=(updated or {}).get("ongoing_link") or "",
+        ongoing_enabled=(updated or {}).get("ongoing_enabled", True),
         propagated=propagated,
         anime=updated,
     )
@@ -1424,6 +1437,16 @@ def api_set_link_from_anilist(anilist_id):
 
     if ongoing_link:
         db.update_ongoing_link(anime_id, ongoing_link)
+        try:
+            propagated += db.propagate_ongoing_link(anime_id, ongoing_link)
+        except Exception as e:
+            print(f"[link-anilist] ongoing propagate failed: {e}")
+
+    if "ongoing_enabled" in payload:
+        try:
+            db.update_ongoing_enabled(anime_id, bool(payload.get("ongoing_enabled")))
+        except Exception:
+            pass
 
     try:
         db.accept_requests_for_title(details.get("title") or "")
