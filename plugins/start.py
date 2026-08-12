@@ -134,8 +134,8 @@ async def start_command(client: Client, message: Message):
                 mention=message.from_user.mention,
                 id=message.from_user.id
             ),
-            reply_markup=reply_markup,
-            message_effect_id=5104841245755180586)  # 🔥
+            reply_markup=reply_markup
+        )
         
         return
 
