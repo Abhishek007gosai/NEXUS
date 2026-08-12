@@ -92,10 +92,24 @@ async def shortner_panel(client, query_or_message):
     image_url = MESSAGES.get("SHORT", "https://telegra.ph/file/8aaf4df8c138c6685dcee-05d3b183d4978ec347.jpg")
     
     if hasattr(query_or_message, 'message'):
-        await query_or_message.message.edit_media(
-            media=InputMediaPhoto(media=image_url, caption=msg),
-            reply_markup=reply_markup
-        )
+        try:
+            await query_or_message.message.edit_media(
+                media=InputMediaPhoto(media=image_url, caption=msg),
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            # Same content re-tap → Telegram MESSAGE_NOT_MODIFIED; ignore.
+            # Other edit failures: fall back to caption/markup-only edit.
+            err = str(e)
+            if "MESSAGE_NOT_MODIFIED" in err or "message is not modified" in err.lower():
+                return
+            try:
+                await query_or_message.message.edit_caption(caption=msg, reply_markup=reply_markup)
+            except Exception:
+                try:
+                    await query_or_message.message.edit_reply_markup(reply_markup=reply_markup)
+                except Exception:
+                    pass
     else:
         await query_or_message.reply_photo(photo=image_url, caption=msg, reply_markup=reply_markup)
 

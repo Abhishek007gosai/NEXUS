@@ -56,10 +56,14 @@ def _airing_day_from_media(m: dict) -> str | None:
     return None
 
 
+# No type: ANIME filter — library entries may point at manga IDs or mixed
+# media; forcing ANIME caused AniList 400 Bad Request on valid manga IDs
+# and on some edge IDs, which left the UI stuck on "Loading synopsis...".
 DETAILS_QUERY = """
 query ($id: Int) {
-  Media(id: $id, type: ANIME) {
+  Media(id: $id) {
     id
+    type
     title { romaji english }
     startDate { year month day }
     coverImage { large extraLarge }
@@ -326,13 +330,34 @@ class AniListSource(AnimeSource):
         return self._cached(key, fetch)
 
     def get_details(self, source_id, use_cache: bool = True) -> dict:
+        key = f"details:{source_id}"
+        # Negative cache: avoid re-hitting AniList for IDs that 400 / not-found
+        neg_key = f"details-miss:{source_id}"
         if use_cache:
-            return self._cached(f"details:{source_id}", lambda: self._fetch_details(source_id))
+            with self._lock:
+                miss = self._cache.get(neg_key)
+            if miss and (time.time() - miss[0]) < 1800:
+                raise LookupError(f"AniList media not found (cached): {source_id}")
+            try:
+                return self._cached(key, lambda: self._fetch_details(source_id))
+            except (LookupError, ValueError, requests.HTTPError, RuntimeError) as e:
+                # Cache hard failures so detail opens don't burn the rate limit
+                msg = str(e)
+                if any(x in msg for x in ("400", "404", "not found", "invalid AniList")):
+                    with self._lock:
+                        self._cache[neg_key] = (time.time(), {"miss": True})
+                raise
         return self._fetch_details(source_id)
 
     def _fetch_details(self, source_id) -> dict:
-        data = self._post(DETAILS_QUERY, {"id": int(source_id)})
-        m = data["Media"]
+        try:
+            sid = int(source_id)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"invalid AniList id: {source_id!r}") from e
+        data = self._post(DETAILS_QUERY, {"id": sid})
+        m = data.get("Media") if isinstance(data, dict) else None
+        if not m:
+            raise LookupError(f"AniList media not found: {sid}")
         score = m.get("averageScore")
         titles = m.get("title") or {}
         main_title = _best_title(titles)
