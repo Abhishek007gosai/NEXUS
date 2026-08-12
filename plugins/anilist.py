@@ -39,10 +39,7 @@ query ($search: String, $page: Int) {
 
 
 def _airing_day_from_media(m: dict) -> str | None:
-    """Map nextAiringEpisode timestamp to sunday…saturday (JST).
-
-    AniList removed the Media.broadcast field; use nextAiringEpisode only.
-    """
+    """Map nextAiringEpisode timestamp to sunday…saturday (JST)."""
     nae = m.get("nextAiringEpisode") or {}
     ts = nae.get("airingAt")
     if ts:
