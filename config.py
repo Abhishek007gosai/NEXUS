@@ -13,8 +13,8 @@ PORT = int(os.getenv("PORT", "5010"))
 # ──────────────────────────────────────────────
 SESSION = os.getenv("SESSION", "Kaya")
 TOKEN = os.getenv("TOKEN", "")
-API_ID = int(os.getenv("API_ID", "29245477"))
-API_HASH = os.getenv("API_HASH", "0abc83883262245c90ca337b7a0375c4")
+API_ID = int(os.getenv("API_ID", ""))
+API_HASH = os.getenv("API_HASH", "")
 WORKERS = int(os.getenv("WORKERS", "5"))
 OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
 MSG_EFFECT = 5046509860389126442
