@@ -73,6 +73,7 @@ class Rohit:
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
         self.db_channels_col = self.database['db_channels']  # multiple file-store channels
+        self.pending_deletes = self.database['pending_deletes']  # durable auto-delete queue
 
 # USER DATA
     async def present_user(self, user_id: int):
@@ -298,6 +299,39 @@ class Rohit:
     async def list_db_channel_ids(self) -> list:
         channels = await self.get_db_channels()
         return [int(cid) for cid, d in channels.items() if d.get("is_active", True)]
+
+    # ---------- Durable pending deletes (for /dbroadcast long timers) ----------
+    async def add_pending_delete(self, chat_id: int, message_id: int, delete_at: float):
+        """Schedule a message for deletion at unix timestamp delete_at."""
+        await self.pending_deletes.insert_one({
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "delete_at": delete_at,
+        })
+
+    async def add_pending_deletes_bulk(self, items: list):
+        """items: list of {chat_id, message_id, delete_at}"""
+        if not items:
+            return
+        await self.pending_deletes.insert_many(items)
+
+    async def get_due_deletes(self, now: float, limit: int = 500):
+        """Fetch messages whose delete_at <= now."""
+        cursor = self.pending_deletes.find(
+            {"delete_at": {"$lte": now}}
+        ).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    async def remove_pending_delete(self, doc_id):
+        await self.pending_deletes.delete_one({"_id": doc_id})
+
+    async def remove_pending_deletes_bulk(self, ids: list):
+        if not ids:
+            return
+        await self.pending_deletes.delete_many({"_id": {"$in": ids}})
+
+    async def count_pending_deletes(self) -> int:
+        return await self.pending_deletes.count_documents({})
 
 
 db = Rohit(DB_URI, DB_NAME)
