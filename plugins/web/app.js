@@ -1133,17 +1133,21 @@
       ongBtn.addEventListener("click", () => openJoinUrl(ongoingUrl));
       row.appendChild(ongBtn);
     } else if (showOngoingSplit && finishedUrl && !ongoingUrl) {
-      // Ongoing column, no ongoing link set → show PREVIOUS (Finished link)
+      // Ongoing column, no ongoing link set → show PREVIOUS + Request (not ONGOING)
       const prevBtn = document.createElement("button");
-      prevBtn.className = "btn btn-primary";
+      prevBtn.className = "btn btn-primary join-split-btn";
       prevBtn.textContent = "PREVIOUS";
       prevBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
       row.appendChild(prevBtn);
+      row.appendChild(makeRequestButton(anime));
+    } else if (showOngoingSplit && !finishedUrl && !ongoingUrl) {
+      // Ongoing column, no links at all → Request only
+      row.appendChild(makeRequestButton(anime));
     } else if (finishedUrl) {
       // Finished / Discover / etc. → single Join
       const joinBtn = document.createElement("button");
       joinBtn.className = "btn btn-primary";
-      joinBtn.textContent = "\u25b6 Join";
+      joinBtn.textContent = "• ᴊᴏɪɴ";
       joinBtn.addEventListener("click", () => openJoinUrl(finishedUrl));
       row.appendChild(joinBtn);
     } else if (ongoingUrl) {
