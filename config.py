@@ -24,21 +24,11 @@ ADMINS = []
 # ──────────────────────────────────────────────
 # MongoDB
 # ──────────────────────────────────────────────
-# Multiple URIs / names: separate with space or comma (same order, paired by index).
-# Example:
-#   DB_URI="mongodb://uri1 mongodb://uri2 mongodb://uri3"
-#   DB_NAME="db1 db2 db3"
-# Bot tries pairs in order and uses the first that connects (failover).
-# If only one DB_NAME is given it is used for every URI.
-# Stats (/stats) lists every configured pair and marks the active one.
-DB_URI = [u.strip() for u in (os.getenv("DB_URI", "") or "").replace(",", " ").split() if u.strip()]
-_db_names = [n.strip() for n in (os.getenv("DB_NAME", "cluster0") or "cluster0").replace(",", " ").split() if n.strip()]
-if not _db_names:
-    _db_names = ["cluster0"]
-# Pad names to match URI count (reuse last name)
-while len(_db_names) < len(DB_URI):
-    _db_names.append(_db_names[-1])
-DB_NAME = _db_names  # list, same length as DB_URI (or 1 if no URIs)
+# Multi: space or comma separated, paired by index (failover order).
+#   DB_URI="mongodb://uri1 mongodb://uri2"
+#   DB_NAME="cluster0 cluster1"
+DB_URI = [u for u in os.getenv("DB_URI", "").replace(",", " ").split() if u.strip()]
+DB_NAME = [n for n in os.getenv("DB_NAME", "cluster0").replace(",", " ").split() if n.strip()] or ["cluster0"]
 
 # ──────────────────────────────────────────────
 # Anime Index branding
