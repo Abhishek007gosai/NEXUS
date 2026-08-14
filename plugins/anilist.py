@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 
-from config import ANILIST_ENDPOINT, ANILIST_PROXY, CATALOG_CACHE_TTL
+from config import ANILIST_ENDPOINT, CATALOG_CACHE_TTL
 from plugins.base import AnimeSource
 
 # Persist catalog snapshots so cold starts (Koyeb sleep/restart) still serve
@@ -230,16 +230,11 @@ class AniListSource(AnimeSource):
 
     def _post(self, query: str, variables: dict) -> dict:
         # AniList rate-limits aggressively. Retry 429/5xx with backoff.
-        # Optional ANILIST_PROXY routes via residential/static proxy when
-        # Koyeb datacenter IPs are blocked or throttled by Cloudflare/AniList.
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
-        proxies = None
-        if ANILIST_PROXY:
-            proxies = {"http": ANILIST_PROXY, "https": ANILIST_PROXY}
         last_exc = None
         for attempt in range(4):
             try:
@@ -248,7 +243,6 @@ class AniListSource(AnimeSource):
                     json={"query": query, "variables": variables},
                     headers=headers,
                     timeout=12,
-                    proxies=proxies,
                 )
             except requests.RequestException as e:
                 last_exc = e

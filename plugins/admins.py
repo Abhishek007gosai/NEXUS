@@ -114,31 +114,101 @@ async def usage_cmd(client: Client, message: Message):
     except Exception:
         sent = recv = 0
 
-    # ── MongoDB ──
-    db_host = "unknown"
-    db_used = 0
-    db_limit = 512 * 1024 * 1024  # Atlas free-tier default display
-    db_docs = 0
-    db_name = DB_NAME or "cluster0"
-    try:
-        uris = DB_URI if isinstance(DB_URI, (list, tuple)) else [DB_URI]
-        raw_uri = (uris[0] if uris else "") or getattr(client.mongodb, "uri", "") or ""
-        if raw_uri:
-            host = urlparse(raw_uri.replace("mongodb+srv://", "https://").replace("mongodb://", "https://")).hostname
-            if host:
-                db_host = host
-        # dbstats
-        stats = await client.mongodb.db.command("dbstats")
-        db_used = float(stats.get("dataSize", 0) or 0) + float(stats.get("indexSize", 0) or 0)
-        db_docs = int(stats.get("objects", 0) or 0)
-        # storageSize can be more accurate for "used"
-        if stats.get("storageSize"):
-            db_used = max(db_used, float(stats["storageSize"]))
-    except Exception:
-        pass
+    # ── MongoDB (supports multi-URI + multi-name failover) ──
+    uris = list(DB_URI) if isinstance(DB_URI, (list, tuple)) else ([DB_URI] if DB_URI else [])
+    names = list(DB_NAME) if isinstance(DB_NAME, (list, tuple)) else ([DB_NAME] if DB_NAME else ["cluster0"])
+    if not names:
+        names = ["cluster0"]
+    while len(names) < len(uris):
+        names.append(names[-1])
+    if not uris and names:
+        uris = [""]  # still show name-only entry
 
-    db_pct = (db_used / db_limit) * 100 if db_limit else 0
-    db_free = max(0, db_limit - db_used)
+    active_uri = (getattr(client.mongodb, "uri", None) or "").strip()
+    active_name = (getattr(client.mongodb, "db_name", None) or "").strip()
+    if not active_uri and uris:
+        active_uri = uris[0]
+    if not active_name and names:
+        active_name = names[0]
+
+    def _uri_host(u: str) -> str:
+        if not u:
+            return "unknown"
+        try:
+            host = urlparse(
+                u.replace("mongodb+srv://", "https://").replace("mongodb://", "https://")
+            ).hostname
+            return host or "unknown"
+        except Exception:
+            return "unknown"
+
+    # Per-DB status + combined storage across all reachable DBs
+    per_db_limit = 512 * 1024 * 1024  # Atlas free-tier per cluster
+    status_lines = []
+    active_host = "unknown"
+    total_used = 0.0
+    total_docs = 0
+    reachable_count = 0
+    for idx, uri in enumerate(uris, start=1):
+        name = names[idx - 1] if idx - 1 < len(names) else names[-1]
+        is_active = bool(active_uri and uri == active_uri)
+        reachable = False
+        used = docs = 0
+        try:
+            if is_active:
+                stats = await client.mongodb.db.command("dbstats")
+                used = float(stats.get("dataSize", 0) or 0) + float(stats.get("indexSize", 0) or 0)
+                docs = int(stats.get("objects", 0) or 0)
+                if stats.get("storageSize"):
+                    used = max(used, float(stats["storageSize"]))
+                reachable = True
+                active_host = _uri_host(uri)
+            else:
+                from pymongo import MongoClient as _SyncMC
+                c = _SyncMC(uri, serverSelectionTimeoutMS=3000)
+                c.admin.command("ping")
+                try:
+                    st = c[name].command("dbstats")
+                    used = float(st.get("dataSize", 0) or 0) + float(st.get("indexSize", 0) or 0)
+                    docs = int(st.get("objects", 0) or 0)
+                    if st.get("storageSize"):
+                        used = max(used, float(st["storageSize"]))
+                except Exception:
+                    pass
+                c.close()
+                reachable = True
+        except Exception:
+            reachable = False
+
+        if reachable:
+            reachable_count += 1
+            total_used += used
+            total_docs += docs
+
+        mark = "• active" if is_active else ("• standby" if reachable else "• down")
+        status_lines.append(
+            f"DB #{idx} {mark} (<code>{name}</code>) · <code>{_fmt_bytes(used)}</code>"
+        )
+
+    if not status_lines:
+        status_lines.append("DB #1 • none configured")
+
+    # Combined limit = 512 MB × number of configured (or reachable) DBs
+    n_dbs = max(len(uris), 1)
+    combined_limit = per_db_limit * n_dbs
+    pct = (total_used / combined_limit) * 100 if combined_limit else 0
+    free = max(0, combined_limit - total_used)
+    detail = (
+        f"Host: <code>{active_host}</code>\n"
+        f"Used: <code>{_fmt_bytes(total_used)}</code> / <code>{_fmt_bytes(combined_limit)}</code>  "
+        f"(combined · {n_dbs} DB{'s' if n_dbs != 1 else ''})\n"
+        f"<code>{_bar(pct)}</code> {pct:.0f}%  {_status_dot(pct)}\n"
+        f"Free left: <code>{_fmt_bytes(free)}</code>  ·  Docs: <code>{total_docs:,}</code>"
+    )
+    db_block = "\n".join(status_lines) + "\n" + detail
+    multi_note = ""
+    if len(uris) > 1:
+        multi_note = f"\nℹ️ Multi-DB: <code>{len(uris)}</code> pairs · combined storage shown above"
 
     # ── Mini Web App (Anime Index) ──
     web_storage = 0
@@ -189,11 +259,7 @@ Admins: <code>{admins_count}</code>
 Bot RAM: <code>{bot_ram_mb:.2f} MB</code>  ·  Bot CPU: <code>{bot_cpu:.0f}%</code>
 
 🗄 <b>Database (MongoDB)</b>
-DB #1 • active (<code>{db_name}</code>)
-Host: <code>{db_host}</code>
-Used: <code>{_fmt_bytes(db_used)}</code> / <code>{_fmt_bytes(db_limit)}</code>
-<code>{_bar(db_pct)}</code> {db_pct:.0f}%  {_status_dot(db_pct)}
-Free left: <code>{_fmt_bytes(db_free)}</code>  ·  Docs: <code>{db_docs:,}</code>
+{db_block}{multi_note}
 
 🌐 <b>Mini Web App</b>
 Storage: <code>{_fmt_bytes(web_storage)}</code>
