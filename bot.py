@@ -112,6 +112,14 @@ class Bot(Client):
         except Exception:
             pass
 
+        # Start durable auto-delete worker (for /dbroadcast long timers e.g. 1 day)
+        try:
+            from plugins.broadcast import pending_delete_worker
+            asyncio.create_task(pending_delete_worker(self))
+            self.LOGGER(__name__).info("Pending-delete worker started (durable /dbroadcast)")
+        except Exception as e:
+            self.LOGGER(__name__).warning(f"Could not start pending-delete worker: {e}")
+
     async def stop(self, *args):
         await super().stop()
         self.LOGGER(__name__).info("Bot stopped.")
