@@ -44,6 +44,8 @@ DB_NAME = os.getenv("DB_NAME", "cluster0")
 # ──────────────────────────────────────────────
 BRAND_NAME = os.getenv("BRAND_NAME", "ETERNALS")
 BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ETERNALS")
+# Bot display name used in log-channel messages (Request / Report posts)
+BOTNAME = os.getenv("BOTNAME", "").strip() or BRAND_NAME
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 # Custom URL for the "Open Index" button (falls back to WEBAPP_URL if empty)
 INDEX_URL = os.getenv("INDEX_URL", "").rstrip("/")

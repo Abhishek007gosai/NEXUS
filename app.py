@@ -21,7 +21,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_from_dir
 from flask_compress import Compress
 
 from config import (
-    TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE,
+    TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE, BOTNAME,
     CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY, SUPPORT_CHAT_URL,
 )
 from helper import database as db
@@ -266,11 +266,11 @@ def notify_new_report(title: str, reason: str, details: str, reporter_name: str)
         print("[request-log] LOG_CHANNEL_ID not set — report not posted")
         return
     bot = _bot_username()
-    brand = (BRAND_NAME or "").strip()
+    name = (BOTNAME or BRAND_NAME or "").strip()
     if bot:
         bot_line = f"Bot: @{bot}"
-    elif brand:
-        bot_line = f"Bot: {brand}"
+    elif name:
+        bot_line = f"Bot: {name}"
     else:
         bot_line = "Bot: (unknown)"
     text = (
@@ -302,11 +302,11 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
         chat_id = str(LOG_CHANNEL_ID).strip()
 
     bot = _bot_username()
-    brand = (BRAND_NAME or "").strip()
+    name = (BOTNAME or BRAND_NAME or "").strip()
     if bot:
         bot_line = f"Bot: @{bot}"
-    elif brand:
-        bot_line = f"Bot: {brand}"
+    elif name:
+        bot_line = f"Bot: {name}"
     else:
         bot_line = "Bot: (unknown)"
 
