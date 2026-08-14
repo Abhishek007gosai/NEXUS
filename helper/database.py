@@ -7,52 +7,73 @@ from pymongo.errors import DuplicateKeyError
 from config import DB_URI, DB_NAME
 
 
-def _normalize_uris(uri) -> list:
-    """Accept a string or list of MongoDB URIs and return a clean list."""
-    if isinstance(uri, (list, tuple)):
-        return [u.strip() for u in uri if u and str(u).strip()]
-    if isinstance(uri, str) and uri.strip():
-        return [u for u in uri.split() if u.strip()]
+def _normalize_list(value) -> list:
+    """Accept a string or list; return a clean list (space/comma separated)."""
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if v and str(v).strip()]
+    if isinstance(value, str) and value.strip():
+        return [v.strip() for v in value.replace(",", " ").split() if v.strip()]
     return []
 
 
-def _pick_working_uri(uris: list) -> str:
-    """Try each URI with a short sync ping; return the first that works (or first/fallback)."""
-    for u in uris:
+# Backwards-compatible alias
+def _normalize_uris(uri) -> list:
+    return _normalize_list(uri)
+
+
+def _normalize_names(names, n_uris: int) -> list:
+    """Normalize DB names and pad to match URI count (reuse last name)."""
+    names = _normalize_list(names) or ["cluster0"]
+    while len(names) < max(1, n_uris):
+        names.append(names[-1])
+    return names
+
+
+def _pick_working_pair(uris: list, names: list):
+    """Try each (uri, db_name) pair; return (uri, db_name) of the first that works."""
+    pairs = list(zip(uris, names[: len(uris)])) if uris else []
+    for u, n in pairs:
         try:
             c = MongoClient(u, serverSelectionTimeoutMS=5000)
             c.admin.command("ping")
+            # Ensure the named DB is accessible
+            c[n].list_collection_names()
             c.close()
-            return u
+            return u, n
         except Exception:
             continue
-    return uris[0] if uris else "mongodb://localhost:27017"
+    # Fallback: first pair or localhost
+    if pairs:
+        return pairs[0]
+    return "mongodb://localhost:27017", (names[0] if names else "cluster0")
 
 
-def _connect_motor(uris: list, db_name: str):
-    """Pick a working URI then return (motor client, db, used_uri)."""
-    used = _pick_working_uri(uris)
-    client = motor.motor_asyncio.AsyncIOMotorClient(used, serverSelectionTimeoutMS=8000)
-    return client, client[db_name], used
+def _connect_motor(uris: list, names: list):
+    """Pick a working (uri, name) pair then return (motor client, db, used_uri, used_name)."""
+    used_uri, used_name = _pick_working_pair(uris, names)
+    client = motor.motor_asyncio.AsyncIOMotorClient(used_uri, serverSelectionTimeoutMS=8000)
+    return client, client[used_name], used_uri, used_name
 
 
 class MongoDB:
     _instances = {}
 
-    def __new__(cls, uri, db_name: str):
-        uris = _normalize_uris(uri)
-        key = (tuple(uris) if uris else ("",), db_name)
+    def __new__(cls, uri, db_name):
+        uris = _normalize_list(uri)
+        names = _normalize_names(db_name, len(uris))
+        key = (tuple(uris) if uris else ("",), tuple(names))
         if key not in cls._instances:
             instance = super().__new__(cls)
-            client, db, used = _connect_motor(uris, db_name)
+            client, db, used_uri, used_name = _connect_motor(uris, names)
             instance.client = client
             instance.db = db
-            instance.uri = used
+            instance.uri = used_uri
+            instance.db_name = used_name
             instance.user_data = instance.db["users"]
             instance.channel_data = instance.db["channels"]
-            instance.premium_users = instance.db['pros']
-            instance.fsub_status = instance.db['fsub_status']  # New collection for fsub status tracking
-            instance.request_sub = instance.db['request_sub']  # New collection for join request tracking
+            instance.premium_users = instance.db["pros"]
+            instance.fsub_status = instance.db["fsub_status"]
+            instance.request_sub = instance.db["request_sub"]
             cls._instances[key] = instance
         return cls._instances[key]
 
@@ -786,19 +807,21 @@ class MongoDB:
 class LinkShareDB:
     """
     Link Share Menu storage. Uses the same DB_URI / DB_NAME as the main bot
-    (with multi-URI failover).
+    (with multi-URI / multi-name failover).
     """
     _instances = {}
 
-    def __new__(cls, uri, db_name: str):
-        uris = _normalize_uris(uri)
-        key = (tuple(uris) if uris else ("",), db_name)
+    def __new__(cls, uri, db_name):
+        uris = _normalize_list(uri)
+        names = _normalize_names(db_name, len(uris))
+        key = (tuple(uris) if uris else ("",), tuple(names))
         if key not in cls._instances:
             instance = super().__new__(cls)
-            client, db, used = _connect_motor(uris, db_name)
+            client, db, used_uri, used_name = _connect_motor(uris, names)
             instance.client = client
             instance.db = db
-            instance.uri = used
+            instance.uri = used_uri
+            instance.db_name = used_name
             instance.link_share_data = instance.db["link_share_data"]
             cls._instances[key] = instance
         return cls._instances[key]
@@ -924,11 +947,13 @@ class LinkShareDB:
 
 
 # =============================================================================
-# Anime Index / Mini App (sync pymongo — same DB_URI / DB_NAME, multi-URI failover)
+# Anime Index / Mini App (sync pymongo — same DB_URI / DB_NAME, multi failover)
 # =============================================================================
 
 _client = None
 _db = None
+_used_uri = None
+_used_name = None
 
 
 class _LazyCol:
@@ -945,13 +970,16 @@ class _LazyCol:
 
 
 def _ensure():
-    global _client, _db
+    global _client, _db, _used_uri, _used_name
     if _client is not None:
         return
-    uris = _normalize_uris(DB_URI)
-    used = _pick_working_uri(uris)
-    _client = MongoClient(used, serverSelectionTimeoutMS=8000)
-    _db = _client[DB_NAME]
+    uris = _normalize_list(DB_URI)
+    names = _normalize_names(DB_NAME, len(uris))
+    used_uri, used_name = _pick_working_pair(uris, names)
+    _client = MongoClient(used_uri, serverSelectionTimeoutMS=8000)
+    _db = _client[used_name]
+    _used_uri = used_uri
+    _used_name = used_name
 
 
 anime_col = _LazyCol("anime")
