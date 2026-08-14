@@ -62,9 +62,20 @@ class Bot(Client):
         self.req_fsub = {}
         self.disable_btn = disable_btn
         self.reply_text = messages.get('REPLY', 'ғᴜᴄᴋ ᴏғғ ʙɪᴛᴄʜ !!!')
-        # DB_URI is a list — MongoDB/LinkShareDB try each URI until one connects
+        # DB_URI / DB_NAME are lists — try each (uri, name) pair until one connects (failover)
         self.mongodb = MongoDB(db_uri, db_name)
         self.linkshare_db = LinkShareDB(db_uri, db_name)
+        try:
+            _used = getattr(self.mongodb, "uri", "") or ""
+            _name = getattr(self.mongodb, "db_name", "") or ""
+            _n = len(db_uri) if isinstance(db_uri, (list, tuple)) else (1 if db_uri else 0)
+            from urllib.parse import urlparse as _up
+            _host = _up(
+                (_used or "").replace("mongodb+srv://", "https://").replace("mongodb://", "https://")
+            ).hostname or "unknown"
+            print(f"[MongoDB] Active: {_host}/{_name}  |  configured pairs: {_n}  (failover)")
+        except Exception:
+            pass
         self.req_channels = []
         self.db_channels = {}
         self.primary_db_channel = db

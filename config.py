@@ -19,25 +19,26 @@ WORKERS = int(os.getenv("WORKERS", "5"))
 OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
 MSG_EFFECT = 5046509860389126442
 
-# Comma or space separated Telegram user IDs. Always includes OWNER_ID.
-_admin_raw = os.getenv("ADMINS", str(OWNER_ID))
 ADMINS = []
-for _part in _admin_raw.replace(",", " ").split():
-    _part = _part.strip()
-    if _part.lstrip("-").isdigit():
-        ADMINS.append(int(_part))
-if OWNER_ID not in ADMINS:
-    ADMINS.append(OWNER_ID)
 
 # ──────────────────────────────────────────────
 # MongoDB
 # ──────────────────────────────────────────────
-# For Multiple Database URL Use One Space Between Each
-# Example: DB_URI="mongodb://uri1 mongodb://uri2 mongodb://uri3"
-# The bot will try them in order and use the first one that connects.
-# If one database gets full / unreachable, put a working URI first (or remove the full one).
-DB_URI = [u for u in os.getenv("DB_URI", "").split() if u.strip()]
-DB_NAME = os.getenv("DB_NAME", "cluster0")
+# Multiple URIs / names: separate with space or comma (same order, paired by index).
+# Example:
+#   DB_URI="mongodb://uri1 mongodb://uri2 mongodb://uri3"
+#   DB_NAME="db1 db2 db3"
+# Bot tries pairs in order and uses the first that connects (failover).
+# If only one DB_NAME is given it is used for every URI.
+# Stats (/stats) lists every configured pair and marks the active one.
+DB_URI = [u.strip() for u in (os.getenv("DB_URI", "") or "").replace(",", " ").split() if u.strip()]
+_db_names = [n.strip() for n in (os.getenv("DB_NAME", "cluster0") or "cluster0").replace(",", " ").split() if n.strip()]
+if not _db_names:
+    _db_names = ["cluster0"]
+# Pad names to match URI count (reuse last name)
+while len(_db_names) < len(DB_URI):
+    _db_names.append(_db_names[-1])
+DB_NAME = _db_names  # list, same length as DB_URI (or 1 if no URIs)
 
 # ──────────────────────────────────────────────
 # Anime Index branding
@@ -56,13 +57,6 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
 # AniList GraphQL (set ANILIST_ENDPOINT to your own proxy URL if needed)
 ANILIST_ENDPOINT = os.getenv("ANILIST_ENDPOINT", "https://graphql.anilist.co").rstrip("/")
-# Outbound HTTP proxy for server → AniList (Koyeb datacenter IP may be rate-limited)
-# Example: ANILIST_PROXY=http://user:pass@host:8080
-ANILIST_PROXY = (
-    os.getenv("ANILIST_PROXY", "").strip()
-    or os.getenv("HTTPS_PROXY", "").strip()
-    or os.getenv("HTTP_PROXY", "").strip()
-)
 # If server catalog is empty, WebApp fetches AniList from the user's device
 ANILIST_CLIENT_FALLBACK = os.getenv("ANILIST_CLIENT_FALLBACK", "true").lower() in ("1", "true", "yes")
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
