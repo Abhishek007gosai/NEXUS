@@ -314,8 +314,7 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
         f"📝 New Request\n"
         f"{bot_line}\n"
         f"Anime: {title}\n"
-        f"By: {requester_name}\n"
-        f"ID: {request_id}"
+        f"By: {requester_name}"
     )
     keyboard = {
         "inline_keyboard": [[
@@ -326,18 +325,7 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
 
     print(f"[request-log] Posting request #{request_id} '{title}' by {requester_name} → {chat_id}")
 
-    # Prefer photo when poster is available
-    if poster_url:
-        ok = _bot_api("sendPhoto", {
-            "chat_id": chat_id,
-            "photo": poster_url,
-            "caption": text,
-            "reply_markup": keyboard,
-        })
-        if ok:
-            print(f"[request-log] Delivered request #{request_id} as photo")
-            return
-
+    # Text-only (no poster) so the log channel stays clean
     ok = _bot_api("sendMessage", {
         "chat_id": chat_id,
         "text": text,
