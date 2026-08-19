@@ -21,7 +21,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_from_dir
 from flask_compress import Compress
 
 from config import (
-    TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE, BOTNAME,
+    TOKEN, ADMINS, OWNER_ID, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE, BOTNAME,
     CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY, SUPPORT_CHAT_URL,
 )
 from helper import database as db
@@ -149,7 +149,11 @@ def current_user():
 
 
 def is_admin(user: dict | None) -> bool:
-    return bool(user) and user.get("id") in ADMINS
+    if not user:
+        return False
+    uid = user.get("id")
+    # Owner is always admin. Also accept anyone listed in ADMINS.
+    return uid == OWNER_ID or uid in ADMINS
 
 
 # ---------------------------------------------------------------------------
