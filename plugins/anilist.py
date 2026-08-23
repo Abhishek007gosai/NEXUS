@@ -448,10 +448,17 @@ class AniListSource(AnimeSource):
     def __init__(self):
         self._cache: dict[str, tuple[float, dict]] = {}
         self._session = requests.Session()
+        # AniList (Cloudflare) rejects requests that lack a Referer with a
+        # misleading "temporarily disabled" 403. A browser-like Referer is
+        # enough; Origin alone is not.
         self._session.headers.update({
-            "User-Agent": "HIndexBot/1.0 (catalog)",
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; HIndexBot/1.0; +https://anilist.co)"
+            ),
             "Accept": "application/json",
             "Content-Type": "application/json",
+            "Referer": "https://anilist.co/",
+            "Origin": "https://anilist.co",
         })
 
     def _post(self, query: str, variables: dict) -> dict:
@@ -487,11 +494,18 @@ class AniListSource(AnimeSource):
                 body = resp.json()
             except ValueError as e:
                 last_exc = e
+                time.sleep(0.3 * (attempt + 1))
                 continue
             if body.get("errors") and not body.get("data"):
-                last_exc = requests.HTTPError(
-                    f"AniList GraphQL error: {body['errors'][0].get('message', 'unknown')}"
-                )
+                msg = (body["errors"][0] or {}).get("message", "unknown")
+                last_exc = requests.HTTPError(f"AniList GraphQL error: {msg}")
+                # Cloudflare sometimes returns a fake "temporarily disabled"
+                # 403 body when bot-like requests are missing headers; also
+                # genuine outages. Retry a couple of times either way.
+                lower = str(msg).lower()
+                if "temporarily disabled" in lower or "rate" in lower:
+                    time.sleep(0.6 * (attempt + 1))
+                    continue
                 break
             data = body.get("data")
             if data is None:
@@ -536,23 +550,22 @@ class AniListSource(AnimeSource):
         results = []
         seen = set()
         has_next = False
+        # Prefer explicit adult search; fall back to broad + post-filter.
+        # Let network / GraphQL failures propagate so the API can return 502
+        # instead of a silent empty result set.
         try:
-            # Prefer explicit adult search first
-            try:
-                data = self._post(SEARCH_QUERY, {"search": query, "page": page})
-            except Exception:
-                data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
-            for m in data["Page"]["media"]:
-                mid = m["id"]
-                if mid in seen:
-                    continue
-                if not self._is_adult_result(m):
-                    continue
-                seen.add(mid)
-                results.append(self._map_search_item(m, "ANIME"))
-            has_next = data["Page"]["pageInfo"]["hasNextPage"]
+            data = self._post(SEARCH_QUERY, {"search": query, "page": page})
         except Exception:
-            pass
+            data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
+        for m in data["Page"]["media"]:
+            mid = m["id"]
+            if mid in seen:
+                continue
+            if not self._is_adult_result(m):
+                continue
+            seen.add(mid)
+            results.append(self._map_search_item(m, "ANIME"))
+        has_next = data["Page"]["pageInfo"]["hasNextPage"]
         results = _filter_blocked(results)
         return {"results": results, "has_next": has_next}
 
@@ -560,16 +573,20 @@ class AniListSource(AnimeSource):
         """Search adult content only: hentai, ecchi, pornhwa, adult manhwa/manga.
         Regular (non-adult) anime/manga are excluded. Yaoi/BL only via Genres.
         """
+        anime_err = manga_err = None
         anime = {"results": [], "has_next": False}
         manga = {"results": [], "has_next": False}
         try:
             anime = self.search(query, page)
-        except Exception:
-            pass
+        except Exception as e:
+            anime_err = e
         try:
             manga = self.search_manga(query, page)
-        except Exception:
-            pass
+        except Exception as e:
+            manga_err = e
+        # If both sides failed, surface the error (caller returns 502).
+        if anime_err is not None and manga_err is not None:
+            raise anime_err
         seen = set()
         merged = []
         for item in (anime.get("results") or []) + (manga.get("results") or []):
@@ -836,20 +853,17 @@ class AniListSource(AnimeSource):
         """Search adult manga / manhwa / pornhwa / novels only (no regular manga)."""
         results = []
         seen = set()
-        has_next = False
-        try:
-            data = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
-            for m in data["Page"]["media"]:
-                mid = m["id"]
-                if mid in seen:
-                    continue
-                if not self._is_adult_result(m):
-                    continue
-                seen.add(mid)
-                results.append(self._map_search_item(m, "MANGA"))
-            has_next = data["Page"]["pageInfo"]["hasNextPage"]
-        except Exception:
-            pass
+        # Broad search then filter adult — network errors propagate upward.
+        data = self._post(SEARCH_MANGA_BROAD_QUERY, {"search": query, "page": page})
+        for m in data["Page"]["media"]:
+            mid = m["id"]
+            if mid in seen:
+                continue
+            if not self._is_adult_result(m):
+                continue
+            seen.add(mid)
+            results.append(self._map_search_item(m, "MANGA"))
+        has_next = data["Page"]["pageInfo"]["hasNextPage"]
         results = _filter_blocked(results)
         return {"results": results, "has_next": has_next}
 
