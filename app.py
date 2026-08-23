@@ -522,8 +522,14 @@ def api_search_all():
         return jsonify({"results": [], "has_next": False})
     try:
         return jsonify(SOURCES["anilist"].search_all(q, page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
+    except requests.RequestException as e:
+        try:
+            app.logger.warning("AniList search_all failed q=%r: %s", q, e)
+        except Exception:
+            pass
+        # 502 so the client can show "Search failed" instead of a false
+        # "No adult titles found" empty state when AniList is unreachable.
+        return jsonify({"results": [], "has_next": False, "error": "anilist_unavailable"}), 502
 
 
 @app.get("/api/search/manga")
@@ -535,8 +541,12 @@ def api_search_manga():
         return jsonify({"results": [], "has_next": False})
     try:
         return jsonify(SOURCES["anilist"].search_manga(q, page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
+    except requests.RequestException as e:
+        try:
+            app.logger.warning("AniList search_manga failed q=%r: %s", q, e)
+        except Exception:
+            pass
+        return jsonify({"results": [], "has_next": False, "error": "anilist_unavailable"}), 502
 
 
 @app.get("/api/genres/<genre>")
