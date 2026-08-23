@@ -19,7 +19,10 @@ WORKERS = int(os.getenv("WORKERS", "5"))
 OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
 MSG_EFFECT = 5046509860389126442
 
-ADMINS = []
+# Extra admin user IDs (space or comma separated). Owner is always treated as admin.
+ADMINS = [
+    int(x) for x in os.getenv("ADMINS", "").replace(",", " ").split() if x.strip().isdigit()
+]
 
 # ──────────────────────────────────────────────
 # MongoDB
