@@ -62,7 +62,6 @@ USER_CMD_TXT = """<blockquote><b>» ᴜsᴇʀ ᴄᴏᴍᴍᴀɴᴅs:</b></blockq
 
 <b>›› /start :</b> sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ
 <b>›› /cmd :</b> sʜᴏᴡ ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅs
-<b>›› /help :</b> ʜᴇʟᴘ & ʜᴏᴡ ᴛᴏ ᴜsᴇ
 """
 
 CMD_TXT = """<blockquote><b>» ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅs:</b></blockquote>
