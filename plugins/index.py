@@ -32,7 +32,6 @@ from config import (
     BRAND_NAME,
     WEBAPP_URL,
     INDEX_URL,
-    ADMINS,
     MESSAGES,
 )
 from helper import database as db
@@ -326,8 +325,8 @@ async def on_anime_callback(client: Client, q: CallbackQuery):
             pass
         return
 
-    # Admin-only request actions
-    if not q.from_user or q.from_user.id not in ADMINS:
+    # Admin-only request actions (client.admins includes OWNER_ID)
+    if not q.from_user or q.from_user.id not in getattr(client, "admins", []):
         await q.answer("Admins only.", show_alert=True)
         return
 
