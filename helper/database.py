@@ -186,31 +186,90 @@ class MongoDB:
         return user.get('ban', False) if user else False
 
     # ✅ FSUB CHANNELS FUNCTIONS
+    # Stored as ordered list so button / display order survives restarts:
+    #   {"order": ["-1001", "-1002"], "channels": {"-1001": [...], "-1002": [...]}}
+    # Legacy pure-dict documents are migrated on read.
 
-    async def set_fsub_channels(self, fsub_data: dict):
-        """Store fsub channels data to database for persistence across bot restarts"""
+    async def set_fsub_channels(self, fsub_data: dict, order: list | None = None):
+        """Store fsub channels + explicit order for persistence across bot restarts.
+
+        fsub_data: {str(channel_id): [name, link, request, timer], ...}
+        order: list of str(channel_id) in the order channels should appear.
+               If omitted, keeps existing order and appends any new keys.
+        """
+        # Normalise keys to str
+        channels = {str(k): v for k, v in (fsub_data or {}).items()}
+        if order is None:
+            existing = await self.user_data.find_one({"_id": "fsub_channels"}) or {}
+            prev_order = [str(x) for x in (existing.get("order") or list((existing.get("channels") or {}).keys()))]
+            # keep previous order for known ids, append new ones
+            order = [cid for cid in prev_order if cid in channels]
+            for cid in channels:
+                if cid not in order:
+                    order.append(cid)
+        else:
+            order = [str(x) for x in order if str(x) in channels]
+            for cid in channels:
+                if cid not in order:
+                    order.append(cid)
         await self.user_data.update_one(
             {"_id": "fsub_channels"},
-            {"$set": {"channels": fsub_data}},
-            upsert=True
+            {"$set": {"channels": channels, "order": order}},
+            upsert=True,
         )
 
     async def get_fsub_channels(self) -> dict:
-        """Get fsub channels data from database"""
+        """Get fsub channels as an ordered dict {int_id: data}.
+
+        Order is taken from the saved `order` list so it stays stable after restart.
+        """
+        from collections import OrderedDict
+
         data = await self.user_data.find_one({"_id": "fsub_channels"})
-        return data.get("channels", {}) if data else {}
+        if not data:
+            return OrderedDict()
+        channels = data.get("channels") or {}
+        order = data.get("order")
+        if not order:
+            # Legacy format: plain dict — preserve whatever key order Mongo returned
+            order = list(channels.keys())
+        ordered = OrderedDict()
+        for cid in order:
+            key = str(cid)
+            if key in channels:
+                try:
+                    ordered[int(key)] = channels[key]
+                except (TypeError, ValueError):
+                    continue
+        # Any keys missing from order (shouldn't happen) go at the end
+        for key, val in channels.items():
+            try:
+                ikey = int(key)
+            except (TypeError, ValueError):
+                continue
+            if ikey not in ordered:
+                ordered[ikey] = val
+        return ordered
 
     async def add_fsub_channel(self, channel_id: int, channel_data: list):
-        """Add a single fsub channel to database"""
-        current_data = await self.get_fsub_channels()
-        current_data[str(channel_id)] = channel_data
-        await self.set_fsub_channels(current_data)
+        """Append a single fsub channel (keeps existing order, new one at end)."""
+        current = await self.get_fsub_channels()  # OrderedDict
+        current[int(channel_id)] = channel_data
+        order = [str(k) for k in current.keys()]
+        await self.set_fsub_channels({str(k): v for k, v in current.items()}, order=order)
 
     async def remove_fsub_channel(self, channel_id: int):
-        """Remove a single fsub channel from database"""
-        current_data = await self.get_fsub_channels()
-        current_data.pop(str(channel_id), None)
-        await self.set_fsub_channels(current_data)
+        """Remove a single fsub channel, preserving order of the rest."""
+        current = await self.get_fsub_channels()
+        current.pop(int(channel_id), None)
+        order = [str(k) for k in current.keys()]
+        await self.set_fsub_channels({str(k): v for k, v in current.items()}, order=order)
+
+    async def save_fsub_dict(self, fsub_dict: dict):
+        """Persist the full in-memory fsub_dict (insertion order = display order)."""
+        order = [str(k) for k in fsub_dict.keys()]
+        channels = {str(k): v for k, v in fsub_dict.items()}
+        await self.set_fsub_channels(channels, order=order)
 
     # ✅ SHORTNER SETTINGS FUNCTIONS
 
