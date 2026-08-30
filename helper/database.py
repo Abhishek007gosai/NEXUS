@@ -254,27 +254,77 @@ class MongoDB:
 
     # ✅ FSUB CHANNELS FUNCTIONS
 
-    async def set_fsub_channels(self, fsub_data: dict):
-        """Store fsub channels data to database for persistence across bot restarts"""
+    async def set_fsub_channels(self, fsub_data):
+        """Store fsub channels preserving order across bot restarts.
+
+        Accepts either:
+          - ordered mapping (dict / OrderedDict) of channel_id -> data
+          - list of [channel_id, data] / {"id": ..., "data": ...} entries
+        Always persists as an ordered list so restart order matches UI order.
+        """
+        ordered = []
+        if isinstance(fsub_data, list):
+            for entry in fsub_data:
+                if isinstance(entry, dict):
+                    cid = entry.get("id")
+                    data = entry.get("data")
+                elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    cid, data = entry[0], entry[1]
+                else:
+                    continue
+                if cid is None:
+                    continue
+                ordered.append({"id": str(cid), "data": data})
+        elif isinstance(fsub_data, dict):
+            for cid, data in fsub_data.items():
+                ordered.append({"id": str(cid), "data": data})
         await self.user_data.update_one(
             {"_id": "fsub_channels"},
-            {"$set": {"channels": fsub_data}},
+            {"$set": {"channels": ordered, "ordered": True}},
             upsert=True
         )
 
     async def get_fsub_channels(self) -> dict:
-        """Get fsub channels data from database"""
+        """Get fsub channels as an insertion-ordered dict (order preserved).
+
+        Supports legacy dict storage and new ordered-list storage.
+        """
+        from collections import OrderedDict
         data = await self.user_data.find_one({"_id": "fsub_channels"})
-        return data.get("channels", {}) if data else {}
+        if not data:
+            return OrderedDict()
+        channels = data.get("channels", {})
+        result = OrderedDict()
+        if isinstance(channels, list):
+            for entry in channels:
+                if isinstance(entry, dict):
+                    cid = entry.get("id")
+                    cdata = entry.get("data")
+                elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    cid, cdata = entry[0], entry[1]
+                else:
+                    continue
+                if cid is None:
+                    continue
+                result[str(cid)] = cdata
+        elif isinstance(channels, dict):
+            # Legacy unordered / insertion-order dict
+            for cid, cdata in channels.items():
+                result[str(cid)] = cdata
+        return result
 
     async def add_fsub_channel(self, channel_id: int, channel_data: list):
-        """Add a single fsub channel to database"""
+        """Add or update a single fsub channel, appending if new (keeps order)."""
         current_data = await self.get_fsub_channels()
-        current_data[str(channel_id)] = channel_data
+        key = str(channel_id)
+        if key in current_data:
+            current_data[key] = channel_data  # update in place, same position
+        else:
+            current_data[key] = channel_data  # OrderedDict appends at end
         await self.set_fsub_channels(current_data)
 
     async def remove_fsub_channel(self, channel_id: int):
-        """Remove a single fsub channel from database"""
+        """Remove a single fsub channel from database (order of rest unchanged)."""
         current_data = await self.get_fsub_channels()
         current_data.pop(str(channel_id), None)
         await self.set_fsub_channels(current_data)
