@@ -7,6 +7,7 @@ from pyrogram import Client
 from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
+from collections import OrderedDict
 from config import LOGGER, PORT, OWNER_ID, SHORT_URL, SHORT_API, SHORT_TUT
 from helper import MongoDB
 
@@ -92,7 +93,7 @@ class Bot(Client):
         self.db = db
         self.fsub = fsub
         self.owner = OWNER_ID
-        self.fsub_dict = {}
+        self.fsub_dict = OrderedDict()  # preserve channel order across restarts
         self.admins = admins + [OWNER_ID] if OWNER_ID not in admins else admins
         self.messages = messages
         self.auto_del = int(auto_del or 0)
@@ -161,6 +162,10 @@ class Bot(Client):
                     sys.exit()
 
         try:
+            # Load DB channels in the exact order they were saved (OrderedDict).
+            # Config FSUBS were already inserted above in config order; DB-only
+            # channels are appended in their stored order so restart layout
+            # (join buttons + admin list) stays stable.
             db_fsub_channels = await self.mongodb.get_fsub_channels()
 
             for channel_id_str, channel_data in db_fsub_channels.items():
@@ -183,6 +188,11 @@ class Bot(Client):
                         f"Could not load dynamic fsub channel {channel_id}: {e}"
                     )
                     await self.mongodb.remove_fsub_channel(channel_id)
+
+            # Re-save full ordered map so next restart matches current order
+            # (migrates legacy dict storage → ordered list on first run).
+            if self.fsub_dict:
+                await self.mongodb.set_fsub_channels(self.fsub_dict)
 
         except Exception as e:
             self.LOGGER(__name__, self.name).warning(
