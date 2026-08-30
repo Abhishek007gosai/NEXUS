@@ -546,17 +546,18 @@ class AniListSource(AnimeSource):
         return bool(genres & {"hentai", "yaoi", "yuri", "ecchi"})
 
     def search(self, query: str, page: int = 1) -> dict:
-        """Search adult / hentai / ecchi anime only (no regular anime)."""
+        """Search H-anime + Ecchi anime (and other adult-adjacent titles).
+
+        Always uses the broad AniList search (no isAdult filter), then keeps
+        only results that are isAdult or tagged Hentai / Ecchi / Yaoi / Yuri.
+        This ensures Ecchi series (e.g. High School DxD) that AniList does
+        not mark isAdult still appear in search, same as true Hentai.
+        Network / GraphQL failures propagate so the API can return 502.
+        """
         results = []
         seen = set()
-        has_next = False
-        # Prefer explicit adult search; fall back to broad + post-filter.
-        # Let network / GraphQL failures propagate so the API can return 502
-        # instead of a silent empty result set.
-        try:
-            data = self._post(SEARCH_QUERY, {"search": query, "page": page})
-        except Exception:
-            data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
+        # Broad search so Ecchi (and mis-tagged H) titles surface; filter after.
+        data = self._post(SEARCH_ANIME_BROAD_QUERY, {"search": query, "page": page})
         for m in data["Page"]["media"]:
             mid = m["id"]
             if mid in seen:
