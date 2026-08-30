@@ -269,14 +269,8 @@ def notify_new_report(title: str, reason: str, details: str, reporter_name: str)
     if not LOG_CHANNEL_ID:
         print("[request-log] LOG_CHANNEL_ID not set — report not posted")
         return
-    bot = _bot_username()
-    name = (BOTNAME or BRAND_NAME or "").strip()
-    if bot:
-        bot_line = f"Bot: @{bot}"
-    elif name:
-        bot_line = f"Bot: {name}"
-    else:
-        bot_line = "Bot: (unknown)"
+    name = (BOTNAME or BRAND_NAME or "kaya").strip() or "kaya"
+    bot_line = f"Bot: {name}"
     text = (
         "🚨 New Report\n"
         f"{bot_line}\n"
@@ -305,14 +299,8 @@ def notify_new_request(request_id: int, title: str, requester_name: str, poster_
     except (TypeError, ValueError):
         chat_id = str(LOG_CHANNEL_ID).strip()
 
-    bot = _bot_username()
-    name = (BOTNAME or BRAND_NAME or "").strip()
-    if bot:
-        bot_line = f"Bot: @{bot}"
-    elif name:
-        bot_line = f"Bot: {name}"
-    else:
-        bot_line = "Bot: (unknown)"
+    name = (BOTNAME or BRAND_NAME or "kaya").strip() or "kaya"
+    bot_line = f"Bot: {name}"
 
     text = (
         f"📝 New Request\n"
@@ -714,8 +702,9 @@ def api_search_anime():
             "episodes": a.get("episodes"),
             "status": a.get("status"),
             "join_link": a.get("join_link"),
+            "solo_link": a.get("solo_link"),
             "ongoing_link": a.get("ongoing_link"),
-            "matchedJoinLink": a.get("join_link") or a.get("ongoing_link"),
+            "matchedJoinLink": a.get("join_link") or a.get("solo_link") or a.get("ongoing_link"),
             "from_library": True,
         })
 
@@ -741,8 +730,13 @@ def api_search_anime():
             if matched:
                 item["id"] = matched.get("id")
                 item["join_link"] = matched.get("join_link")
+                item["solo_link"] = matched.get("solo_link")
                 item["ongoing_link"] = matched.get("ongoing_link")
-                item["matchedJoinLink"] = matched.get("join_link") or matched.get("ongoing_link")
+                item["matchedJoinLink"] = (
+                    matched.get("join_link")
+                    or matched.get("solo_link")
+                    or matched.get("ongoing_link")
+                )
             results.append(item)
     except requests.RequestException as e:
         al_error = str(e) or "AniList unavailable"
@@ -861,14 +855,20 @@ def api_anilist_details(anilist_id):
         abort(502)
     except Exception:
         abort(502)
-    # Match local library links for join buttons
+    # Match local library links for join buttons (join / solo / ongoing)
     try:
         matched = db.find_by_source_id("anilist", str(anilist_id))
         if matched:
             details["id"] = matched.get("id")
             details["join_link"] = matched.get("join_link")
+            details["solo_link"] = matched.get("solo_link")
             details["ongoing_link"] = matched.get("ongoing_link")
             details["display_mode"] = matched.get("display_mode")
+            details["matchedJoinLink"] = (
+                matched.get("join_link")
+                or matched.get("solo_link")
+                or matched.get("ongoing_link")
+            )
     except Exception:
         pass
     details["related_posted"] = _related_posted(details)
@@ -886,7 +886,7 @@ def api_sync_ongoing():
     updated = 0
     checked = 0
     try:
-        posts = [a for a in db.list_available() if a.get("join_link") or a.get("ongoing_link")]
+        posts = [a for a in db.list_available() if a.get("join_link") or a.get("solo_link") or a.get("ongoing_link")]
     except Exception as e:
         return jsonify(error=str(e), added=0, updated=0), 500
 

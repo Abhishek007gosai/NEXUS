@@ -54,7 +54,8 @@ class Bot(Client):
         self.db = db
         self.fsub = fsub
         self.owner = OWNER_ID
-        self.fsub_dict = {}
+        from collections import OrderedDict
+        self.fsub_dict = OrderedDict()  # insertion order = button order (survives restart via DB)
         self.admins = admins + [OWNER_ID] if OWNER_ID not in admins else admins
         self.messages = messages
         self.auto_del = int(auto_del or 0)
@@ -101,7 +102,39 @@ class Bot(Client):
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
 
-        if len(self.fsub) > 0:
+        # Force-sub load order:
+        # 1) Prefer DB (ordered) so admin-set order survives restarts.
+        # 2) If DB is empty, seed from config FSUBS and persist that order.
+        try:
+            db_fsub_channels = await self.mongodb.get_fsub_channels()  # OrderedDict
+        except Exception as e:
+            self.LOGGER(__name__, self.name).warning(f"Error loading fsub channels from DB: {e}")
+            db_fsub_channels = {}
+
+        if db_fsub_channels:
+            for channel_id, channel_data in db_fsub_channels.items():
+                try:
+                    chat = await self.get_chat(channel_id)
+                    name = chat.title
+                    channel_data[0] = name
+                    self.fsub_dict[channel_id] = channel_data
+                    if channel_data[2] and channel_id not in self.req_channels:
+                        self.req_channels.append(channel_id)
+                except Exception as e:
+                    self.LOGGER(__name__, self.name).warning(
+                        f"Could not load fsub channel {channel_id}: {e}"
+                    )
+                    try:
+                        await self.mongodb.remove_fsub_channel(channel_id)
+                    except Exception:
+                        pass
+            # Re-save so order list is always present (migrates legacy dict docs)
+            try:
+                await self.mongodb.save_fsub_dict(self.fsub_dict)
+            except Exception as e:
+                self.LOGGER(__name__, self.name).warning(f"Could not re-save fsub order: {e}")
+        elif len(self.fsub) > 0:
+            # First boot / empty DB — seed from config FSUBS in the order listed
             for channel in self.fsub:
                 try:
                     chat = await self.get_chat(channel[0])
@@ -134,35 +167,11 @@ class Bot(Client):
                     )
                     self.LOGGER(__name__, self.name).warning("\nBot Stopped.")
                     sys.exit()
-
-        try:
-            db_fsub_channels = await self.mongodb.get_fsub_channels()
-
-            for channel_id_str, channel_data in db_fsub_channels.items():
-                channel_id = int(channel_id_str)
-
-                if channel_id in self.fsub_dict:
-                    continue
-
-                try:
-                    chat = await self.get_chat(channel_id)
-                    name = chat.title
-                    channel_data[0] = name
-                    self.fsub_dict[channel_id] = channel_data
-
-                    if channel_data[2]:
-                        self.req_channels.append(channel_id)
-
-                except Exception as e:
-                    self.LOGGER(__name__, self.name).warning(
-                        f"Could not load dynamic fsub channel {channel_id}: {e}"
-                    )
-                    await self.mongodb.remove_fsub_channel(channel_id)
-
-        except Exception as e:
-            self.LOGGER(__name__, self.name).warning(
-                f"Error loading dynamic fsub channels: {e}"
-            )
+            # Persist config seed so later restarts keep this exact order
+            try:
+                await self.mongodb.save_fsub_dict(self.fsub_dict)
+            except Exception as e:
+                self.LOGGER(__name__, self.name).warning(f"Could not seed fsub order to DB: {e}")
 
         await self.mongodb.set_channels(self.req_channels)
 

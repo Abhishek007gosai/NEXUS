@@ -36,10 +36,11 @@ DB_NAME = [n for n in os.getenv("DB_NAME", "cluster0").replace(",", " ").split()
 # ──────────────────────────────────────────────
 # Anime Index branding
 # ──────────────────────────────────────────────
-BRAND_NAME = os.getenv("BRAND_NAME", "ETERNALS")
-BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ETERNALS")
+BRAND_NAME = os.getenv("BRAND_NAME", "kaya")
+BRAND_HANDLE = os.getenv("BRAND_HANDLE", "kaya")
 # Bot display name used in log-channel messages (Request / Report posts)
-BOTNAME = os.getenv("BOTNAME", "").strip() or BRAND_NAME
+# Prefer BOTNAME env, else BRAND_NAME, else "kaya" (never the Telegram @username)
+BOTNAME = os.getenv("BOTNAME", "").strip() or BRAND_NAME or "kaya"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
 # Custom URL for the "Open Index" button (falls back to WEBAPP_URL if empty)
 INDEX_URL = os.getenv("INDEX_URL", "").rstrip("/")
