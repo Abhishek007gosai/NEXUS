@@ -16,7 +16,7 @@ TOKEN = os.getenv("TOKEN", "")
 API_ID = int(os.getenv("API_ID", ""))
 API_HASH = os.getenv("API_HASH", "")
 WORKERS = int(os.getenv("WORKERS", "5"))
-OWNER_ID = int(os.getenv("OWNER_ID", "8771195193"))
+OWNER_ID = int(os.getenv("OWNER_ID", ""))
 MSG_EFFECT = 5046509860389126442
 
 # Extra admin user IDs (space or comma separated). Owner is always treated as admin.
