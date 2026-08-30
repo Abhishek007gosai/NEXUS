@@ -240,6 +240,12 @@
     return /[0-9]/.test(ch) ? "#" : ch;
   }
 
+  function anyLinkFrom(entry) {
+    // Prefer any saved link so Join shows everywhere once admin adds one.
+    if (!entry) return null;
+    return entry.join_link || entry.solo_link || entry.ongoing_link || entry.matchedJoinLink || null;
+  }
+
   function buildAvailableIndex() {
     // Matching purely by title text (the old approach) silently breaks
     // whenever the posted library entry's title and the AniList discovery
@@ -260,6 +266,10 @@
       match(item) {
         if (item.anilist_id != null) {
           const m = byId.get(String(item.anilist_id));
+          if (m) return m;
+        }
+        if (item.source_id != null) {
+          const m = byId.get(String(item.source_id));
           if (m) return m;
         }
         return byTitle.get((item.title || "").toLowerCase()) || null;
@@ -453,7 +463,7 @@
     const availIndex = buildAvailableIndex();
     trending.forEach((item) => {
       const matched = availIndex.match(item);
-      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+      item.matchedJoinLink = anyLinkFrom(matched);
       trendingRow.appendChild(trendingCard(item, () => openDiscoverDetail(item)));
     });
   }
@@ -468,7 +478,7 @@
     const availIndex = buildAvailableIndex();
     popular.forEach((item) => {
       const matched = availIndex.match(item);
-      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+      item.matchedJoinLink = anyLinkFrom(matched);
       topAiringList.appendChild(topAiringCard(item, () => openDiscoverDetail(item)));
     });
   }
@@ -504,7 +514,7 @@
     const availIndex = buildAvailableIndex();
     mostPopular.forEach((item) => {
       const matched = availIndex.match(item);
-      item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+      item.matchedJoinLink = anyLinkFrom(matched);
       popularGridList.appendChild(popularGridCard(item, () => openDiscoverDetail(item)));
     });
     popularGridLoadMoreBtn.classList.toggle("hidden", !mostPopularHasNext);
@@ -1069,7 +1079,7 @@
   function makeRequestButton(anime) {
     const requestBtn = document.createElement("button");
     requestBtn.className = "btn btn-primary";
-    requestBtn.textContent = "Request";
+    requestBtn.textContent = "REQUEST";
     requestBtn.addEventListener("click", async () => {
       requestBtn.disabled = true;
       try {
@@ -1083,7 +1093,7 @@
             genres: anime.genres || [],
           }),
         });
-        requestBtn.textContent = "\u2713 Requested";
+        requestBtn.textContent = "\u2713 REQUESTED";
         showToast(result.already_requested ? "You already requested this." : "Request sent!");
       } catch (err) {
         requestBtn.disabled = false;
@@ -1097,13 +1107,13 @@
     detailActionArea.innerHTML = "";
     reportOpenBtn.classList.toggle("hidden", !["available", "ongoing", "discover", "genre"].includes(context));
 
-    // Finished: solo card → solo_link; otherwise All-seasons join_link
+    // Finished: solo card → solo_link; otherwise All-seasons join_link.
+    // Always honour matchedJoinLink so a link added once shows Join
+    // everywhere (Home / Trending / Search / Genre / Available), not Request.
     // Ongoing URL = ongoing_link only — never fall back for button split
     const finishedUrl = (
       (isSoloCard(anime) && anime.solo_link) ? anime.solo_link : null
-    ) || anime.join_link || anime.solo_link || (
-      (context === "discover" || context === "genre") ? (anime.matchedJoinLink || null) : null
-    );
+    ) || anime.join_link || anime.solo_link || anime.matchedJoinLink || null;
     const ongoingUrl = anime.ongoing_link || null;
 
     // PREVIOUS | ONGOING only when opened from the Ongoing library column.
@@ -1254,9 +1264,10 @@
           ...full,
           anilist_id: item.anilist_id || full.source_id,
           rating: item.rating ?? full.rating,
-          matchedJoinLink: item.matchedJoinLink || full.join_link || full.ongoing_link,
-          join_link: full.join_link || item.join_link,
-          ongoing_link: full.ongoing_link || item.ongoing_link,
+          matchedJoinLink: item.matchedJoinLink || anyLinkFrom(full) || anyLinkFrom(item),
+          join_link: full.join_link || item.join_link || null,
+          solo_link: full.solo_link || item.solo_link || null,
+          ongoing_link: full.ongoing_link || item.ongoing_link || null,
         }, "discover");
       }
     } catch (err) {
@@ -1267,12 +1278,20 @@
   async function openGenreItemDetail(item) {
     const availIndex = buildAvailableIndex();
     const matched = availIndex.match(item);
-    item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+    item.matchedJoinLink = anyLinkFrom(matched);
     openDetailSheet({ ...item, description: "Loading synopsis...", genres: [] }, "genre");
     try {
       const full = await api(`/api/anilist/${item.anilist_id}`);
       if (currentDetail && currentDetail.title === item.title) {
-        openDetailSheet({ ...full, anilist_id: item.anilist_id, rating: item.rating ?? full.rating, matchedJoinLink: item.matchedJoinLink }, "genre");
+        openDetailSheet({
+          ...full,
+          anilist_id: item.anilist_id,
+          rating: item.rating ?? full.rating,
+          matchedJoinLink: item.matchedJoinLink || anyLinkFrom(full),
+          join_link: full.join_link || item.join_link || null,
+          solo_link: full.solo_link || item.solo_link || null,
+          ongoing_link: full.ongoing_link || item.ongoing_link || null,
+        }, "genre");
       }
     } catch (err) {
       if (currentDetail) detailDescription.textContent = "Couldn't load full details.";
@@ -1776,8 +1795,11 @@
         if (idKey) seenIds.add(idKey);
         const matched = availIndex.match(item);
         if (matched) {
-          item.matchedJoinLink = matched.join_link || matched.ongoing_link || null;
+          item.matchedJoinLink = anyLinkFrom(matched);
           item.id = matched.id;
+          item.join_link = item.join_link || matched.join_link || null;
+          item.solo_link = item.solo_link || matched.solo_link || null;
+          item.ongoing_link = item.ongoing_link || matched.ongoing_link || null;
         }
         searchResultsGroups.appendChild(searchResultRow(item, () => {
           trackConfirmedSearch(item.title);
@@ -1810,7 +1832,7 @@
       const availIndex = buildAvailableIndex();
       data.results.forEach((item) => {
         const matched = availIndex.match(item);
-        item.matchedJoinLink = matched && matched.join_link ? matched.join_link : null;
+        item.matchedJoinLink = anyLinkFrom(matched);
         searchResultsGroups.appendChild(searchResultRow(item, () => openDiscoverDetail(item)));
       });
     } catch (err) { /* stop silently, user can keep scrolling to retry */ }
