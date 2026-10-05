@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 LABEL description="NexusV2 + Anime Index (Touka) — unified Telegram bot + mini app"
 LABEL version="2.1.0"
