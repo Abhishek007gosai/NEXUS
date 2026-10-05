@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from helper.helper_func import styled_button, safe_edit_text
+from helper.helper_func import styled_button, safe_edit_text, safe_edit_caption, safe_edit_reply_markup
 import time
 
 import psutil
@@ -25,209 +25,256 @@ __Use the appropriate button below to add or remove an admin based on your needs
 
 #===============================================================#
 
-def _fmt_bytes(n: float) -> str:
-    """Human-readable size."""
-    try:
-        n = float(n or 0)
-    except (TypeError, ValueError):
-        return "0 B"
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if abs(n) < 1024.0:
-            return f"{n:.2f} {unit}"
-        n /= 1024.0
-    return f"{n:.2f} PB"
-
-
-def _progress_bar(percent: float, width: int = 10) -> str:
+def _bar(percent: float, width: int = 10) -> str:
     """Simple text progress bar."""
     try:
         p = max(0.0, min(100.0, float(percent)))
     except (TypeError, ValueError):
         p = 0.0
-    filled = int(round(width * p / 100.0))
+    filled = int(round(p / 100.0 * width))
     return "█" * filled + "░" * (width - filled)
 
 
-def _status_emoji(percent: float) -> str:
+def _status_dot(percent: float) -> str:
     if percent < 70:
         return "🟢 OK"
     if percent < 90:
-        return "🟡 High"
-    return "🔴 Full"
+        return "🟡 HIGH"
+    return "🔴 CRITICAL"
 
 
-async def _mongo_storage_section(client) -> str:
-    """Simple MongoDB how-full section for /stats."""
-    ATLAS_M0_LIMIT = 512 * 1024 * 1024  # free Atlas reference
+def _fmt_bytes(n: float) -> str:
+    """Human-readable size from bytes."""
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while n >= 1024 and i < len(units) - 1:
+        n /= 1024.0
+        i += 1
+    if i == 0:
+        return f"{int(n)} {units[i]}"
+    return f"{n:.2f} {units[i]}"
 
-    lines = ["<b>🗄 Database (MongoDB)</b>"]
 
-    mongo = getattr(client, "mongodb", None)
-    if mongo is None or getattr(mongo, "db", None) is None:
-        lines.append("Not connected")
-        return "\n".join(lines)
-
-    targets = []
-    clients = list(getattr(mongo, "_clients", None) or [])
-    db_name = getattr(mongo, "_db_name", None) or getattr(mongo.db, "name", "?")
-    active_idx = getattr(mongo, "_active_idx", 0)
-
-    if clients:
-        for i, (uri, mclient) in enumerate(clients):
-            label = f"DB #{i + 1}"
-            if i == active_idx:
-                label += " • active"
-            host_hint = ""
-            try:
-                after = uri.split("@", 1)[-1]
-                host_hint = after.split("/", 1)[0].split("?", 1)[0][:36]
-            except Exception:
-                pass
-            targets.append((label, host_hint, mclient, db_name))
-    else:
-        targets.append(("DB #1 • active", "", mongo.client, db_name))
-
-    for label, host_hint, mclient, name in targets:
-        try:
-            stats = await mclient[name].command("dbStats")
-            storage_size = float(stats.get("storageSize") or 0)
-            index_size = float(stats.get("indexSize") or 0)
-            total_size = float(stats.get("totalSize") or (storage_size + index_size))
-            objects = int(stats.get("objects") or 0)
-
-            fs_used = stats.get("fsUsedSize")
-            fs_total = stats.get("fsTotalSize")
-            if fs_total and fs_total > 0:
-                used_ref = float(fs_used or total_size)
-                limit_ref = float(fs_total)
-            else:
-                used_ref = total_size
-                limit_ref = float(ATLAS_M0_LIMIT)
-
-            percent = (used_ref / limit_ref * 100.0) if limit_ref else 0.0
-            free_ref = max(0.0, limit_ref - used_ref)
-
-            host_line = f"\nHost: <code>{host_hint}</code>" if host_hint else ""
-            lines.append(
-                f"<blockquote><b>{label}</b> (<code>{name}</code>){host_line}\n"
-                f"Used: <b>{_fmt_bytes(total_size)}</b> / {_fmt_bytes(limit_ref)}\n"
-                f"{_progress_bar(percent)} <b>{percent:.0f}%</b>  {_status_emoji(percent)}\n"
-                f"Free left: {_fmt_bytes(free_ref)}  ·  Docs: {objects:,}</blockquote>"
-            )
-        except Exception as e:
-            lines.append(f"<blockquote><b>{label}</b>\nError: <code>{str(e)[:60]}</code></blockquote>")
-
-    return "\n".join(lines)
+def _fmt_uptime(seconds: int) -> str:
+    days, rem = divmod(max(0, int(seconds)), 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h {minutes}m"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
 
 
 @Client.on_message(filters.command("stats"))
 async def usage_cmd(client: Client, message: Message):
     if message.from_user.id not in client.admins:
-        return await message.reply("Admins only.")
+        return await message.reply("✗ This can only be used by admins!")
 
-    reply = await message.reply("Loading stats...")
+    reply = await message.reply("📊 Collecting stats...")
 
-    # Users
+    from datetime import datetime
+    from config import DB_NAME, DB_URI
+    from urllib.parse import urlparse
+
+    # ── Bot ──
     try:
         total_users = len(await client.mongodb.full_userbase())
     except Exception:
-        total_users = "?"
+        total_users = 0
 
-    # Uptime
-    from datetime import datetime
-    up = datetime.now() - getattr(client, "uptime", datetime.now())
-    d, rem = up.days, up.seconds
-    h, rem = divmod(rem, 3600)
-    m, _ = divmod(rem, 60)
-    if d:
-        uptime_str = f"{d}d {h}h {m}m"
-    elif h:
-        uptime_str = f"{h}h {m}m"
-    else:
-        uptime_str = f"{m}m"
+    uptime_seconds = (datetime.now() - getattr(client, "uptime", datetime.now())).total_seconds()
+    uptime_str = _fmt_uptime(uptime_seconds)
+    admins_count = len(client.admins)
 
-    # Disk
-    total, used, free = shutil.disk_usage("/")
-    disk_pct = (used / total) * 100 if total else 0
+    try:
+        process = psutil.Process()
+        bot_cpu = process.cpu_percent(interval=0.3)
+        bot_ram_mb = process.memory_info().rss / (1024 ** 2)
+        bot_status = "🟢 Running"
+    except Exception:
+        bot_cpu, bot_ram_mb, bot_status = 0.0, 0.0, "🔴 Error"
 
-    # RAM
+    # ── Server ──
+    total_disk, used_disk, free_disk = shutil.disk_usage("/")
+    disk_pct = (used_disk / total_disk) * 100 if total_disk else 0
+
     ram = psutil.virtual_memory()
     ram_pct = ram.percent
+    cpu_usage = psutil.cpu_percent(interval=0.5)
 
-    # CPU
-    cpu_pct = psutil.cpu_percent(interval=0.5)
-
-    # Bot process
     try:
-        proc = psutil.Process()
-        bot_ram_mb = proc.memory_info().rss / (1024 ** 2)
-        bot_cpu = proc.cpu_percent(interval=0.3)
-        bot_ok = True
+        net_io = psutil.net_io_counters()
+        sent = net_io.bytes_sent
+        recv = net_io.bytes_recv
     except Exception:
-        bot_ram_mb = 0.0
-        bot_cpu = 0.0
-        bot_ok = False
+        sent = recv = 0
 
-    # Network (optional)
-    try:
-        net = psutil.net_io_counters()
-        up_mb = net.bytes_sent / (1024 ** 2)
-        down_mb = net.bytes_recv / (1024 ** 2)
-        net_line = f"Sent {_fmt_bytes(net.bytes_sent)}  ·  Recv {_fmt_bytes(net.bytes_recv)}"
-    except Exception:
-        net_line = "N/A"
+    # ── MongoDB (supports multi-URI + multi-name failover) ──
+    uris = list(DB_URI) if isinstance(DB_URI, (list, tuple)) else ([DB_URI] if DB_URI else [])
+    names = list(DB_NAME) if isinstance(DB_NAME, (list, tuple)) else ([DB_NAME] if DB_NAME else ["cluster0"])
+    if not names:
+        names = ["cluster0"]
+    while len(names) < len(uris):
+        names.append(names[-1])
+    if not uris and names:
+        uris = [""]  # still show name-only entry
 
-    # MongoDB
-    try:
-        mongo_section = await _mongo_storage_section(client)
-    except Exception as e:
-        mongo_section = f"<b>🗄 Database (MongoDB)</b>\nError: <code>{str(e)[:60]}</code>"
+    active_uri = (getattr(client.mongodb, "uri", None) or "").strip()
+    active_name = (getattr(client.mongodb, "db_name", None) or "").strip()
+    if not active_uri and uris:
+        active_uri = uris[0]
+    if not active_name and names:
+        active_name = names[0]
 
-    # Mini web app storage + visits
-    try:
-        import asyncio
-        from helper import database as web_db
+    def _uri_host(u: str) -> str:
+        if not u:
+            return "unknown"
+        try:
+            host = urlparse(
+                u.replace("mongodb+srv://", "https://").replace("mongodb://", "https://")
+            ).hostname
+            return host or "unknown"
+        except Exception:
+            return "unknown"
 
-        web = await asyncio.to_thread(web_db.get_web_app_stats)
-        visits = web.get("visits") or {}
-        web_section = (
-            f"<b>🌐 Mini Web App</b>\n"
-            f"<blockquote>"
-            f"Storage: <b>{_fmt_bytes(web.get('storage_bytes') or 0)}</b>\n"
-            f"Titles: <b>{web.get('anime') or 0:,}</b>  ·  "
-            f"Web users: <b>{web.get('web_users') or 0:,}</b>\n"
-            f"Searches: <b>{web.get('searches') or 0:,}</b> "
-            f"({web.get('search_hits') or 0:,} hits)  ·  "
-            f"Requests: <b>{web.get('requests') or 0:,}</b>\n"
-            f"Reports: <b>{web.get('reports') or 0:,}</b>  ·  "
-            f"Cache: <b>{web.get('cache') or 0:,}</b>\n"
-            f"Visits: <b>{visits.get('total') or 0:,}</b>  "
-            f"(pages {visits.get('pages') or 0:,} · api {visits.get('api') or 0:,})"
-            f"</blockquote>"
+    # Per-DB status + combined storage across all reachable DBs
+    per_db_limit = 512 * 1024 * 1024  # Atlas free-tier per cluster
+    status_lines = []
+    active_host = "unknown"
+    total_used = 0.0
+    total_docs = 0
+    reachable_count = 0
+    for idx, uri in enumerate(uris, start=1):
+        name = names[idx - 1] if idx - 1 < len(names) else names[-1]
+        is_active = bool(active_uri and uri == active_uri)
+        reachable = False
+        used = docs = 0
+        try:
+            if is_active:
+                stats = await client.mongodb.db.command("dbstats")
+                used = float(stats.get("dataSize", 0) or 0) + float(stats.get("indexSize", 0) or 0)
+                docs = int(stats.get("objects", 0) or 0)
+                if stats.get("storageSize"):
+                    used = max(used, float(stats["storageSize"]))
+                reachable = True
+                active_host = _uri_host(uri)
+            else:
+                from pymongo import MongoClient as _SyncMC
+                c = _SyncMC(uri, serverSelectionTimeoutMS=3000)
+                c.admin.command("ping")
+                try:
+                    st = c[name].command("dbstats")
+                    used = float(st.get("dataSize", 0) or 0) + float(st.get("indexSize", 0) or 0)
+                    docs = int(st.get("objects", 0) or 0)
+                    if st.get("storageSize"):
+                        used = max(used, float(st["storageSize"]))
+                except Exception:
+                    pass
+                c.close()
+                reachable = True
+        except Exception:
+            reachable = False
+
+        if reachable:
+            reachable_count += 1
+            total_used += used
+            total_docs += docs
+
+        mark = "• active" if is_active else ("• standby" if reachable else "• down")
+        status_lines.append(
+            f"DB #{idx} {mark} (<code>{name}</code>) · <code>{_fmt_bytes(used)}</code>"
         )
-    except Exception as e:
-        web_section = f"<b>🌐 Mini Web App</b>\n<blockquote>Error: <code>{str(e)[:60]}</code></blockquote>"
 
-    msg = f"""<b>📊 Bot Stats</b>
+    if not status_lines:
+        status_lines.append("DB #1 • none configured")
 
-<b>🤖 Bot</b>
-<blockquote>Status: {"🟢 Running" if bot_ok else "🔴 Error"}
-Users: <b>{total_users}</b>
-Uptime: <b>{uptime_str}</b>
-Admins: {len(client.admins)}
-Bot RAM: {_fmt_bytes(bot_ram_mb * 1024 * 1024)}  ·  Bot CPU: {bot_cpu:.0f}%</blockquote>
+    # Combined limit = 512 MB × number of configured (or reachable) DBs
+    n_dbs = max(len(uris), 1)
+    combined_limit = per_db_limit * n_dbs
+    pct = (total_used / combined_limit) * 100 if combined_limit else 0
+    free = max(0, combined_limit - total_used)
+    detail = (
+        f"Host: <code>{active_host}</code>\n"
+        f"Used: <code>{_fmt_bytes(total_used)}</code> / <code>{_fmt_bytes(combined_limit)}</code>  "
+        f"(combined · {n_dbs} DB{'s' if n_dbs != 1 else ''})\n"
+        f"<code>{_bar(pct)}</code> {pct:.0f}%  {_status_dot(pct)}\n"
+        f"Free left: <code>{_fmt_bytes(free)}</code>  ·  Docs: <code>{total_docs:,}</code>"
+    )
+    db_block = "\n".join(status_lines) + "\n" + detail
+    multi_note = ""
+    if len(uris) > 1:
+        multi_note = f"\nℹ️ Multi-DB: <code>{len(uris)}</code> pairs · combined storage shown above"
 
-{mongo_section}
+    # ── Mini Web App (Anime Index) ──
+    web_storage = 0
+    titles = web_users = searches = search_hits = requests_n = reports = visits = 0
+    pages = api_hits = 0
+    try:
+        from helper import database as adb
+        adb.init_db()
+        titles = adb.anime_col.count_documents({})
+        web_users = adb.users_col.count_documents({})
+        searches = adb.searches_col.count_documents({})
+        # sum of hit counts if present
+        try:
+            agg = list(adb.searches_col.aggregate([{"$group": {"_id": None, "hits": {"$sum": "$count"}}}]))
+            search_hits = int(agg[0]["hits"]) if agg else 0
+        except Exception:
+            search_hits = 0
+        requests_n = adb.requests_col.count_documents({})
+        reports = adb.reports_col.count_documents({})
+        # approximate storage from collection stats
+        for col_name in ("anime", "users", "searches", "requests", "reports", "counters"):
+            try:
+                cs = adb._db.command("collStats", col_name)
+                web_storage += float(cs.get("storageSize", 0) or 0) + float(cs.get("totalIndexSize", 0) or 0)
+            except Exception:
+                pass
+        # visits counters if stored
+        try:
+            vdoc = adb.counters_col.find_one({"_id": "web_visits"}) or {}
+            visits = int(vdoc.get("seq", 0) or 0)
+            pages = int(vdoc.get("pages", 0) or 0)
+            api_hits = int(vdoc.get("api", 0) or 0)
+        except Exception:
+            pass
+        if not web_users and total_users:
+            web_users = total_users
+    except Exception:
+        pass
 
-{web_section}
+    # ── Build message ──
+    msg = f"""📊 <b>Bot Stats</b>
 
-<b>💻 Server</b>
-<blockquote>Disk: {_fmt_bytes(used)} / {_fmt_bytes(total)}  ({disk_pct:.0f}%)  {_status_emoji(disk_pct)}
-{_progress_bar(disk_pct)}
-RAM:  {_fmt_bytes(ram.used)} / {_fmt_bytes(ram.total)}  ({ram_pct:.0f}%)  {_status_emoji(ram_pct)}
-{_progress_bar(ram_pct)}
-CPU:  {cpu_pct:.0f}%  {_status_emoji(cpu_pct)}
-Net:  {net_line}</blockquote>"""
+🤖 <b>Bot</b>
+Status: {bot_status}
+Users: <code>{total_users}</code>
+Uptime: <code>{uptime_str}</code>
+Admins: <code>{admins_count}</code>
+Bot RAM: <code>{bot_ram_mb:.2f} MB</code>  ·  Bot CPU: <code>{bot_cpu:.0f}%</code>
+
+🗄 <b>Database (MongoDB)</b>
+{db_block}{multi_note}
+
+🌐 <b>Mini Web App</b>
+Storage: <code>{_fmt_bytes(web_storage)}</code>
+Titles: <code>{titles}</code>  ·  Web users: <code>{web_users}</code>
+Searches: <code>{searches}</code> ({search_hits} hits)  ·  Requests: <code>{requests_n}</code>
+Reports: <code>{reports}</code>
+Visits: <code>{visits}</code>  (pages <code>{pages}</code> · api <code>{api_hits}</code>)
+
+💻 <b>Server</b>
+Disk: <code>{_fmt_bytes(used_disk)}</code> / <code>{_fmt_bytes(total_disk)}</code>  ({disk_pct:.0f}%)  {_status_dot(disk_pct)}
+<code>{_bar(disk_pct)}</code>
+RAM:  <code>{_fmt_bytes(ram.used)}</code> / <code>{_fmt_bytes(ram.total)}</code>  ({ram_pct:.0f}%)  {_status_dot(ram_pct)}
+<code>{_bar(ram_pct)}</code>
+CPU:  <code>{cpu_usage:.0f}%</code>  {_status_dot(cpu_usage)}
+Net:  Sent <code>{_fmt_bytes(sent)}</code>  ·  Recv <code>{_fmt_bytes(recv)}</code>"""
 
     await reply.edit_text(msg)
 #===============================================================#
