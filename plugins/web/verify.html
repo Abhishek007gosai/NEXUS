@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <title>Verify Connection</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #000;
+      color: #e8e8e8;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      width: min(340px, 90vw);
+      background: #121212;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 22px;
+      padding: 28px 22px 24px;
+      text-align: left;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+      z-index: 1;
+      transition: opacity 0.28s ease, transform 0.28s ease;
+    }
+
+    .card.center {
+      text-align: center;
+    }
+
+    .card.hidden {
+      opacity: 0;
+      transform: scale(0.97);
+      pointer-events: none;
+      position: absolute;
+    }
+
+    .mute-icon {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 18px;
+      height: 18px;
+      opacity: 0.32;
+    }
+
+    .mute-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: #fff;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .icon-wrap {
+      width: 52px;
+      height: 52px;
+      background: #fff;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+
+    .icon-wrap.dark {
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .icon-wrap svg {
+      width: 26px;
+      height: 26px;
+      fill: none;
+      stroke: #111;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .icon-wrap.dark svg {
+      stroke: #e8e8e8;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      padding: 5px 12px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+      background: rgba(37, 99, 235, 0.12);
+      color: #3b82f6;
+      border: 1px solid rgba(59, 130, 246, 0.28);
+    }
+
+    .status-pill::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #3b82f6;
+      box-shadow: 0 0 6px rgba(59, 130, 246, 0.7);
+    }
+
+    .status-pill.success {
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+      border-color: rgba(34, 197, 94, 0.28);
+    }
+
+    .status-pill.success::before {
+      background: #22c55e;
+      box-shadow: 0 0 6px rgba(34, 197, 94, 0.7);
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: rgba(255,255,255,0.48);
+      line-height: 1.5;
+      margin-bottom: 26px;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      padding: 15px 20px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.12s ease, background 0.15s ease;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: #fff;
+      color: #111;
+    }
+
+    .btn-primary:active {
+      transform: scale(0.98);
+      background: #e8e8e8;
+    }
+
+    .dest-box {
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 20px 0 16px;
+    }
+
+    .dest-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #252525;
+      border: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #e8e8e8;
+      flex-shrink: 0;
+    }
+
+    .dest-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .dest-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.38);
+      margin-bottom: 2px;
+    }
+
+    .dest-domain {
+      font-size: 14px;
+      font-weight: 500;
+      color: #e8e8e8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cf-bar {
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      min-height: 48px;
+    }
+
+    .cf-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.12);
+      border-top-color: #4ade80;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .cf-success-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #22c55e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #fff;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .cf-logo {
+      font-size: 10px;
+      color: rgba(255,255,255,0.32);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      white-space: nowrap;
+    }
+
+    .cf-logo strong {
+      color: #f97316;
+      font-weight: 600;
+    }
+
+    .redirect-text {
+      font-size: 13px;
+      color: rgba(255,255,255,0.35);
+      text-align: center;
+    }
+
+    .big-spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    .check-circle {
+      width: 48px;
+      height: 48px;
+      background: #1a1a1a;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.08);
+      margin: 0 auto 18px;
+    }
+
+    .check-circle svg {
+      width: 24px;
+      height: 24px;
+      stroke: #e8e8e8;
+      stroke-width: 2.4;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    body.light {
+      background: #f5f5f5;
+    }
+
+    body.light::before {
+      display: none;
+    }
+
+    .card.light-card {
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+      text-align: center;
+      padding: 32px 24px;
+    }
+
+    .card.light-card h1,
+    .card.light-card .secure-title {
+      color: #111;
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .card.light-card .secure-sub {
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+
+    .card.light-card .icon-wrap {
+      background: #f0f0f0;
+      border: none;
+      margin: 0 auto 14px;
+    }
+
+    .card.light-card .icon-wrap svg {
+      stroke: #555;
+    }
+
+    .countdown-circle {
+      width: 56px;
+      height: 56px;
+      margin: 16px auto 10px;
+      border: 2px solid #3b82f6;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 600;
+      color: #3b82f6;
+      transition: all 0.25s ease;
+    }
+
+    .countdown-circle.done {
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- STEP 1: Verify Connection -->
+  <div class="card" id="step1">
+    <div class="mute-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+        <line x1="23" y1="9" x2="17" y2="15"/>
+        <line x1="17" y1="9" x2="23" y2="15"/>
+      </svg>
+    </div>
+
+    <div class="icon-wrap">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+
+    <div class="status-pill">ACTION REQUIRED</div>
+
+    <h1>Verify Connection</h1>
+    <p class="subtitle">Please click below to securely verify your access token.</p>
+
+    <button class="btn btn-primary" id="verifyBtn">Verify Now</button>
+  </div>
+
+  <!-- STEP 2: Secure Connection / Validating -->
+  <div class="card center hidden" id="step2">
+    <div class="big-spinner"></div>
+    <h1 style="font-size:20px;margin-bottom:6px">Secure Connection</h1>
+    <p class="subtitle" style="margin-bottom:0">Validating...</p>
+  </div>
+
+  <!-- STEP 3: Access Granted + CF -->
+  <div class="card hidden" id="step3">
+    <div class="icon-wrap dark">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+
+    <div class="status-pill success">PAYLOAD VERIFIED</div>
+
+    <h1>Access Granted</h1>
+    <p class="subtitle">Your request has been verified and is being routed securely.</p>
+
+    <div class="dest-box">
+      <div class="dest-num" id="destNum">1</div>
+      <div class="dest-info">
+        <div class="dest-label">Destination</div>
+        <div class="dest-domain" id="destDomain">get2short.com</div>
+      </div>
+    </div>
+
+    <div class="cf-bar" id="cfBar">
+      <div class="cf-left">
+        <div class="spinner" id="cfSpinner"></div>
+        <span id="cfText">Verifying...</span>
+      </div>
+      <div class="cf-logo">
+        <strong>CLOUDFLARE</strong> · Privacy · Help
+      </div>
+    </div>
+
+    <p class="redirect-text">Redirecting automatically...</p>
+  </div>
+
+  <!-- STEP 4: Verification Complete -->
+  <div class="card center hidden" id="step4">
+    <div class="check-circle">
+      <svg viewBox="0 0 24 24">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <h1 style="font-size:20px">Verification Complete</h1>
+    <p class="subtitle" style="margin-bottom:0">Routing to destination...</p>
+  </div>
+
+  <!-- STEP 5: Secure Link countdown -->
+  <div class="card light-card hidden" id="step5">
+    <div class="icon-wrap">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+    <div class="secure-title">Secure Link</div>
+    <div class="secure-sub">Verifying your browser...</div>
+    <div class="countdown-circle" id="countdown">3</div>
+    <div class="secure-sub" id="countdownLabel">Please wait</div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const DESTINATION = params.get("url") || params.get("to") || params.get("redirect") || "";
+    const DEST_DISPLAY = params.get("dest") || (() => {
+      try {
+        return DESTINATION ? new URL(DESTINATION).hostname : "get2short.com";
+      } catch {
+        return "get2short.com";
+      }
+    })();
+
+    document.getElementById("destDomain").textContent = DEST_DISPLAY;
+
+    const steps = {
+      1: document.getElementById("step1"),
+      2: document.getElementById("step2"),
+      3: document.getElementById("step3"),
+      4: document.getElementById("step4"),
+      5: document.getElementById("step5"),
+    };
+
+    function show(n) {
+      Object.values(steps).forEach(s => s.classList.add("hidden"));
+      steps[n].classList.remove("hidden");
+    }
+
+    function goToDestination() {
+      if (DESTINATION) {
+        window.location.href = DESTINATION;
+      } else {
+        document.querySelector("#step4 .subtitle").textContent =
+          "No destination. Add ?url=YOUR_SHORTENER_LINK";
+      }
+    }
+
+    document.getElementById("verifyBtn").addEventListener("click", () => {
+      // Verify Now → Secure Connection / Validating
+      show(2);
+
+      setTimeout(() => {
+        // → Access Granted + CF Verifying
+        show(3);
+
+        setTimeout(() => {
+          const spinner = document.getElementById("cfSpinner");
+          const cfText = document.getElementById("cfText");
+          spinner.style.display = "none";
+
+          const ok = document.createElement("div");
+          ok.className = "cf-success-icon";
+          ok.textContent = "✓";
+          document.querySelector(".cf-left").insertBefore(ok, cfText);
+          cfText.textContent = "Success!";
+          cfText.style.color = "#4ade80";
+
+          setTimeout(() => {
+            // → Verification Complete
+            show(4);
+
+            setTimeout(() => {
+              // → Secure Link countdown
+              document.body.classList.add("light");
+              show(5);
+              startCountdown();
+            }, 1200);
+          }, 900);
+        }, 1800);
+      }, 1400);
+    });
+
+    function startCountdown() {
+      let n = 3;
+      const el = document.getElementById("countdown");
+      const label = document.getElementById("countdownLabel");
+      el.textContent = n;
+
+      const timer = setInterval(() => {
+        n--;
+        if (n > 0) {
+          el.textContent = n;
+        } else if (n === 0) {
+          el.textContent = "0";
+          label.textContent = "Checking browser...";
+        } else {
+          clearInterval(timer);
+          el.textContent = "✓";
+          el.classList.add("done");
+          label.textContent = "Verified";
+          setTimeout(goToDestination, 700);
+        }
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
