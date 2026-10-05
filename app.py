@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 """
 Anime Index Mini App — Flask JSON API + static/HTML for the Telegram WebApp.
 
-Bot commands (/anidex, library search, request Accept/Reject) live in
+Telegram bot commands (/anidex, library search, request Accept/Reject) live in
 plugins/index.py (Pyrogram). This module only serves HTTP.
 """
 
@@ -23,8 +21,8 @@ from flask import Flask, abort, jsonify, render_template, request, send_from_dir
 from flask_compress import Compress
 
 from config import (
-    TOKEN, ADMINS, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE,
-    CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY,
+    TOKEN, ADMINS, OWNER_ID, WEBAPP_URL, BRAND_NAME, BRAND_HANDLE, BOTNAME,
+    CATALOG_CACHE_TTL, LOG_CHANNEL_ID, SECRET_KEY, SUPPORT_CHAT_URL,
 )
 from helper import database as db
 
@@ -52,7 +50,10 @@ app = Flask(
     template_folder=str(WEB_DIR),
 )
 app.config["SECRET_KEY"] = SECRET_KEY
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+# Short default for static; real cache-busting uses ?v=ASSET_VERSION on HTML links.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 120
+# Bumps on every process start so redeploys invalidate Telegram/browser caches.
+ASSET_VERSION = str(int(time.time()))
 app.config["COMPRESS_MIMETYPES"] = [
     "text/html", "text/css", "text/javascript", "application/javascript",
     "application/json",
@@ -63,6 +64,53 @@ try:
     db.init_db()
 except Exception as e:
     print(f"[anime_db] init deferred / failed: {e}")
+
+
+def _warm_catalog_cache(pages: int = 1, delay_sec: float = 0):
+    """Pre-fill discovery catalog (memory + disk) after redeploy.
+
+    Uses few pages + optional start delay so we don't trip AniList 429
+    right as the bot and web process also boot.
+    """
+    if delay_sec and delay_sec > 0:
+        time.sleep(delay_sec)
+    src = SOURCES.get("anilist")
+    if not src:
+        return
+    try:
+        if hasattr(src, "warm_home"):
+            src.warm_home(pages=pages)
+        else:
+            src.get_trending()
+            src.get_popular()
+            src.get_most_popular()
+        print(f"[catalog] cache warmed (pages={pages})")
+    except Exception as e:
+        print(f"[catalog] warm failed: {e}")
+
+
+def _catalog_rewarm_loop():
+    """Re-warm discovery feeds every ~15 minutes so soft TTL rarely expires cold."""
+    while True:
+        time.sleep(15 * 60)
+        try:
+            _warm_catalog_cache(pages=1)
+        except Exception:
+            pass
+
+
+try:
+    import threading
+    # Delay first warm so boot traffic + bot start don't stack 429s
+    threading.Thread(
+        target=_warm_catalog_cache,
+        kwargs={"pages": 1, "delay_sec": 8},
+        daemon=True,
+        name="catalog-warm",
+    ).start()
+    threading.Thread(target=_catalog_rewarm_loop, daemon=True, name="catalog-rewarm").start()
+except Exception:
+    pass
 
 GENRES = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Romance", "Sci-Fi", "Horror"]
 
@@ -101,7 +149,11 @@ def current_user():
 
 
 def is_admin(user: dict | None) -> bool:
-    return bool(user) and user.get("id") in ADMINS
+    if not user:
+        return False
+    uid = user.get("id")
+    # Owner is always admin. Also accept anyone listed in ADMINS.
+    return uid == OWNER_ID or uid in ADMINS
 
 
 # ---------------------------------------------------------------------------
@@ -166,26 +218,8 @@ def _flood_guard():
     the stricter per-action limits above. Generous enough that normal use
     (Home's several parallel loads, fast tab-switching, typing a search)
     never comes close, but it stops a runaway client loop or a scripted
-    abuser from hammering the server.
-
-    Also records website / mini-app visits for /stats.
-    """
-    path = request.path or "/"
-    # Skip static assets from visit counts
-    if not (
-        path.startswith("/static")
-        or path.startswith("/favicon")
-        or path.endswith((".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".ico", ".svg", ".map"))
-    ):
-        try:
-            is_page = (not path.startswith("/api/")) and request.method == "GET"
-            is_api = path.startswith("/api/")
-            if is_page or is_api:
-                db.record_web_visit(path=path, is_page=is_page)
-        except Exception:
-            pass
-
-    if not path.startswith("/api/"):
+    abuser from hammering the server."""
+    if not request.path.startswith("/api/"):
         return None
     user = current_user()
     if is_admin(user):
@@ -210,55 +244,122 @@ def _telegram_user_label(user: dict | None) -> str:
 
 
 def _bot_api(method: str, payload: dict):
+    """Call Telegram Bot API. Logs failures so request notifications can be debugged."""
     token = TOKEN
     if not token:
-        return
+        print("[request-log] TOKEN is empty — cannot send to log channel")
+        return None
     try:
-        requests.post(f"https://api.telegram.org/bot{token}/{method}", json=payload, timeout=15)
-    except requests.RequestException:
-        pass
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/{method}",
+            json=payload,
+            timeout=15,
+        )
+        data = r.json() if r.content else {}
+        if not data.get("ok"):
+            print(f"[request-log] Bot API {method} failed: {data.get('description') or r.text[:200]}")
+            return None
+        return data
+    except requests.RequestException as e:
+        print(f"[request-log] Bot API {method} network error: {e}")
+        return None
 
 
 def notify_new_report(title: str, reason: str, details: str, reporter_name: str):
     if not LOG_CHANNEL_ID:
+        print("[request-log] LOG_CHANNEL_ID not set — report not posted")
         return
+    name = (BOTNAME or BRAND_NAME or "kaya").strip() or "kaya"
+    bot_line = f"Bot: {name}"
     text = (
-        f"\U0001f6a9 New Report\n"
+        "🚨 New Report\n"
+        f"{bot_line}\n"
         f"Anime: {title}\n"
         f"Reason: {reason}\n"
         + (f"Details: {details}\n" if details else "")
         + f"By: {reporter_name}"
     )
-    _bot_api("sendMessage", {"chat_id": LOG_CHANNEL_ID, "text": text})
+    chat_id = LOG_CHANNEL_ID
+    try:
+        chat_id = int(str(LOG_CHANNEL_ID).strip())
+    except (TypeError, ValueError):
+        pass
+    _bot_api("sendMessage", {"chat_id": chat_id, "text": text})
 
 
 def notify_new_request(request_id: int, title: str, requester_name: str, poster_url: str | None):
+    """Post new anime request to LOG_CHANNEL_ID with Accept/Reject buttons (copied from working ECCHI)."""
     if not LOG_CHANNEL_ID:
+        print(f"[request-log] LOG_CHANNEL_ID not set — request #{request_id} ({title}) saved but NOT logged")
         return
+
+    chat_id = LOG_CHANNEL_ID
+    try:
+        chat_id = int(str(LOG_CHANNEL_ID).strip())
+    except (TypeError, ValueError):
+        chat_id = str(LOG_CHANNEL_ID).strip()
+
+    name = (BOTNAME or BRAND_NAME or "kaya").strip() or "kaya"
+    bot_line = f"Bot: {name}"
+
     text = (
-        f"\U0001f4dd New Request\n"
+        f"📝 New Request\n"
+        f"{bot_line}\n"
         f"Anime: {title}\n"
         f"By: {requester_name}"
     )
     keyboard = {
         "inline_keyboard": [[
-            {"text": "\u2705 Accept", "callback_data": f"reqaccept:{request_id}"},
-            {"text": "\u274c Reject", "callback_data": f"reqreject:{request_id}"},
+            {"text": "✅ Accept", "callback_data": f"reqaccept:{request_id}"},
+            {"text": "❌ Reject", "callback_data": f"reqreject:{request_id}"},
         ]]
     }
-    _bot_api("sendMessage", {
-        "chat_id": LOG_CHANNEL_ID,
+
+    print(f"[request-log] Posting request #{request_id} '{title}' by {requester_name} → {chat_id}")
+
+    # Text-only (no poster) so the log channel stays clean
+    ok = _bot_api("sendMessage", {
+        "chat_id": chat_id,
         "text": text,
         "reply_markup": keyboard,
     })
+    if ok:
+        print(f"[request-log] Delivered request #{request_id} as text")
+    else:
+        print(
+            f"[request-log] FAILED to post request #{request_id}. "
+            f"Check LOG_CHANNEL_ID={chat_id}, bot is admin there, and TOKEN is valid."
+        )
 
 
+_bot_username_cache = {"name": None, "ts": 0}
 
-USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
+
+def _bot_username() -> str | None:
+    """Resolve this bot's public @username (cached)."""
+    now = time.time()
+    if _bot_username_cache["name"] and now - _bot_username_cache["ts"] < 3600:
+        return _bot_username_cache["name"]
+    if not TOKEN:
+        return None
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe", timeout=8)
+        data = r.json()
+        if data.get("ok") and data.get("result", {}).get("username"):
+            _bot_username_cache["name"] = data["result"]["username"]
+            _bot_username_cache["ts"] = now
+            return _bot_username_cache["name"]
+    except Exception:
+        pass
+    return None
 
 
 def normalize_join_link(raw: str) -> str:
-    """Turn admin paste into a safe Telegram URL. Raises ValueError on bad input."""
+    """Turn admin paste into a safe Telegram URL. Raises ValueError on bad input.
+
+    Accepts full t.me links, @username, channel IDs, and deep-link fragments
+    like `?start=TOKEN` or `start=TOKEN` (completed using this bot's username).
+    """
     raw = (raw or "").strip()
     if not raw:
         return ""
@@ -268,13 +369,32 @@ def normalize_join_link(raw: str) -> str:
         return raw
     if raw.startswith("t.me/") or raw.startswith("telegram.me/"):
         return "https://" + raw
+    # Deep-link start payload — including truncated pastes from mobile:
+    #   ?start=XXX  start=XXX  t?start=XXX  me?start=XXX  Bot?start=XXX
+    start_payload = None
+    m = re.search(r"(?:\?start=|^start=)([A-Za-z0-9_\-]+)$", raw)
+    if m:
+        start_payload = m.group(1)
+    elif re.match(r"^t=([A-Za-z0-9_\-]+)$", raw):
+        # Truncated URL that only kept the end of ?start=...
+        start_payload = raw.split("=", 1)[1]
+    elif re.fullmatch(r"[A-Za-z0-9_\-]{8,}", raw) and ("=" not in raw) and ("/" not in raw):
+        # Bare start token (base64-ish)
+        start_payload = raw
+    if start_payload:
+        bot = _bot_username()
+        if not bot:
+            raise ValueError(
+                "Paste the full https://t.me/YourBot?start=... link "
+                "(couldn't resolve this bot's username automatically)."
+            )
+        return f"https://t.me/{bot}?start={start_payload}"
     if re.fullmatch(r"-?\d+", raw):
-        token = TOKEN
-        if not token:
+        if not TOKEN:
             raise ValueError("Bot isn't connected — can't generate an invite link for a channel ID.")
         try:
             r = requests.post(
-                f"https://api.telegram.org/bot{token}/createChatInviteLink",
+                f"https://api.telegram.org/bot{TOKEN}/createChatInviteLink",
                 json={"chat_id": int(raw)},
                 timeout=15,
             )
@@ -291,17 +411,24 @@ def normalize_join_link(raw: str) -> str:
     if not USERNAME_RE.match(username):
         raise ValueError(
             "Enter a Telegram @username, a t.me/ link, an invite link (https://t.me/+...), "
-            "or a channel ID."
+            "a bot deep link (https://t.me/Bot?start=...), or a channel ID."
         )
     return f"https://t.me/{username}"
 
 
 def propagate_link_full_franchise(anime_id: int, link: str) -> int:
+    """Expand AniList franchise into MongoDB and share the finished join link.
+
+    Skips titles marked display_mode=solo so Solo highlights keep their own link.
+    New franchise members are stored as display_mode=group.
+    """
     doc = db.get_anime(anime_id)
     if not doc:
         return 0
     source = doc["source"]
-    src = SOURCES[source]
+    src = SOURCES.get(source) or SOURCES.get("anilist")
+    if not src:
+        return 0
     seen = {str(doc["source_id"])}
     frontier = [str(x) for x in (doc.get("related_ids") or [])]
     updated = 0
@@ -313,19 +440,119 @@ def propagate_link_full_franchise(anime_id: int, link: str) -> int:
         seen.add(sid)
         existing = db.find_by_source_id(source, sid)
         if existing:
+            # Never overwrite a Solo highlight's own link/mode
+            if (existing.get("display_mode") or "group") == "solo":
+                frontier.extend(str(x) for x in (existing.get("related_ids") or []))
+                continue
             db.update_link(existing["id"], link)
+            try:
+                db.update_display_mode(existing["id"], "group")
+            except Exception:
+                pass
             updated += 1
             frontier.extend(str(x) for x in (existing.get("related_ids") or []))
             continue
         try:
             details = src.get_details(sid)
-        except requests.RequestException:
+        except Exception:
             continue
         new_id = db.upsert_anime(details)
         db.update_link(new_id, link)
+        try:
+            db.update_display_mode(new_id, "group")
+        except Exception:
+            pass
         updated += 1
         frontier.extend(str(x) for x in (details.get("related_ids") or []))
     return updated
+
+
+@app.after_request
+def _cache_headers(resp):
+    """HTML must not be cached (Telegram WebApp + browsers otherwise keep old UI).
+    Versioned static assets (?v=) can be cached briefly."""
+    path = request.path or ""
+    if path == "/" or path.endswith(".html"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    elif path.startswith("/static/"):
+        # Short browser cache; ?v= on the URL is the real invalidation key.
+        resp.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
+    return resp
+
+
+
+_DOWN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Website Down</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0d0d0d;
+      color: #e8e8e8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+      text-align: center;
+    }
+    .card {
+      max-width: 340px;
+      width: 100%;
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 32px 24px;
+    }
+    .icon { font-size: 42px; margin-bottom: 12px; }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    p { font-size: 14px; color: rgba(255,255,255,0.55); line-height: 1.45; margin-bottom: 20px; }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 22px;
+      background: linear-gradient(135deg, #1f5628, #2d7a3a);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:active { opacity: 0.9; transform: scale(0.98); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠</div>
+    <h1>Website is temporarily down</h1>
+    <p>We're updating the service. Please try again in a few minutes.</p>
+    <button onclick="location.reload()">Try Again</button>
+  </div>
+</body>
+</html>
+"""
+
+
+@app.errorhandler(404)
+def not_found(_e):
+    if request.path.startswith("/api/"):
+        return jsonify(error="Not found"), 404
+    return _DOWN_HTML, 404, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.errorhandler(502)
+@app.errorhandler(503)
+@app.errorhandler(504)
+def service_unavailable(_e):
+    if request.path.startswith("/api/"):
+        return jsonify(error="Service unavailable"), 503
+    return _DOWN_HTML, 503, {"Content-Type": "text/html; charset=utf-8"}
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -334,7 +561,12 @@ def index():
     # We run Pyrogram in polling mode, so ignore POSTs with 200 to stop retry spam.
     if request.method == "POST":
         return "", 200
-    return render_template("index.html", brand_name=BRAND_NAME, brand_handle=BRAND_HANDLE)
+    return render_template(
+        "index.html",
+        brand_name=BRAND_NAME,
+        brand_handle=BRAND_HANDLE,
+        asset_version=ASSET_VERSION,
+    )
 
 
 @app.get("/favicon.ico")
@@ -355,12 +587,13 @@ def healthz():
     # Best-effort: a slow/unreachable AniList must never fail the health
     # check itself, so failures here are swallowed.
     try:
-        SOURCES["anilist"].get_trending()
-        SOURCES["anilist"].get_popular()
-        SOURCES["anilist"].get_most_popular()
-        SOURCES["anilist"].get_trending_manga()
-        SOURCES["anilist"].get_airing_manga()
-        SOURCES["anilist"].get_popular_manga()
+        src = SOURCES.get("anilist")
+        if src and hasattr(src, "warm_home"):
+            src.warm_home(pages=1)
+        elif src:
+            src.get_trending()
+            src.get_popular()
+            src.get_most_popular()
     except Exception:
         pass
     return jsonify(status="ok")
@@ -370,120 +603,40 @@ def healthz():
 def api_trending():
     page = request.args.get("page", 1, type=int)
     try:
-        resp = jsonify(SOURCES["anilist"].get_trending(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
+        data = SOURCES["anilist"].get_trending(page)
+        resp = jsonify(data)
+        # Browser may reuse for 5 min; allow stale while revalidating for 1 h
+        resp.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+        return resp
+    except Exception as e:
+        app.logger.warning("catalog/trending failed: %s", e)
+        return jsonify({"results": [], "has_next": False, "error": str(e)[:200]}), 200
 
 
 @app.get("/api/catalog/popular")
 def api_popular():
     page = request.args.get("page", 1, type=int)
     try:
-        resp = jsonify(SOURCES["anilist"].get_popular(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
+        data = SOURCES["anilist"].get_popular(page)
+        resp = jsonify(data)
+        resp.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+        return resp
+    except Exception as e:
+        app.logger.warning("catalog/popular failed: %s", e)
+        return jsonify({"results": [], "has_next": False, "error": str(e)[:200]}), 200
 
 
 @app.get("/api/catalog/most-popular")
 def api_most_popular():
     page = request.args.get("page", 1, type=int)
     try:
-        resp = jsonify(SOURCES["anilist"].get_most_popular(page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
-    resp.headers["Cache-Control"] = f"public, max-age={CATALOG_CACHE_TTL}"
-    return resp
-
-
-def _catalog_json(payload, max_age: int):
-    resp = jsonify(payload)
-    resp.headers["Cache-Control"] = f"public, max-age={max_age}"
-    return resp
-
-
-@app.get("/api/catalog/manga/trending")
-def api_manga_trending():
-    page = request.args.get("page", 1, type=int)
-    try:
-        data = SOURCES["anilist"].get_trending_manga(page)
-    except requests.RequestException:
-        data = {"results": [], "has_next": False}
-    return _catalog_json(data, CATALOG_CACHE_TTL)
-
-
-@app.get("/api/catalog/manga/airing")
-def api_manga_airing():
-    page = request.args.get("page", 1, type=int)
-    try:
-        data = SOURCES["anilist"].get_airing_manga(page)
-    except requests.RequestException:
-        data = {"results": [], "has_next": False}
-    return _catalog_json(data, CATALOG_CACHE_TTL)
-
-
-@app.get("/api/catalog/manga/popular")
-def api_manga_popular():
-    page = request.args.get("page", 1, type=int)
-    try:
-        data = SOURCES["anilist"].get_popular_manga(page)
-    except requests.RequestException:
-        data = {"results": [], "has_next": False}
-    return _catalog_json(data, CATALOG_CACHE_TTL)
-
-
-# Back-compat aliases
-@app.get("/api/catalog/manhwa/trending")
-def api_manhwa_trending():
-    return api_manga_trending()
-
-
-@app.get("/api/catalog/manhwa/popular")
-def api_manhwa_popular():
-    return api_manga_airing()
-
-
-@app.get("/api/img")
-def api_proxy_image():
-    """Proxy remote cover images so the Telegram WebView can display them.
-    Only allowlisted hosts are fetched."""
-    from urllib.parse import urlparse, unquote
-    from flask import Response
-
-    raw = request.args.get("u") or ""
-    url = unquote(raw).strip()
-    if not url.startswith("https://"):
-        abort(400)
-    host = (urlparse(url).hostname or "").lower()
-    allowed = {
-        "s4.anilist.co",
-        "s3.anilist.co",
-        "cdn.myanimelist.net",
-    }
-    if host not in allowed:
-        abort(403)
-    try:
-        upstream = requests.get(
-            url,
-            timeout=12,
-            headers={
-                "User-Agent": "HIndexBot/1.0 (cover-proxy)",
-                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-            },
-        )
-        if upstream.status_code != 200:
-            abort(upstream.status_code if upstream.status_code in (403, 404) else 502)
-        ct = upstream.headers.get("Content-Type") or "image/jpeg"
-        if not ct.startswith("image/"):
-            abort(502)
-        resp = Response(upstream.content, mimetype=ct)
-        resp.headers["Cache-Control"] = "public, max-age=86400"
+        data = SOURCES["anilist"].get_most_popular(page)
+        resp = jsonify(data)
+        resp.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
         return resp
-    except requests.RequestException:
-        abort(502)
+    except Exception as e:
+        app.logger.warning("catalog/most-popular failed: %s", e)
+        return jsonify({"results": [], "has_next": False, "error": str(e)[:200]}), 200
 
 
 @app.post("/api/search/track")
@@ -510,47 +663,108 @@ def api_search_clear():
     return jsonify(status="cleared")
 
 
-@app.get("/api/search")
 @app.get("/api/search/anime")
-def api_search_all():
-    """Search adult anime (hentai) + manga/manhwa/doujin (pornhwa) together."""
+def api_search_anime():
+    """Search local MongoDB first (fast), then AniList (cached in Mongo).
+
+    Merges local posted titles with AniList results so search works even
+    when AniList is rate-limited or slow.
+    """
     q = (request.args.get("q") or "").strip()
     page = request.args.get("page", 1, type=int)
     if not q:
         return jsonify({"results": [], "has_next": False})
-    try:
-        return jsonify(SOURCES["anilist"].search_all(q, page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
 
-
-@app.get("/api/search/manga")
-def api_search_manga():
-    """Search adult manga / manhwa (pornhwa)."""
-    q = (request.args.get("q") or "").strip()
-    page = request.args.get("page", 1, type=int)
-    if not q:
-        return jsonify({"results": [], "has_next": False})
+    local_hits = []
     try:
-        return jsonify(SOURCES["anilist"].search_manga(q, page))
-    except requests.RequestException:
-        return jsonify({"results": [], "has_next": False})
+        local_hits = db.search_local(q, limit=40)
+    except Exception as e:
+        print(f"[search] local failed: {e}")
+
+    # Normalize local docs to the same shape as AniList search rows
+    results = []
+    seen_ids = set()
+    for a in local_hits:
+        sid = str(a.get("source_id") or a.get("anilist_id") or a.get("id") or "")
+        if sid:
+            seen_ids.add(sid)
+        results.append({
+            "id": a.get("id"),
+            "source_id": a.get("source_id") or a.get("anilist_id"),
+            "anilist_id": a.get("anilist_id") or a.get("source_id"),
+            "title": a.get("title"),
+            "alt_title": a.get("alt_title"),
+            "year": a.get("year"),
+            "poster_url": a.get("poster_url"),
+            "rating": a.get("rating"),
+            "genres": (a.get("genres") or [])[:3],
+            "format": a.get("format"),
+            "episodes": a.get("episodes"),
+            "status": a.get("status"),
+            "join_link": a.get("join_link"),
+            "solo_link": a.get("solo_link"),
+            "ongoing_link": a.get("ongoing_link"),
+            "matchedJoinLink": a.get("join_link") or a.get("solo_link") or a.get("ongoing_link"),
+            "from_library": True,
+        })
+
+    # AniList (page 1 merges with local; later pages are AniList-only)
+    al_error = None
+    has_next = False
+    try:
+        al = SOURCES["anilist"].search(q, page)
+        has_next = bool(al.get("has_next"))
+        for item in al.get("results") or []:
+            sid = str(item.get("anilist_id") or item.get("source_id") or "")
+            if sid and sid in seen_ids:
+                continue
+            if sid:
+                seen_ids.add(sid)
+            # Prefer library match for join links
+            matched = None
+            try:
+                if sid:
+                    matched = db.find_by_source_id("anilist", sid)
+            except Exception:
+                matched = None
+            if matched:
+                item["id"] = matched.get("id")
+                item["join_link"] = matched.get("join_link")
+                item["solo_link"] = matched.get("solo_link")
+                item["ongoing_link"] = matched.get("ongoing_link")
+                item["matchedJoinLink"] = (
+                    matched.get("join_link")
+                    or matched.get("solo_link")
+                    or matched.get("ongoing_link")
+                )
+            results.append(item)
+    except requests.RequestException as e:
+        al_error = str(e) or "AniList unavailable"
+    except Exception as e:
+        al_error = str(e) or "Search failed"
+
+    # If AniList failed but we have local results, still return 200
+    if al_error and not results:
+        return jsonify({"results": [], "has_next": False, "error": al_error}), 502
+
+    # Page > 1: local already shown on page 1; only return AniList page slice
+    # (AniList results already appended above for this page)
+    if page > 1:
+        # Drop pure-local-only rows on later pages (they were page-1)
+        results = [r for r in results if not r.get("from_library")]
+
+    return jsonify({"results": results, "has_next": has_next, "error": al_error})
 
 
 @app.get("/api/genres/<genre>")
 def api_genre_browse(genre):
     page = request.args.get("page", 1, type=int)
-    media_type = (request.args.get("type") or "ANIME").upper()
-    if media_type not in ("ANIME", "MANGA"):
-        media_type = "ANIME"
+    media_type = (request.args.get("type") or "anime").lower()
+    if media_type not in ("anime", "manga"):
+        media_type = "anime"
     try:
-        data = SOURCES["anilist"].browse_genre(genre, page, media_type=media_type)
-        return jsonify(data if isinstance(data, dict) else {"results": [], "has_next": False})
-    except Exception as e:
-        try:
-            app.logger.warning("genre browse failed genre=%s type=%s: %s", genre, media_type, e)
-        except Exception:
-            pass
+        return jsonify(SOURCES["anilist"].browse_genre(genre, page, media_type=media_type))
+    except requests.RequestException:
         return jsonify({"results": [], "has_next": False})
 
 
@@ -582,6 +796,44 @@ def api_anime_detail(anime_id):
     anime = db.get_anime(anime_id)
     if not anime:
         abort(404)
+
+    # Enrich missing synopsis / related_ids from AniList so prequel/sequel + description work
+    needs_enrich = (
+        not (anime.get("description") or "").strip()
+        or not (anime.get("related_ids") or [])
+        or not anime.get("banner_url")
+    )
+    sid = anime.get("source_id")
+    if needs_enrich and sid and (anime.get("source") or "anilist") == "anilist":
+        try:
+            details = SOURCES["anilist"].get_details(int(sid), use_cache=True)
+            patch = {}
+            if not (anime.get("description") or "").strip() and details.get("description"):
+                patch["description"] = details["description"]
+            if not (anime.get("related_ids") or []) and details.get("related_ids"):
+                patch["related_ids"] = [str(x) for x in details["related_ids"]]
+                patch["relations"] = details.get("relations") or []
+            if not anime.get("banner_url") and details.get("banner_url"):
+                patch["banner_url"] = details["banner_url"]
+            if details.get("status"):
+                patch["status"] = details["status"]
+            if details.get("airing_day") and not anime.get("airing_day"):
+                patch["airing_day"] = details["airing_day"]
+            if patch:
+                try:
+                    from helper.database import anime_col
+                    import time as _time
+                    anime_col.update_one(
+                        {"_id": anime_id},
+                        {"$set": {**patch, "updated_at": _time.time()}},
+                    )
+                except Exception:
+                    pass
+                anime.update(patch)
+        except Exception as e:
+            # Avoid flooding logs on repeated opens of the same broken source_id
+            print(f"[detail] enrich failed for {anime_id} (source_id={sid}): {e}")
+
     anime["related_posted"] = _related_posted(anime)
     return jsonify(anime)
 
@@ -592,10 +844,122 @@ def api_anilist_details(anilist_id):
     the lightweight discovery query doesn't include those fields."""
     try:
         details = SOURCES["anilist"].get_details(anilist_id)
+    except LookupError:
+        abort(404)
+    except (ValueError, requests.HTTPError) as e:
+        msg = str(e)
+        if "400" in msg or "404" in msg or "not found" in msg:
+            abort(404)
+        abort(502)
     except requests.RequestException:
         abort(502)
+    except Exception:
+        abort(502)
+    # Match local library links for join buttons (join / solo / ongoing)
+    try:
+        matched = db.find_by_source_id("anilist", str(anilist_id))
+        if matched:
+            details["id"] = matched.get("id")
+            details["join_link"] = matched.get("join_link")
+            details["solo_link"] = matched.get("solo_link")
+            details["ongoing_link"] = matched.get("ongoing_link")
+            details["display_mode"] = matched.get("display_mode")
+            details["matchedJoinLink"] = (
+                matched.get("join_link")
+                or matched.get("solo_link")
+                or matched.get("ongoing_link")
+            )
+    except Exception:
+        pass
     details["related_posted"] = _related_posted(details)
     return jsonify(details)
+
+
+@app.post("/api/catalog/sync-ongoing")
+def api_sync_ongoing():
+    """Scan Finished library franchises for newly airing seasons and add them
+    to MongoDB so they appear under Ongoing (with inherited finished link)."""
+    user = current_user()
+    # Allow any Telegram user to trigger a light sync; writes only create
+    # airing siblings of already-posted titles.
+    added = 0
+    updated = 0
+    checked = 0
+    try:
+        posts = [a for a in db.list_available() if a.get("join_link") or a.get("solo_link") or a.get("ongoing_link")]
+    except Exception as e:
+        return jsonify(error=str(e), added=0, updated=0), 500
+
+    src = SOURCES.get("anilist")
+    if not src:
+        return jsonify(added=0, updated=0, checked=0)
+
+    # Collect related ids from posted titles (limit work per request)
+    candidate_ids = []
+    seen = set()
+    for a in posts:
+        if (a.get("source") or "anilist") != "anilist":
+            continue
+        for rid in (a.get("related_ids") or [])[:12]:
+            rid = str(rid)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            candidate_ids.append((rid, a))
+        if len(candidate_ids) >= 60:
+            break
+
+    MAX_FETCH = 15
+    fetches = 0
+    for rid, parent in candidate_ids:
+        if fetches >= MAX_FETCH:
+            break
+        existing = db.find_by_source_id("anilist", rid)
+        # Skip solo highlights — they manage their own lifecycle
+        if existing and (existing.get("display_mode") or "group") == "solo":
+            continue
+        # If already in library and marked airing/hiatus with airing_day, skip fetch
+        if existing:
+            st = (existing.get("status") or "").upper()
+            if st in ("RELEASING", "NOT_YET_RELEASED", "HIATUS") and existing.get("airing_day"):
+                checked += 1
+                continue
+        try:
+            details = src.get_details(int(rid), use_cache=True)
+            fetches += 1
+            checked += 1
+        except Exception:
+            continue
+        st = (details.get("status") or "").upper()
+        if st not in ("RELEASING", "NOT_YET_RELEASED", "HIATUS"):
+            # Update status on existing finished-family members so they leave Ongoing
+            if existing and (existing.get("status") or "").upper() != st:
+                try:
+                    from helper.database import anime_col
+                    import time as _time
+                    anime_col.update_one(
+                        {"_id": existing["id"]},
+                        {"$set": {"status": details.get("status"), "updated_at": _time.time()}},
+                    )
+                    updated += 1
+                except Exception:
+                    pass
+            continue
+
+        inherited = parent.get("join_link") or parent.get("ongoing_link")
+        new_id = db.upsert_anime(details, added_by=(user or {}).get("id"))
+        if inherited and not (existing or {}).get("join_link"):
+            db.update_link(new_id, inherited)
+        try:
+            db.update_display_mode(new_id, "group")
+        except Exception:
+            pass
+        if existing:
+            updated += 1
+        else:
+            added += 1
+
+    return jsonify(status="ok", added=added, updated=updated, checked=checked, fetched=fetches)
 
 
 @app.post("/api/request")
@@ -699,11 +1063,7 @@ def api_profile():
 
 def _resolve_support_chat_url(mongo_url: str | None = None) -> str:
     """Env SUPPORT_CHAT_URL wins when set; otherwise use the value saved in Mongo."""
-    try:
-        from config import SUPPORT_CHAT_URL as _sc
-        env_url = (_sc or "").strip()
-    except ImportError:
-        env_url = ""
+    env_url = (SUPPORT_CHAT_URL or "").strip()
     if env_url:
         return env_url
     return (mongo_url or "").strip()
@@ -748,110 +1108,428 @@ def api_profile_help_update():
     return jsonify(data)
 
 
-
 @app.patch("/api/anime/<int:anime_id>/link")
 def api_edit_link(anime_id):
+    """Set/clear independent links (all can coexist):
+
+    - group_link   → All seasons (franchise shared finished URL → join_link)
+    - solo_link    → Solo only for this title (own card + own URL → solo_link)
+    - ongoing_link → Ongoing tab URL
+    - legacy `link` + `display_mode` still accepted
+    """
     user = current_user()
     if not is_admin(user):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
-    raw_link = (payload.get("link") or "").strip()
-    library_section = (payload.get("library_section") or "").strip().lower() or None
-    if library_section not in (None, "ongoing", "finished"):
-        library_section = None
-    if not db.get_anime(anime_id):
+    anime = db.get_anime(anime_id)
+    if not anime:
         abort(404)
+
+    has_group = "group_link" in payload or (
+        "link" in payload and payload.get("display_mode") != "solo"
+    )
+    has_solo = "solo_link" in payload or (
+        "link" in payload and payload.get("display_mode") == "solo"
+    )
+    has_ongoing = "ongoing_link" in payload
+
+    # Resolve raw strings (None = field not sent; "" = explicit clear)
+    if "group_link" in payload:
+        raw_group = (payload.get("group_link") or "").strip()
+    elif "link" in payload and (payload.get("display_mode") or "group") != "solo":
+        raw_group = (payload.get("link") or "").strip()
+    else:
+        raw_group = None
+
+    if "solo_link" in payload:
+        raw_solo = (payload.get("solo_link") or "").strip()
+    elif "link" in payload and payload.get("display_mode") == "solo":
+        raw_solo = (payload.get("link") or "").strip()
+    else:
+        raw_solo = None
+
+    raw_ongoing = (payload.get("ongoing_link") or "").strip() if has_ongoing else None
+
     try:
-        link = normalize_join_link(raw_link)
+        group_link = normalize_join_link(raw_group) if raw_group else ("" if raw_group is not None else None)
+        solo_link = normalize_join_link(raw_solo) if raw_solo else ("" if raw_solo is not None else None)
+        ongoing_link = normalize_join_link(raw_ongoing) if raw_ongoing else ("" if has_ongoing else None)
     except ValueError as e:
         return jsonify(error=str(e)), 400
-    if link:
-        # Setting a link is also the natural moment to refresh this post's
-        # cached AniList metadata (poster, genres, episode count, and
-        # critically its relations list) — not just the join_link field.
-        anime = db.get_anime(anime_id)
-        try:
-            details = SOURCES[anime["source"]].get_details(anime["source_id"], use_cache=False)
-            db.upsert_anime(details)
-        except requests.RequestException:
-            pass
-        db.update_link(anime_id, link, library_section=library_section)
-        propagated = propagate_link_full_franchise(anime_id, link)
-        db.accept_requests_for_title(anime["title"])
-        return jsonify(status="updated", link=link, propagated=propagated)
-    # No link = not a real post anymore — delete it (and the rest of its
-    # franchise) from MongoDB entirely.
-    propagated = db.delete_anime_family(anime_id)
-    return jsonify(status="deleted", link="", propagated=propagated)
 
+    existing_group = anime.get("join_link") or ""
+    existing_solo = anime.get("solo_link") or ""
+    existing_ongoing = anime.get("ongoing_link") or ""
+
+    final_group = group_link if group_link is not None else existing_group
+    final_solo = solo_link if solo_link is not None else existing_solo
+    final_ongoing = ongoing_link if has_ongoing else existing_ongoing
+
+    # Nothing left at all → remove from library
+    if not final_group and not final_solo and not final_ongoing:
+        # Prefer family delete only when we were clearing the franchise link
+        if (anime.get("display_mode") or "group") == "solo" and not existing_group:
+            db.delete_anime(anime_id)
+            return jsonify(status="deleted", link="", solo_link="", ongoing_link="", propagated=0)
+        propagated = db.delete_anime_family(anime_id)
+        return jsonify(status="deleted", link="", solo_link="", ongoing_link="", propagated=propagated)
+
+    propagated = 0
+
+    # --- All seasons (group / join_link) — independent of solo_link ---
+    if group_link is not None and group_link != "":
+        db.update_link(anime_id, group_link)
+        try:
+            propagated = propagate_link_full_franchise(anime_id, group_link)
+        except Exception as e:
+            print(f"[link] full franchise expand failed: {e}")
+            try:
+                propagated = db.propagate_join_link(anime_id, group_link)
+            except Exception:
+                pass
+        # Mark non-solo family members as group; leave titles that have solo_link alone
+        try:
+            import time as _time
+            from helper.database import anime_col
+            anime_col.update_many(
+                {
+                    "source": anime.get("source") or "anilist",
+                    "join_link": group_link,
+                    "$or": [
+                        {"solo_link": {"$in": [None, ""]}},
+                        {"solo_link": {"$exists": False}},
+                    ],
+                },
+                {"$set": {"display_mode": "group", "updated_at": _time.time()}},
+            )
+        except Exception:
+            pass
+    elif group_link == "":
+        # Clear franchise join_link on this title and non-solo family that shared it
+        old = existing_group
+        db.update_link(anime_id, None)
+        if old:
+            try:
+                from helper.database import anime_col
+                import time as _time
+                anime_col.update_many(
+                    {
+                        "source": anime.get("source") or "anilist",
+                        "join_link": old,
+                        "$or": [
+                            {"solo_link": {"$in": [None, ""]}},
+                            {"solo_link": {"$exists": False}},
+                        ],
+                        "_id": {"$ne": anime_id},
+                    },
+                    {"$set": {"join_link": None, "updated_at": _time.time()}},
+                )
+            except Exception:
+                pass
+
+    # --- Solo (this title only) — independent of join_link ---
+    if solo_link is not None and solo_link != "":
+        db.update_solo_link(anime_id, solo_link)
+        try:
+            db.update_display_mode(anime_id, "solo")
+        except Exception:
+            pass
+    elif solo_link == "":
+        db.update_solo_link(anime_id, None)
+        # Drop solo mode if no solo link left; keep group membership via join_link
+        if final_group:
+            try:
+                db.update_display_mode(anime_id, "group")
+            except Exception:
+                pass
+        else:
+            try:
+                db.update_display_mode(anime_id, "group")
+            except Exception:
+                pass
+
+    # Keep display_mode in sync when only group was set and no solo remains
+    if group_link is not None and group_link != "" and not final_solo:
+        try:
+            db.update_display_mode(anime_id, "group")
+        except Exception:
+            pass
+
+    if has_ongoing:
+        db.update_ongoing_link(anime_id, ongoing_link or None)
+        # Share the same ongoing link across all other Ongoing posts
+        try:
+            propagated += db.propagate_ongoing_link(anime_id, ongoing_link or None)
+        except Exception as e:
+            print(f"[link] ongoing propagate failed: {e}")
+
+    # Per-post toggle: show / hide the ONGOING button on this card
+    if "ongoing_enabled" in payload:
+        try:
+            db.update_ongoing_enabled(anime_id, bool(payload.get("ongoing_enabled")))
+        except Exception as e:
+            print(f"[link] ongoing_enabled update failed: {e}")
+
+    try:
+        db.accept_requests_for_title((anime or {}).get("title") or "")
+    except Exception:
+        pass
+    updated = db.get_anime(anime_id)
+    if not updated:
+        return jsonify(status="deleted", link="", solo_link="", ongoing_link="", propagated=propagated)
+    return jsonify(
+        status="updated",
+        link=(updated or {}).get("join_link") or "",
+        solo_link=(updated or {}).get("solo_link") or "",
+        ongoing_link=(updated or {}).get("ongoing_link") or "",
+        ongoing_enabled=(updated or {}).get("ongoing_enabled", True),
+        propagated=propagated,
+        anime=updated,
+    )
+
+
+
+
+@app.patch("/api/anime/<int:anime_id>/display-mode")
+def api_set_display_mode(anime_id):
+    """Admin: solo card vs group with franchise seasons on Home → Finished."""
+    user = current_user()
+    if not is_admin(user):
+        abort(403)
+    if not db.get_anime(anime_id):
+        abort(404)
+    payload = request.get_json(force=True, silent=True) or {}
+    mode = payload.get("mode") or "group"
+    try:
+        updated = db.update_display_mode(anime_id, mode)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(status="ok", anime=updated)
+
+
+@app.patch("/api/anime/<int:anime_id>/airing-day")
+def api_set_airing_day(anime_id):
+    """Admin: assign this posted anime to a weekday for the Home ONGOING tab."""
+    user = current_user()
+    if not is_admin(user):
+        abort(403)
+    if not db.get_anime(anime_id):
+        abort(404)
+    payload = request.get_json(force=True, silent=True) or {}
+    day = payload.get("day")
+    try:
+        updated = db.update_airing_day(anime_id, day)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(status="ok", anime=updated)
+
+
+@app.post("/api/admin/refresh-airing-days")
+def api_refresh_airing_days():
+    """Pull airing_day + status from AniList for posted titles.
+
+    Used by the mini-app Ongoing tab (silent auto-fill). Any authenticated
+    user may call it. Always refreshes status so RELEASING / HIATUS /
+    NOT_YET_RELEASED titles are not stuck as FINISHED (or blank) and
+    therefore hidden from Ongoing.
+    """
+    user = current_user()
+    if not user:
+        abort(401)
+    payload = request.get_json(force=True, silent=True) or {}
+    force = bool(payload.get("force"))
+
+    all_posts = db.list_available()
+    candidates = []
+    for a in all_posts:
+        sid = a.get("source_id")
+        if not sid:
+            continue
+        # source may be missing on very old rows — still try AniList
+        st = (a.get("status") or "").upper()
+        has_day = bool(a.get("airing_day"))
+        if not force:
+            # Prefer titles that look ongoing-or-unknown and are missing a day,
+            # or have no/blank status so they can be corrected.
+            if has_day and st in ("RELEASING", "NOT_YET_RELEASED", "HIATUS"):
+                continue
+            # Skip clearly finished only when we already have a day and
+            # status — still allow status correction when status is blank
+            # or day is missing.
+            if st in ("FINISHED", "CANCELLED") and has_day:
+                continue
+        candidates.append(a)
+
+    # Cap work per request to avoid AniList rate limits on large libraries.
+    # Prefer titles that look like they should be on Ongoing (blank status,
+    # RELEASING/HIATUS, or have an ongoing_link) so the first refresh fixes
+    # the most important rows.
+    def _prio(a):
+        st = (a.get("status") or "").upper()
+        score = 0
+        if a.get("ongoing_link"):
+            score += 4
+        if st in ("RELEASING", "HIATUS", ""):
+            score += 3
+        if not a.get("airing_day"):
+            score += 1
+        if st in ("FINISHED", "CANCELLED"):
+            score -= 2
+        return -score
+
+    candidates.sort(key=_prio)
+    MAX_FETCH = 80 if force else 30
+    candidates = candidates[:MAX_FETCH]
+
+    updated = 0
+    status_updated = 0
+    failed = 0
+    skipped = 0
+    results = []
+    src = SOURCES.get("anilist")
+    if not src:
+        return jsonify(error="AniList source unavailable"), 502
+
+    for a in candidates:
+        try:
+            details = src.get_details(a["source_id"], use_cache=False)
+            day = (details.get("airing_day") or "").strip().lower() or None
+            old_status = (a.get("status") or "").upper()
+            new_status = (details.get("status") or "").upper()
+
+            # Always refresh status/metadata so Ongoing filters stay accurate
+            try:
+                db.upsert_anime(details)
+                if new_status and new_status != old_status:
+                    status_updated += 1
+            except Exception:
+                pass
+
+            if day:
+                db.update_airing_day(a["id"], day)
+                updated += 1
+                results.append({
+                    "id": a["id"],
+                    "title": a.get("title"),
+                    "day": day,
+                    "status": details.get("status"),
+                })
+            else:
+                skipped += 1
+                if new_status and new_status != old_status:
+                    results.append({
+                        "id": a["id"],
+                        "title": a.get("title"),
+                        "day": None,
+                        "status": details.get("status"),
+                    })
+        except Exception:
+            failed += 1
+
+    return jsonify(
+        status="ok",
+        updated=updated,
+        status_updated=status_updated,
+        skipped=skipped,
+        failed=failed,
+        total_candidates=len(candidates),
+        results=results[:50],
+    )
 
 
 @app.post("/api/anime/link-anilist/<int:anilist_id>")
 def api_set_link_from_anilist(anilist_id):
-    """Set a join link for a title that's only been browsed from AniList
-    (Discover/Genre) and doesn't have a local library entry yet."""
+    """Create library entry from AniList with separate group/solo/ongoing links."""
     user = current_user()
     if not is_admin(user):
         abort(403)
     payload = request.get_json(force=True, silent=True) or {}
-    raw_link = (payload.get("link") or "").strip()
-    library_section = (payload.get("library_section") or "").strip().lower() or None
-    if library_section not in (None, "ongoing", "finished"):
-        library_section = None
-    if not raw_link:
-        return jsonify(error="A join link is required."), 400
+    raw_group = (payload.get("group_link") or payload.get("link") or "").strip()
+    raw_solo = (payload.get("solo_link") or "").strip()
+    raw_ongoing = (payload.get("ongoing_link") or "").strip()
+    if not raw_group and not raw_solo and not raw_ongoing:
+        return jsonify(error="An All seasons, Solo, or Ongoing join link is required."), 400
     try:
-        link = normalize_join_link(raw_link)
+        group_link = normalize_join_link(raw_group) if raw_group else ""
+        solo_link = normalize_join_link(raw_solo) if raw_solo else ""
+        ongoing_link = normalize_join_link(raw_ongoing) if raw_ongoing else ""
     except ValueError as e:
         return jsonify(error=str(e)), 400
-    try:
-        details = SOURCES["anilist"].get_details(anilist_id)
-    except requests.RequestException:
-        return jsonify(error="Couldn't fetch details from AniList right now."), 502
-    if library_section:
-        details["library_section"] = library_section
-    anime_id = db.upsert_anime(details, added_by=user["id"])
-    db.update_link(anime_id, link, library_section=library_section)
-    propagated = propagate_link_full_franchise(anime_id, link)
-    db.accept_requests_for_title(details["title"])
-    return jsonify(status="updated", anime=db.get_anime(anime_id), propagated=propagated)
 
+    details = None
+    try:
+        details = SOURCES["anilist"].get_details(anilist_id, use_cache=True)
+    except Exception as e:
+        print(f"[link-anilist] details fetch failed for {anilist_id}: {e}")
 
-@app.post("/api/anime/link-source/<source>/<path:source_id>")
-def api_set_link_from_source(source, source_id):
-    """Admin: create/update a post from any source and set its join link."""
-    user = current_user()
-    if not is_admin(user):
-        abort(403)
-    src = SOURCES.get(source)
-    if not src:
-        abort(404)
-    payload = request.get_json(force=True, silent=True) or {}
-    raw_link = (payload.get("link") or "").strip()
-    library_section = (payload.get("library_section") or "").strip().lower() or None
-    if library_section not in (None, "ongoing", "finished"):
-        library_section = None
-    try:
-        link = normalize_join_link(raw_link)
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    try:
-        sid = int(source_id) if source == "anilist" else source_id
-        details = src.get_details(sid)
-    except (requests.RequestException, ValueError, KeyError):
-        return jsonify(error="Could not fetch title metadata"), 502
-    if library_section:
-        details["library_section"] = library_section
+    if not details or not details.get("title"):
+        details = {
+            "source": "anilist",
+            "source_id": anilist_id,
+            "title": (payload.get("title") or f"AniList #{anilist_id}").strip(),
+            "alt_title": (payload.get("alt_title") or None),
+            "year": payload.get("year"),
+            "poster_url": payload.get("poster_url"),
+            "banner_url": payload.get("banner_url"),
+            "description": payload.get("description"),
+            "genres": payload.get("genres") or [],
+            "rating": payload.get("rating"),
+            "status": payload.get("status") or "FINISHED",
+            "episodes": payload.get("episodes"),
+            "format": payload.get("format"),
+            "related_ids": [],
+            "relations": [],
+        }
+
+    details["source"] = details.get("source") or "anilist"
+    details["source_id"] = details.get("source_id") or anilist_id
+
     anime_id = db.upsert_anime(details, added_by=user["id"])
-    if link:
-        db.update_link(anime_id, link, library_section=library_section)
+    propagated = 0
+
+    # All seasons + Solo are independent fields — both may be set at once.
+    if group_link:
+        db.update_link(anime_id, group_link)
         try:
-            propagate_link_full_franchise(anime_id, link)
+            propagated = propagate_link_full_franchise(anime_id, group_link)
+        except Exception as e:
+            print(f"[link-anilist] full franchise expand failed: {e}")
+            try:
+                propagated = db.propagate_join_link(anime_id, group_link)
+            except Exception:
+                pass
+
+    if solo_link:
+        db.update_solo_link(anime_id, solo_link)
+        try:
+            db.update_display_mode(anime_id, "solo")
         except Exception:
             pass
-        db.accept_requests_for_title(details["title"])
-        return jsonify(status="updated", anime=db.get_anime(anime_id), propagated=0)
-    db.delete_anime_family(anime_id)
-    return jsonify(status="deleted", anime=None)
+    elif group_link:
+        try:
+            db.update_display_mode(anime_id, "group")
+        except Exception:
+            pass
+
+    if ongoing_link:
+        db.update_ongoing_link(anime_id, ongoing_link)
+        try:
+            propagated += db.propagate_ongoing_link(anime_id, ongoing_link)
+        except Exception as e:
+            print(f"[link-anilist] ongoing propagate failed: {e}")
+
+    if "ongoing_enabled" in payload:
+        try:
+            db.update_ongoing_enabled(anime_id, bool(payload.get("ongoing_enabled")))
+        except Exception:
+            pass
+
+    try:
+        db.accept_requests_for_title(details.get("title") or "")
+    except Exception:
+        pass
+
+    anime = db.get_anime(anime_id)
+    return jsonify(status="updated", anime=anime, propagated=propagated)
 
 

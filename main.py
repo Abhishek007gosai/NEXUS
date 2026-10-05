@@ -19,13 +19,14 @@ def _clear_webhook_early():
         from config import TOKEN as tok
         if not tok:
             return
-        requests.get(
+        r = requests.get(
             f"https://api.telegram.org/bot{tok}/deleteWebhook",
             params={"drop_pending_updates": "true"},
             timeout=15,
         )
-    except Exception:
-        pass
+        print("deleteWebhook:", r.json() if r.ok else r.status_code)
+    except Exception as e:
+        print("deleteWebhook error:", e)
 
 
 _clear_webhook_early()
@@ -45,7 +46,7 @@ async def main():
             ADMINS,
             MESSAGES,
             AUTO_DEL,
-            (DB_URI[0] if DB_URI else ""),
+            DB_URI,
             DB_NAME,
             API_ID,
             API_HASH,

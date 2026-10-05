@@ -11,34 +11,49 @@ PORT = int(os.getenv("PORT", "5010"))
 # ──────────────────────────────────────────────
 # Telegram
 # ──────────────────────────────────────────────
-SESSION = os.getenv("SESSION", "ECCHI")
+SESSION = os.getenv("SESSION", "Kaya")
 TOKEN = os.getenv("TOKEN", "")
-API_ID = int(os.getenv("API_ID", "0") or "0")
+API_ID = int(os.getenv("API_ID", ""))
 API_HASH = os.getenv("API_HASH", "")
 WORKERS = int(os.getenv("WORKERS", "5"))
-OWNER_ID = int(os.getenv("OWNER_ID", "0") or "0")
+OWNER_ID = int(os.getenv("OWNER_ID", ""))
 MSG_EFFECT = 5046509860389126442
 
-ADMINS = [8771195193]
+# Extra admin user IDs (space or comma separated). Owner is always treated as admin.
+ADMINS = [
+    int(x) for x in os.getenv("ADMINS", "").replace(",", " ").split() if x.strip().isdigit()
+]
 
 # ──────────────────────────────────────────────
-# MongoDB — single DB for everything (bot + web)
+# MongoDB
 # ──────────────────────────────────────────────
-# For Multiple Database URL Use One Space Between Each
-DB_URI = [u for u in os.getenv("DB_URI", "").split() if u.strip()]
-DB_NAME = os.getenv("DB_NAME", "cluster0")
+# Multi: space or comma separated, paired by index (failover order).
+#   DB_URI="mongodb://uri1 mongodb://uri2"
+#   DB_NAME="cluster0 cluster1"
+DB_URI = [u for u in os.getenv("DB_URI", "").replace(",", " ").split() if u.strip()]
+DB_NAME = [n for n in os.getenv("DB_NAME", "cluster0").replace(",", " ").split() if n.strip()] or ["cluster0"]
 
 # ──────────────────────────────────────────────
 # Anime Index branding
 # ──────────────────────────────────────────────
-BRAND_NAME = os.getenv("BRAND_NAME", "Anime Index")
-BRAND_HANDLE = os.getenv("BRAND_HANDLE", "ANIME_INDEX")
-SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
+BRAND_NAME = os.getenv("BRAND_NAME", "kaya")
+BRAND_HANDLE = os.getenv("BRAND_HANDLE", "kaya")
+# Bot display name used in log-channel messages (Request / Report posts)
+# Prefer BOTNAME env, else BRAND_NAME, else "kaya" (never the Telegram @username)
+BOTNAME = os.getenv("BOTNAME", "").strip() or BRAND_NAME or "kaya"
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").rstrip("/")
-LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID", "")
+# Custom URL for the "Open Index" button (falls back to WEBAPP_URL if empty)
+INDEX_URL = os.getenv("INDEX_URL", "").rstrip("/")
+# Channel / group where new requests & reports are posted (use -100... form)
+LOG_CHANNEL_ID = (os.getenv("LOG_CHANNEL_ID", "") or "").strip()
+SUPPORT_CHAT_URL = os.getenv("SUPPORT_CHAT_URL", "").strip()
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CATALOG_CACHE_TTL = int(os.getenv("CATALOG_CACHE_TTL", "600"))
-ANILIST_ENDPOINT = "https://graphql.anilist.co"
+# AniList GraphQL (set ANILIST_ENDPOINT to your own proxy URL if needed)
+ANILIST_ENDPOINT = os.getenv("ANILIST_ENDPOINT", "https://graphql.anilist.co").rstrip("/")
+# If server catalog is empty, WebApp fetches AniList from the user's device
+ANILIST_CLIENT_FALLBACK = os.getenv("ANILIST_CLIENT_FALLBACK", "true").lower() in ("1", "true", "yes")
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # ──────────────────────────────────────────────
 # Shortener
@@ -50,8 +65,8 @@ SHORT_TUT = os.getenv("SHORT_TUT", "")
 # ──────────────────────────────────────────────
 # Channels / Force Sub / Bot settings
 # ──────────────────────────────────────────────
-DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1002497924209"))
-FSUBS = [[-1001457313028, True, 5]]
+DB_CHANNEL = int(os.getenv("DB_CHANNEL", "-1003928914916"))
+FSUBS = [[-1002369123167, True, 5]]
 AUTO_DEL = os.getenv("AUTO_DEL", "300")
 DISABLE_BTN = os.getenv("DISABLE_BTN", "False").lower() == "true"
 PROTECT = os.getenv("PROTECT", "False").lower() == "true"
@@ -62,7 +77,7 @@ PROTECT = os.getenv("PROTECT", "False").lower() == "true"
 MESSAGES = {
     "INDEX": "<b>ᴛʜɪs ɪs ᴀɴɪᴍᴇ ɪɴᴅᴇx ʜᴇʀᴇ ʏᴏᴜ ᴄᴀɴ ʙʀᴏᴡsᴇ, sᴇᴀʀᴄʜ ʏᴏᴜ ғᴀᴠᴏᴜʀɪᴛᴇ ᴀɴɪᴍᴇ</b>",
     "START": "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴄᴏᴍᴍᴜɴɪᴛʏ ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ʏᴏᴜ ᴄᴀɴ ᴅᴏ sᴏ ʙʏ sᴜʙsᴄʀɪʙɪɴɢ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ\nᴛʜᴀɴᴋs ғᴏʀ ʏᴏᴜʀ sᴜᴘᴘᴏʀᴛ</b>",
-    "FSUB": "<b><blockquote>ʜᴇʟʟᴏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ <a href='https://t.me/Ecchi_Dex'>ᴇᴄᴄʜɪ ᴅᴇx</a></blockquote>ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴊᴏɪɴ ɪɴ ᴍʏ ᴄʜᴀɴɴᴇʟ/ɢʀᴏᴜᴘ ғɪʀsᴛ, ᴘʟᴇᴀsᴇ sᴜʙsᴄʀɪʙᴇ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs ᴛʜʀᴏᴜɢʜ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴀɴᴅ sᴛᴀʀᴛ ʙᴏᴛ ᴀɢᴀɪɴ<blockquote>ʜᴏᴡ ᴛᴏ ᴜsᴇ ʙᴏᴛ <a href=https://t.me/NexusTutorial/6>ᴛᴜᴛᴏʀɪᴀʟ ᴄʟɪᴄᴋ ʜᴇʀᴇ</a></blockquote></b>",
+    "FSUB": "<b><blockquote>ʜᴇʟʟᴏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴇᴛᴇʀɴᴀʟs</blockquote>ʏᴏᴜ ɴᴇᴇᴅ ᴛᴏ ᴊᴏɪɴ ɪɴ ᴍʏ ᴄʜᴀɴɴᴇʟ/ɢʀᴏᴜᴘ ғɪʀsᴛ, ᴘʟᴇᴀsᴇ sᴜʙsᴄʀɪʙᴇ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs ᴛʜʀᴏᴜɢʜ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴀɴᴅ sᴛᴀʀᴛ ʙᴏᴛ ᴀɢᴀɪɴ<blockquote>ʜᴏᴡ ᴛᴏ ᴜsᴇ ʙᴏᴛ <a href=https://t.me/NexusTutorial/6>ᴛᴜᴛᴏʀɪᴀʟ ᴄʟɪᴄᴋ ʜᴇʀᴇ</a></blockquote></b>",
     "ABOUT": "<b>ʜᴇʏ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴏᴜʀ ᴄᴏᴍᴍᴜɴɪᴛʏ ʏᴏᴜ ᴄᴀɴ ᴅᴏ sᴏ ʙʏ sᴜʙsᴄʀɪʙɪɴɢ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ ᴛʜᴀɴᴋs Fᴏʀ ʏᴏᴜʀ sᴜᴘᴘᴏʀᴛ\n❏ ʙᴏᴛ ᴄᴏᴍᴍᴀɴᴅs\n├/start : sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ\nsɪᴍᴘʟʏ ᴄʟɪᴄᴋ ᴏɴ ʟɪɴᴋ ᴀɴᴅ sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ ᴊᴏɪɴ ʙᴏᴛʜ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ ᴛʜᴀᴛs ɪᴛ.</b>",
     "REPLY": "<b>ᴡʀᴏɴɢ ᴄᴏᴍᴍᴀɴᴅ</b>",
     "SHORT_MSG": "<b><blockquote>ʏᴏᴜʀ ᴀᴅs ᴛᴏᴋᴇɴ ɪs ᴇxᴘɪʀᴇᴅ ᴘʟᴇᴀsᴇ ᴠᴇʀɪғʏ ᴛᴏ ʀᴇɢᴀɪɴ ᴀᴄᴄᴇss ᴛᴏ ᴛʜᴇ ʙᴏᴛs</blockquote>ᴡʜᴀᴛ ɪs ᴛʜᴇ ᴛᴏᴋᴇɴ?ᴛʜɪs ɪs ᴀɴ ᴀᴅs ᴛᴏᴋᴇɴ. ᴘᴀssɪɴɢ ᴏɴᴇ ᴀᴅ ᴀʟʟᴏᴡs ʏᴏᴜ ᴛᴏ ᴜsᴇ ᴛʜᴇ ᴏᴜʀ ʙᴏᴛs</b>",
@@ -70,11 +85,9 @@ MESSAGES = {
     "FSUB_PHOTO": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT_PIC": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
     "SHORT": "https://i.ibb.co/sdYHCnBC/tmp9peum4mg.jpg",
-    "SEARCH_PHOTO": "",
-    "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", "https://i.ibb.co/0R9k9x4M/tmpbtpr7q0.jpg"),
-    "INDEX_PHOTO": os.getenv("INDEX_PHOTO", "") or os.getenv("BANNER_IMAGE_URL", ""),
+    "SEARCH_PHOTO": os.getenv("SEARCH_PHOTO", "").strip(),
+    "BANNER_IMAGE_URL": os.getenv("BANNER_IMAGE_URL", "").strip(),
 }
-
 
 
 def LOGGER(name: str, client_name: str = ""):
