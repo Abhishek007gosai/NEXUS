@@ -1,148 +1,81 @@
 import motor.motor_asyncio
 from datetime import datetime, timedelta
+import re
 import time
 from pymongo import ASCENDING, MongoClient, ReturnDocument
-from pymongo.errors import DuplicateKeyError, PyMongoError
-from config import DB_URI, DB_NAME as CONFIG_DB_NAME
-
-# Storage / quota related error substrings (free Atlas, etc.)
-_QUOTA_MARKERS = (
-    "quota",
-    "storage",
-    "size limit",
-    "disk",
-    "exceeded",
-    "too large",
-    "space",
-    "atlaserror",
-    "out of space",
-)
+from pymongo.errors import DuplicateKeyError
+from config import DB_URI, DB_NAME
 
 
-def _is_quota_error(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    return any(m in msg for m in _QUOTA_MARKERS)
+def _normalize_list(value) -> list:
+    """Accept a string or list; return a clean list (space/comma separated)."""
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if v and str(v).strip()]
+    if isinstance(value, str) and value.strip():
+        return [v.strip() for v in value.replace(",", " ").split() if v.strip()]
+    return []
 
 
-def _uri_list(uri=None) -> list[str]:
-    """DB_URI is a list of MongoDB URLs (space-separated in env)."""
-    uris = []
-    if isinstance(uri, (list, tuple)):
-        uris.extend(uri)
-    elif isinstance(uri, str) and uri.strip():
-        uris.append(uri.strip())
-    if isinstance(DB_URI, (list, tuple)):
-        uris.extend(DB_URI)
-    elif isinstance(DB_URI, str) and DB_URI.strip():
-        uris.append(DB_URI.strip())
-    seen, out = set(), []
-    for u in uris:
-        u = (u or "").strip()
-        if u and u not in seen:
-            seen.add(u)
-            out.append(u)
-    return out
+# Backwards-compatible alias
+def _normalize_uris(uri) -> list:
+    return _normalize_list(uri)
+
+
+def _normalize_names(names, n_uris: int) -> list:
+    """Normalize DB names and pad to match URI count (reuse last name)."""
+    names = _normalize_list(names) or ["cluster0"]
+    while len(names) < max(1, n_uris):
+        names.append(names[-1])
+    return names
+
+
+def _pick_working_pair(uris: list, names: list):
+    """Try each (uri, db_name) pair; return (uri, db_name) of the first that works."""
+    pairs = list(zip(uris, names[: len(uris)])) if uris else []
+    for u, n in pairs:
+        try:
+            c = MongoClient(u, serverSelectionTimeoutMS=5000)
+            c.admin.command("ping")
+            # Ensure the named DB is accessible
+            c[n].list_collection_names()
+            c.close()
+            return u, n
+        except Exception:
+            continue
+    # Fallback: first pair or localhost
+    if pairs:
+        return pairs[0]
+    return "mongodb://localhost:27017", (names[0] if names else "cluster0")
+
+
+def _connect_motor(uris: list, names: list):
+    """Pick a working (uri, name) pair then return (motor client, db, used_uri, used_name)."""
+    used_uri, used_name = _pick_working_pair(uris, names)
+    client = motor.motor_asyncio.AsyncIOMotorClient(used_uri, serverSelectionTimeoutMS=8000)
+    return client, client[used_name], used_uri, used_name
 
 
 class MongoDB:
-    """Async MongoDB helper with multi-URI failover.
-
-    Pass a single uri (legacy) or rely on config.DB_URI list.
-    When the active cluster is full / unreachable, the next URI is tried.
-    """
     _instances = {}
 
-    def __new__(cls, uri: str, db_name: str):
-        key = (tuple(_uri_list(uri)), db_name)
+    def __new__(cls, uri, db_name):
+        uris = _normalize_list(uri)
+        names = _normalize_names(db_name, len(uris))
+        key = (tuple(uris) if uris else ("",), tuple(names))
         if key not in cls._instances:
             instance = super().__new__(cls)
-            instance._uris = _uri_list(uri)
-            instance._db_name = db_name
-            instance._clients = []          # list[(uri, AsyncIOMotorClient)]
-            instance._active_idx = 0
-            instance.client = None
-            instance.db = None
-            instance.user_data = None
-            instance.channel_data = None
-            instance.premium_users = None
-            instance.fsub_status = None
-            instance.request_sub = None
-            instance._connect_first()
+            client, db, used_uri, used_name = _connect_motor(uris, names)
+            instance.client = client
+            instance.db = db
+            instance.uri = used_uri
+            instance.db_name = used_name
+            instance.user_data = instance.db["users"]
+            instance.channel_data = instance.db["channels"]
+            instance.premium_users = instance.db["pros"]
+            instance.fsub_status = instance.db["fsub_status"]
+            instance.request_sub = instance.db["request_sub"]
             cls._instances[key] = instance
         return cls._instances[key]
-
-    def _bind_collections(self):
-        self.db = self.client[self._db_name]
-        self.user_data = self.db["users"]
-        self.channel_data = self.db["channels"]
-        self.premium_users = self.db["pros"]
-        self.fsub_status = self.db["fsub_status"]
-        self.request_sub = self.db["request_sub"]
-
-    def _connect_first(self):
-        """Connect to the first reachable URI."""
-        if not self._uris:
-            raise RuntimeError("No MongoDB URI configured. Set DB_URI in the environment.")
-        last_err = None
-        for idx, u in enumerate(self._uris):
-            try:
-                client = motor.motor_asyncio.AsyncIOMotorClient(
-                    u, serverSelectionTimeoutMS=8000
-                )
-                # lazy; actual ping happens on first op — still record client
-                self._clients.append((u, client))
-                if self.client is None:
-                    self.client = client
-                    self._active_idx = idx
-                    self._bind_collections()
-            except Exception as e:
-                last_err = e
-                continue
-        if self.client is None:
-            raise RuntimeError(f"Could not connect to any MongoDB URI: {last_err}")
-
-    def _ensure_all_clients(self):
-        """Lazily open clients for any URIs not yet connected."""
-        known = {u for u, _ in self._clients}
-        for u in self._uris:
-            if u in known:
-                continue
-            try:
-                client = motor.motor_asyncio.AsyncIOMotorClient(
-                    u, serverSelectionTimeoutMS=8000
-                )
-                self._clients.append((u, client))
-            except Exception:
-                continue
-
-    def failover(self) -> bool:
-        """Switch to the next configured URI. Returns True if switched."""
-        self._ensure_all_clients()
-        if len(self._clients) <= 1:
-            return False
-        next_idx = (self._active_idx + 1) % len(self._clients)
-        if next_idx == self._active_idx:
-            return False
-        uri, client = self._clients[next_idx]
-        self.client = client
-        self._active_idx = next_idx
-        self._bind_collections()
-        print(f"[MongoDB] Failover → URI #{next_idx + 1}: {uri[:48]}...")
-        return True
-
-    async def with_failover(self, coro_factory):
-        """Run an async operation; on quota/storage errors, failover and retry once per URI."""
-        attempts = max(1, len(self._uris))
-        last_err = None
-        for _ in range(attempts):
-            try:
-                return await coro_factory()
-            except Exception as e:
-                last_err = e
-                if _is_quota_error(e) and self.failover():
-                    continue
-                raise
-        raise last_err
 
     async def set_channels(self, channels: list[int]):
         await self.user_data.update_one(
@@ -253,31 +186,90 @@ class MongoDB:
         return user.get('ban', False) if user else False
 
     # ✅ FSUB CHANNELS FUNCTIONS
+    # Stored as ordered list so button / display order survives restarts:
+    #   {"order": ["-1001", "-1002"], "channels": {"-1001": [...], "-1002": [...]}}
+    # Legacy pure-dict documents are migrated on read.
 
-    async def set_fsub_channels(self, fsub_data: dict):
-        """Store fsub channels data to database for persistence across bot restarts"""
+    async def set_fsub_channels(self, fsub_data: dict, order: list | None = None):
+        """Store fsub channels + explicit order for persistence across bot restarts.
+
+        fsub_data: {str(channel_id): [name, link, request, timer], ...}
+        order: list of str(channel_id) in the order channels should appear.
+               If omitted, keeps existing order and appends any new keys.
+        """
+        # Normalise keys to str
+        channels = {str(k): v for k, v in (fsub_data or {}).items()}
+        if order is None:
+            existing = await self.user_data.find_one({"_id": "fsub_channels"}) or {}
+            prev_order = [str(x) for x in (existing.get("order") or list((existing.get("channels") or {}).keys()))]
+            # keep previous order for known ids, append new ones
+            order = [cid for cid in prev_order if cid in channels]
+            for cid in channels:
+                if cid not in order:
+                    order.append(cid)
+        else:
+            order = [str(x) for x in order if str(x) in channels]
+            for cid in channels:
+                if cid not in order:
+                    order.append(cid)
         await self.user_data.update_one(
             {"_id": "fsub_channels"},
-            {"$set": {"channels": fsub_data}},
-            upsert=True
+            {"$set": {"channels": channels, "order": order}},
+            upsert=True,
         )
 
     async def get_fsub_channels(self) -> dict:
-        """Get fsub channels data from database"""
+        """Get fsub channels as an ordered dict {int_id: data}.
+
+        Order is taken from the saved `order` list so it stays stable after restart.
+        """
+        from collections import OrderedDict
+
         data = await self.user_data.find_one({"_id": "fsub_channels"})
-        return data.get("channels", {}) if data else {}
+        if not data:
+            return OrderedDict()
+        channels = data.get("channels") or {}
+        order = data.get("order")
+        if not order:
+            # Legacy format: plain dict — preserve whatever key order Mongo returned
+            order = list(channels.keys())
+        ordered = OrderedDict()
+        for cid in order:
+            key = str(cid)
+            if key in channels:
+                try:
+                    ordered[int(key)] = channels[key]
+                except (TypeError, ValueError):
+                    continue
+        # Any keys missing from order (shouldn't happen) go at the end
+        for key, val in channels.items():
+            try:
+                ikey = int(key)
+            except (TypeError, ValueError):
+                continue
+            if ikey not in ordered:
+                ordered[ikey] = val
+        return ordered
 
     async def add_fsub_channel(self, channel_id: int, channel_data: list):
-        """Add a single fsub channel to database"""
-        current_data = await self.get_fsub_channels()
-        current_data[str(channel_id)] = channel_data
-        await self.set_fsub_channels(current_data)
+        """Append a single fsub channel (keeps existing order, new one at end)."""
+        current = await self.get_fsub_channels()  # OrderedDict
+        current[int(channel_id)] = channel_data
+        order = [str(k) for k in current.keys()]
+        await self.set_fsub_channels({str(k): v for k, v in current.items()}, order=order)
 
     async def remove_fsub_channel(self, channel_id: int):
-        """Remove a single fsub channel from database"""
-        current_data = await self.get_fsub_channels()
-        current_data.pop(str(channel_id), None)
-        await self.set_fsub_channels(current_data)
+        """Remove a single fsub channel, preserving order of the rest."""
+        current = await self.get_fsub_channels()
+        current.pop(int(channel_id), None)
+        order = [str(k) for k in current.keys()]
+        await self.set_fsub_channels({str(k): v for k, v in current.items()}, order=order)
+
+    async def save_fsub_dict(self, fsub_dict: dict):
+        """Persist the full in-memory fsub_dict (insertion order = display order)."""
+        order = [str(k) for k in fsub_dict.keys()]
+        channels = {str(k): v for k, v in fsub_dict.items()}
+        await self.set_fsub_channels(channels, order=order)
 
     # ✅ SHORTNER SETTINGS FUNCTIONS
 
@@ -871,16 +863,156 @@ class MongoDB:
             }
 
 
+class LinkShareDB:
+    """
+    Link Share Menu storage. Uses the same DB_URI / DB_NAME as the main bot
+    (with multi-URI / multi-name failover).
+    """
+    _instances = {}
+
+    def __new__(cls, uri, db_name):
+        uris = _normalize_list(uri)
+        names = _normalize_names(db_name, len(uris))
+        key = (tuple(uris) if uris else ("",), tuple(names))
+        if key not in cls._instances:
+            instance = super().__new__(cls)
+            client, db, used_uri, used_name = _connect_motor(uris, names)
+            instance.client = client
+            instance.db = db
+            instance.uri = used_uri
+            instance.db_name = used_name
+            instance.link_share_data = instance.db["link_share_data"]
+            cls._instances[key] = instance
+        return cls._instances[key]
+
+    # ===============================================================
+    # LINK SHARE MENU FUNCTIONS
+
+    async def get_link_share_channels(self) -> dict:
+        """Return all channels configured for the Link Share Menu."""
+        data = await self.link_share_data.find_one({"_id": "link_share_channels"})
+        return data.get("channels", {}) if data else {}
+
+    async def add_link_share_channel(self, channel_id: int, channel_data: dict):
+        """Add or update a Link Share Menu channel."""
+        channels = await self.get_link_share_channels()
+        channels[str(channel_id)] = channel_data
+        await self.link_share_data.update_one(
+            {"_id": "link_share_channels"},
+            {"$set": {"channels": channels}},
+            upsert=True
+        )
+
+    async def remove_link_share_channel(self, channel_id: int) -> bool:
+        """Remove a Link Share Menu channel."""
+        channels = await self.get_link_share_channels()
+        existed = str(channel_id) in channels
+        channels.pop(str(channel_id), None)
+        await self.link_share_data.update_one(
+            {"_id": "link_share_channels"},
+            {"$set": {"channels": channels}},
+            upsert=True
+        )
+        return existed
+
+    async def get_link_share_channel(self, channel_id: int):
+        channels = await self.get_link_share_channels()
+        return channels.get(str(channel_id))
+
+    # Link Share token functions
+    async def create_link_share_token(self, token: str, channel_id: int, is_request: bool, expires_at):
+        await self.link_share_data.update_one(
+            {"_id": f"link_share_token:{token}"},
+            {"$set": {
+                "token": token,
+                "channel_id": channel_id,
+                "is_request": is_request,
+                "expires_at": expires_at,
+                "created_at": datetime.utcnow(),
+            }},
+            upsert=True
+        )
+
+    async def get_link_share_token(self, token: str):
+        data = await self.link_share_data.find_one({"_id": f"link_share_token:{token}"})
+        if not data:
+            return None
+        return data
+
+    async def delete_link_share_token(self, token: str):
+        await self.link_share_data.delete_one({"_id": f"link_share_token:{token}"})
+
+    async def update_link_share_token_expiry(self, token: str, expires_at):
+        """Update expires_at on an existing token document."""
+        await self.link_share_data.update_one(
+            {"_id": f"link_share_token:{token}"},
+            {"$set": {"expires_at": expires_at}},
+        )
+
+    async def cleanup_expired_link_share_tokens(self) -> int:
+        """Delete all expired link-share token documents. Returns count removed."""
+        now = datetime.utcnow()
+        result = await self.link_share_data.delete_many(
+            {
+                "_id": {"$regex": r"^link_share_token:"},
+                "expires_at": {"$ne": None, "$lte": now},
+            }
+        )
+        return getattr(result, "deleted_count", 0) or 0
+
+    # Persistent per-channel Link Share tokens (one stable token per
+    # channel per kind, so the Normal/Request Links pages can show a
+    # direct, unchanging deep-link button for each channel).
+    async def get_link_share_channel_token(self, channel_id: int, kind: str):
+        data = await self.link_share_data.find_one({"_id": "link_share_channel_tokens"})
+        tokens = data.get("tokens", {}) if data else {}
+        return tokens.get(f"{channel_id}:{kind}")
+
+    async def set_link_share_channel_token(self, channel_id: int, kind: str, token: str):
+        await self.link_share_data.update_one(
+            {"_id": "link_share_channel_tokens"},
+            {"$set": {f"tokens.{channel_id}:{kind}": token}},
+            upsert=True
+        )
+
+    async def clear_link_share_channel_token(self, channel_id: int, kind: str = None):
+        """Remove the stable token mapping for a channel (one kind or both)."""
+        data = await self.link_share_data.find_one({"_id": "link_share_channel_tokens"})
+        tokens = data.get("tokens", {}) if data else {}
+        if kind is None:
+            tokens.pop(f"{channel_id}:normal", None)
+            tokens.pop(f"{channel_id}:request", None)
+        else:
+            tokens.pop(f"{channel_id}:{kind}", None)
+        await self.link_share_data.update_one(
+            {"_id": "link_share_channel_tokens"},
+            {"$set": {"tokens": tokens}},
+            upsert=True,
+        )
+
+    async def get_link_share_token_ttl(self) -> int:
+        """Global Link Share token TTL in minutes (0 = never expire)."""
+        data = await self.link_share_data.find_one({"_id": "link_share_settings"})
+        if data and "token_ttl_minutes" in data:
+            return int(data["token_ttl_minutes"])
+        return 0
+
+    async def set_link_share_token_ttl(self, minutes: int):
+        await self.link_share_data.update_one(
+            {"_id": "link_share_settings"},
+            {"$set": {"token_ttl_minutes": max(0, int(minutes))}},
+            upsert=True,
+        )
+
 
 # =============================================================================
-# Anime Index / Mini App (sync pymongo — SAME DB as bot: DB_URI / DB_NAME)
-# Supports multiple MongoDB URLs; fails over when a cluster is full/unreachable.
+# Anime Index / Mini App (sync pymongo — same DB_URI / DB_NAME, multi failover)
 # =============================================================================
 
 _client = None
 _db = None
-_sync_clients = []       # list[(uri, MongoClient)]
-_sync_active_idx = 0
+_used_uri = None
+_used_name = None
 
 
 class _LazyCol:
@@ -896,57 +1028,17 @@ class _LazyCol:
         return self._col()[item]
 
 
-def _sync_failover() -> bool:
-    """Switch the sync client to the next URI. Returns True if switched."""
-    global _client, _db, _sync_active_idx
-    if len(_sync_clients) <= 1:
-        return False
-    next_idx = (_sync_active_idx + 1) % len(_sync_clients)
-    if next_idx == _sync_active_idx:
-        return False
-    uri, client = _sync_clients[next_idx]
-    _client = client
-    _db = client[CONFIG_DB_NAME]
-    _sync_active_idx = next_idx
-    print(f"[MongoDB/sync] Failover → URI #{next_idx + 1}: {uri[:48]}...")
-    return True
-
-
 def _ensure():
-    """Connect using the shared DB_URI list (same DB as the bot — no WEB_DB)."""
-    global _client, _db, _sync_clients, _sync_active_idx
+    global _client, _db, _used_uri, _used_name
     if _client is not None:
         return
-    uris = _uri_list()
-    if not uris:
-        uris = ["mongodb://localhost:27017"]
-    db_name = CONFIG_DB_NAME
-    last_err = None
-    for idx, u in enumerate(uris):
-        try:
-            client = MongoClient(u, serverSelectionTimeoutMS=8000)
-            # Force a quick server selection so we know it's reachable
-            client.admin.command("ping")
-            _sync_clients.append((u, client))
-            if _client is None:
-                _client = client
-                _db = client[db_name]
-                _sync_active_idx = idx
-        except Exception as e:
-            last_err = e
-            # still keep the client for later failover attempts if ping failed
-            try:
-                client = MongoClient(u, serverSelectionTimeoutMS=8000)
-                _sync_clients.append((u, client))
-                if _client is None:
-                    _client = client
-                    _db = client[db_name]
-                    _sync_active_idx = idx
-            except Exception as e2:
-                last_err = e2
-                continue
-    if _client is None:
-        raise RuntimeError(f"Could not connect to any MongoDB URI: {last_err}")
+    uris = _normalize_list(DB_URI)
+    names = _normalize_names(DB_NAME, len(uris))
+    used_uri, used_name = _pick_working_pair(uris, names)
+    _client = MongoClient(used_uri, serverSelectionTimeoutMS=8000)
+    _db = _client[used_name]
+    _used_uri = used_uri
+    _used_name = used_name
 
 
 anime_col = _LazyCol("anime")
@@ -955,22 +1047,46 @@ reports_col = _LazyCol("reports")
 requests_col = _LazyCol("requests")
 searches_col = _LazyCol("searches")
 counters_col = _LazyCol("counters")
-cache_col = _LazyCol("catalog_cache")
+catalog_cache_col = _LazyCol("catalog_cache")
 
 
 def init_db():
     _ensure()
     anime_col.create_index([("source", ASCENDING), ("source_id", ASCENDING)], unique=True)
     anime_col.create_index([("title", ASCENDING)])
+    anime_col.create_index([("alt_title", ASCENDING)])
+    anime_col.create_index([("status", ASCENDING)])
+    anime_col.create_index([("airing_day", ASCENDING)])
     requests_col.create_index([("key", ASCENDING), ("requested_by", ASCENDING)])
     requests_col.create_index([("status", ASCENDING)])
     requests_col.create_index([("status", ASCENDING), ("created_at", ASCENDING)])
     requests_col.create_index([("requested_by", ASCENDING), ("seen", ASCENDING)])
     requests_col.create_index([("requested_by", ASCENDING), ("responded_at", ASCENDING)])
     searches_col.create_index([("count", ASCENDING)])
+    catalog_cache_col.create_index([("updated_at", ASCENDING)])
+
+
+def get_catalog_cache(key: str):
+    """Return (stored_at_epoch, value_dict) or None."""
     try:
-        cache_col.create_index([("key", ASCENDING)], unique=True)
-        cache_col.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+        doc = catalog_cache_col.find_one({"_id": key})
+        if not doc or not isinstance(doc.get("value"), dict):
+            return None
+        return float(doc.get("updated_at") or 0), doc["value"]
+    except Exception:
+        return None
+
+
+def set_catalog_cache(key: str, value: dict):
+    """Persist a catalog/details payload in Mongo so cold deploys stay fast."""
+    if not key or not isinstance(value, dict):
+        return
+    try:
+        catalog_cache_col.update_one(
+            {"_id": key},
+            {"$set": {"value": value, "updated_at": time.time()}},
+            upsert=True,
+        )
     except Exception:
         pass
 
@@ -995,19 +1111,11 @@ def _to_anime(doc) -> dict | None:
     d = dict(doc)
     d["id"] = d.pop("_id")
     d["genres"] = d.get("genres") or []
-    d["available"] = bool(d.get("join_link"))
-    d["library_section"] = d.get("library_section")  # ongoing | finished | None
-    # Anime → H-ANIME; Manga / Manhwa / Manhua / Novels → H-MANHWA
-    mt = (d.get("media_type") or "").upper()
-    if mt not in ("ANIME", "MANGA"):
-        fmt = (d.get("format") or "").upper()
-        if fmt in ("MANGA", "NOVEL", "ONE_SHOT", "MANHUA", "MANHWA"):
-            mt = "MANGA"
-        elif fmt in ("TV", "MOVIE", "OVA", "ONA", "SPECIAL", "TV_SHORT"):
-            mt = "ANIME"
-        else:
-            mt = "ANIME"
-    d["media_type"] = mt
+    # Available if it has any join path: franchise, solo-only, or ongoing
+    d["available"] = bool(d.get("join_link") or d.get("solo_link") or d.get("ongoing_link"))
+    # Default: Ongoing button is enabled unless explicitly turned off
+    if "ongoing_enabled" not in d:
+        d["ongoing_enabled"] = True
     return d
 
 
@@ -1077,7 +1185,10 @@ def get_franchise_neighbors(details: dict) -> list[dict]:
     docs = list(anime_col.find({
         "source": source,
         "source_id": {"$in": list(family_ids)},
-        "join_link": {"$nin": [None, ""]},
+        "$or": [
+            {"join_link": {"$nin": [None, ""]}},
+            {"ongoing_link": {"$nin": [None, ""]}},
+        ],
     }))
     docs.append({
         "_id": None,
@@ -1100,29 +1211,31 @@ def get_franchise_neighbors(details: dict) -> list[dict]:
         )
 
     docs.sort(key=sort_key)
-    idx = next(i for i, d in enumerate(docs) if d["source_id"] == source_id)
+    try:
+        idx = next(i for i, d in enumerate(docs) if str(d.get("source_id")) == source_id)
+    except StopIteration:
+        return []
 
     out = []
     if idx > 0:
         p = docs[idx - 1]
-        out.append({"id": p["_id"], "title": p["title"], "poster_url": p.get("poster_url"), "relation_type": "PREQUEL"})
+        if p.get("_id") is not None:
+            out.append({
+                "id": p["_id"],
+                "title": p["title"],
+                "poster_url": p.get("poster_url"),
+                "relation_type": "PREQUEL",
+            })
     if idx < len(docs) - 1:
         s = docs[idx + 1]
-        out.append({"id": s["_id"], "title": s["title"], "poster_url": s.get("poster_url"), "relation_type": "SEQUEL"})
+        if s.get("_id") is not None:
+            out.append({
+                "id": s["_id"],
+                "title": s["title"],
+                "poster_url": s.get("poster_url"),
+                "relation_type": "SEQUEL",
+            })
     return out
-
-
-def _normalize_media_type(details: dict) -> str:
-    """Anime → H-ANIME; Manga / Manhwa / Manhua / Novels → H-MANHWA."""
-    mt = (details.get("media_type") or "").upper()
-    if mt in ("ANIME", "MANGA"):
-        return mt
-    fmt = (details.get("format") or "").upper()
-    if fmt in ("MANGA", "NOVEL", "ONE_SHOT", "MANHUA", "MANHWA"):
-        return "MANGA"
-    if fmt in ("TV", "MOVIE", "OVA", "ONA", "SPECIAL", "TV_SHORT"):
-        return "ANIME"
-    return "ANIME"
 
 
 def upsert_anime(details: dict, added_by: int | None = None) -> int:
@@ -1153,17 +1266,13 @@ def upsert_anime(details: dict, added_by: int | None = None) -> int:
         "rating": details.get("rating"),
         "status": details.get("status"),
         "episodes": details.get("episodes"),
-        "chapters": details.get("chapters"),
         "format": details.get("format"),
         "duration": details.get("duration"),
-        "media_type": _normalize_media_type(details),
-        "countryOfOrigin": details.get("countryOfOrigin"),
+        "airing_day": details.get("airing_day"),
         "related_ids": related_ids,
         "relations": details.get("relations", []),
         "updated_at": now,
     }
-    if details.get("library_section") in ("ongoing", "finished"):
-        fields["library_section"] = details["library_section"]
 
     if existing:
         anime_col.update_one({"_id": existing["_id"]}, {"$set": fields})
@@ -1242,23 +1351,155 @@ def list_available() -> list[dict]:
     return [_to_anime(d) for d in docs]
 
 
-def search_local(query: str) -> list[dict]:
-    docs = (
-        anime_col.find({"title": {"$regex": query, "$options": "i"}})
-        .collation({"locale": "en", "strength": 2})
-        .sort("title", ASCENDING)
-    )
-    return [_to_anime(d) for d in docs]
+def search_local(query: str, limit: int = 40) -> list[dict]:
+    """Fast MongoDB search across title + alt_title (case-insensitive).
+
+    Escapes regex special chars so user input like "JoJo's" is safe.
+    Prefers titles that start with the query, then substring matches.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    # Escape regex metacharacters
+    escaped = re.sub(r"([.\\^$*+?{}[\]|()])", r"\\\1", q)
+    pattern = {"$regex": escaped, "$options": "i"}
+    filt = {
+        "$or": [
+            {"title": pattern},
+            {"alt_title": pattern},
+        ]
+    }
+    try:
+        docs = list(
+            anime_col.find(filt)
+            .collation({"locale": "en", "strength": 2})
+            .sort("title", ASCENDING)
+            .limit(max(1, min(int(limit or 40), 100)))
+        )
+    except Exception:
+        # Collation may fail on some Atlas tiers — retry plain
+        docs = list(
+            anime_col.find(filt)
+            .sort("title", ASCENDING)
+            .limit(max(1, min(int(limit or 40), 100)))
+        )
+    q_lower = q.lower()
+    ranked = []
+    for d in docs:
+        a = _to_anime(d)
+        if not a:
+            continue
+        title = (a.get("title") or "").lower()
+        alt = (a.get("alt_title") or "").lower()
+        if title.startswith(q_lower) or alt.startswith(q_lower):
+            rank = 0
+        elif q_lower in title or q_lower in alt:
+            rank = 1
+        else:
+            rank = 2
+        ranked.append((rank, a))
+    ranked.sort(key=lambda x: (x[0], (x[1].get("title") or "").lower()))
+    return [a for _, a in ranked]
 
 
-def update_link(anime_id: int, link: str, library_section: str | None = None):
-    fields = {"join_link": link or None, "updated_at": time.time()}
-    if library_section in ("ongoing", "finished"):
-        fields["library_section"] = library_section
+def update_link(anime_id: int, link: str):
+    """Set the All-seasons / franchise join_link (does not touch solo_link)."""
     anime_col.update_one(
         {"_id": anime_id},
-        {"$set": fields},
+        {"$set": {"join_link": link or None, "updated_at": time.time()}},
     )
+
+
+def update_solo_link(anime_id: int, link: str | None):
+    """Set the Solo-only join link for this title.
+
+    Independent of join_link (All seasons). When non-empty, this title
+    appears as its own Finished card with this URL; the franchise group
+    card still uses join_link.
+    """
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"solo_link": (link or None), "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
+def update_ongoing_link(anime_id: int, link: str | None):
+    """Optional separate join link used while the title is ongoing.
+    Falls back to join_link / solo_link in the client when empty."""
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"ongoing_link": (link or None), "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
+def update_ongoing_enabled(anime_id: int, enabled: bool):
+    """Per-post toggle: whether the ONGOING button is shown on this card.
+    Default is True when the field is missing."""
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"ongoing_enabled": bool(enabled), "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
+def propagate_ongoing_link(anime_id: int, link: str | None) -> int:
+    """Apply the same ongoing_link to every other title that is currently
+    treated as Ongoing (has an ongoing_link already, or status is
+    RELEASING / HIATUS / NOT_YET_RELEASED). Returns how many other posts
+    were updated."""
+    doc = anime_col.find_one({"_id": anime_id})
+    if not doc:
+        return 0
+    import time as _time
+    status_match = {
+        "status": {"$in": ["RELEASING", "HIATUS", "NOT_YET_RELEASED", "releasing", "hiatus", "not_yet_released"]}
+    }
+    link_match = {"ongoing_link": {"$nin": [None, ""]}}
+    query = {
+        "_id": {"$ne": anime_id},
+        "$or": [status_match, link_match],
+    }
+    result = anime_col.update_many(
+        query,
+        {"$set": {"ongoing_link": (link or None), "updated_at": _time.time()}},
+    )
+    return int(result.modified_count or 0)
+
+
+def update_airing_day(anime_id: int, day: str | None):
+    """Set or clear the weekly airing day for an ongoing title.
+    day: one of sunday, monday, tuesday, wednesday, thursday, friday, saturday
+    or None / empty to clear (moves it out of day grouping).
+    """
+    allowed = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+    if day is not None:
+        day = str(day).strip().lower()
+        if day == "":
+            day = None
+        elif day not in allowed:
+            raise ValueError("day must be a weekday name (sunday…saturday) or empty")
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"airing_day": day, "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
+
+
+def update_display_mode(anime_id: int, mode: str):
+    """Admin: how this title appears on Home → Finished.
+    mode: "solo" = always its own card
+          "group" = merge with franchise seasons (default)
+    """
+    mode = (mode or "group").strip().lower()
+    if mode not in ("solo", "group"):
+        raise ValueError("mode must be 'solo' or 'group'")
+    anime_col.update_one(
+        {"_id": anime_id},
+        {"$set": {"display_mode": mode, "updated_at": time.time()}},
+    )
+    return _to_anime(anime_col.find_one({"_id": anime_id}))
 
 
 def propagate_join_link(anime_id: int, link: str) -> int:
@@ -1570,164 +1811,80 @@ def clear_popular_searches() -> None:
     searches_col.delete_many({})
 
 
-# ---------------------------------------------------------------------------
-# Mini web app — visits + storage summary (for /stats)
-# ---------------------------------------------------------------------------
-
-def record_web_visit(*, path: str = "", is_page: bool = False) -> None:
-    """Count a website / mini-app hit.
-
-    ``is_page=True`` for HTML page loads; API hits still bump total visits.
-    """
-    try:
-        _ensure()
-        fields = {"total": 1, "api": 0 if is_page else 1, "pages": 1 if is_page else 0}
-        counters_col.update_one(
-            {"_id": "web_visits"},
-            {
-                "$inc": fields,
-                "$set": {"last_visit": time.time(), "last_path": (path or "")[:120]},
-            },
-            upsert=True,
-        )
-    except Exception:
-        pass
-
-
-def get_web_visits() -> dict:
-    try:
-        _ensure()
-        doc = counters_col.find_one({"_id": "web_visits"}) or {}
-        return {
-            "total": int(doc.get("total") or 0),
-            "pages": int(doc.get("pages") or 0),
-            "api": int(doc.get("api") or 0),
-            "last_visit": doc.get("last_visit"),
-            "last_path": doc.get("last_path") or "",
-        }
-    except Exception:
-        return {"total": 0, "pages": 0, "api": 0, "last_visit": None, "last_path": ""}
-
-
-def get_web_app_stats() -> dict:
-    """Counts + storage for mini-app collections (sync pymongo)."""
-    out = {
-        "anime": 0,
-        "web_users": 0,
-        "searches": 0,
-        "search_hits": 0,
-        "requests": 0,
-        "reports": 0,
-        "cache": 0,
-        "storage_bytes": 0,
-        "visits": get_web_visits(),
-    }
-    try:
-        _ensure()
-        out["anime"] = anime_col.estimated_document_count()
-        out["web_users"] = users_col.estimated_document_count()
-        out["searches"] = searches_col.estimated_document_count()
-        out["requests"] = requests_col.estimated_document_count()
-        out["reports"] = reports_col.estimated_document_count()
-        out["cache"] = cache_col.estimated_document_count()
-        try:
-            pipeline = [{"$group": {"_id": None, "n": {"$sum": "$count"}}}]
-            agg = list(searches_col.aggregate(pipeline))
-            out["search_hits"] = int(agg[0]["n"]) if agg else 0
-        except Exception:
-            pass
-        # Storage used by web-related collections only
-        total = 0
-        for name in ("anime", "users", "searches", "requests", "reports", "catalog_cache", "counters"):
-            try:
-                st = _db.command("collStats", name)
-                total += int(st.get("storageSize") or 0) + int(st.get("totalIndexSize") or 0)
-            except Exception:
-                continue
-        out["storage_bytes"] = total
-    except Exception:
-        pass
-    return out
-
 
 # ---------------------------------------------------------------------------
-# Catalog response cache (MongoDB L2 for AniList feeds)
+# App settings (profile help card, links, support chat)
 # ---------------------------------------------------------------------------
 
-def cache_get(key: str):
-    """Return cached payload or None if missing/expired."""
-    from datetime import timezone
-    try:
-        doc = cache_col.find_one({"key": key})
-    except Exception:
-        return None
-    if not doc:
-        return None
-    exp = doc.get("expires_at")
-    if exp is not None:
-        try:
-            ts = exp.timestamp() if hasattr(exp, "timestamp") else float(exp)
-            if hasattr(exp, "tzinfo") and exp.tzinfo is None:
-                ts = exp.replace(tzinfo=timezone.utc).timestamp()
-            if ts < time.time():
-                return None
-        except Exception:
-            return None
-    return doc.get("value")
-
-
-def cache_set(key: str, value, ttl_seconds: int | None = None):
-    from datetime import datetime, timezone, timedelta
-    try:
-        from config import CATALOG_CACHE_TTL
-        ttl = ttl_seconds if ttl_seconds is not None else CATALOG_CACHE_TTL
-    except Exception:
-        ttl = ttl_seconds if ttl_seconds is not None else 600
-    expires = datetime.now(timezone.utc) + timedelta(seconds=max(30, int(ttl)))
-    try:
-        cache_col.update_one(
-            {"key": key},
-            {"$set": {"key": key, "value": value, "expires_at": expires}},
-            upsert=True,
-        )
-    except Exception:
-        pass
-
-# ---------------------------------------------------------------------------
-# App settings (profile links, etc.)
-# ---------------------------------------------------------------------------
-
-def _sanitize_profile_links(raw) -> list[dict]:
-    """Keep only {name, url} pairs with non-empty trimmed strings."""
-    out = []
-    if not isinstance(raw, list):
-        return out
-    for item in raw:
+def _clean_link_list(items) -> list[dict]:
+    clean = []
+    for item in items or []:
         if not isinstance(item, dict):
             continue
         name = (item.get("name") or "").strip()
         url = (item.get("url") or "").strip()
         if name and url:
-            out.append({"name": name, "url": url})
-    return out
+            clean.append({"name": name, "url": url})
+    return clean
+
+
+def get_profile_links() -> list[dict]:
+    """Primary profile help-card links — only from Mongo (edited in the mini app)."""
+    doc = counters_col.find_one({"_id": "profile_links"})
+    if not doc or not isinstance(doc.get("links"), list):
+        return []
+    return _clean_link_list(doc["links"])
+
+
+def set_profile_links(links: list[dict]) -> list[dict]:
+    clean = _clean_link_list(links)
+    counters_col.update_one(
+        {"_id": "profile_links"},
+        {"$set": {"links": clean, "updated_at": time.time()}},
+        upsert=True,
+    )
+    return clean
+
+
+def get_more_channel_links() -> list[dict]:
+    """Extra channel links shown when the user taps MORE CHANNELS."""
+    doc = counters_col.find_one({"_id": "profile_more_links"})
+    if not doc or not isinstance(doc.get("links"), list):
+        return []
+    return _clean_link_list(doc["links"])
+
+
+def set_more_channel_links(links: list[dict]) -> list[dict]:
+    clean = _clean_link_list(links)
+    counters_col.update_one(
+        {"_id": "profile_more_links"},
+        {"$set": {"links": clean, "updated_at": time.time()}},
+        upsert=True,
+    )
+    return clean
 
 
 def get_profile_help() -> dict:
     """Title/text/links for Profile help cards. All editable in mini app."""
     doc = counters_col.find_one({"_id": "profile_help"}) or {}
-    title = (doc.get("title") or "").strip() or "Need help?"
+    title = (doc.get("title") or "").strip() or "ANIME NEXUS NETWORK"
     text = (doc.get("text") or "").strip() or (
-        "Notifications, requests, and channel links are all managed through the bot."
+        "WELCOME TO ANIME NEXUS NETWORK ANIME NEXUS "
+        "NETWORK IS YOUR GATEWAY TO ENDLESS ADVENTURES "
+        "AND SHARED FANDOM.WHERE THE MAGIC OF ANIME "
+        "COMES TO LIFE GET READY TO IMMERSE YOURSELF IN A "
+        "WORLD OF ANIME LIKE NEVER BEFORE JOIN OUR "
+        "COMMUNITY OF FELLOW ANIME ENTHUSIASTS AS WE "
+        "EXPLORE THE BOUNDLESS REALMS OF IMAGINATION "
+        "TOGETHER. LET THE JOURNEY BEGIN!"
     )
-    links = _sanitize_profile_links(doc.get("links"))
-    more_links = _sanitize_profile_links(doc.get("more_links"))
-    support_chat_url = (doc.get("support_chat_url") or "").strip()
+    support = (doc.get("support_chat_url") or "").strip()
     return {
         "title": title,
         "text": text,
-        "links": links,
-        "more_links": more_links,
-        "support_chat_url": support_chat_url,
+        "links": get_profile_links(),
+        "more_links": get_more_channel_links(),
+        "support_chat_url": support,
     }
 
 
@@ -1738,29 +1895,12 @@ def set_profile_help(
 ) -> dict:
     fields = {}
     if title is not None:
-        fields["title"] = (title or "").strip()
+        fields["title"] = (title or "").strip() or None
     if text is not None:
-        fields["text"] = (text or "").strip()
+        fields["text"] = (text or "").strip() or None
     if support_chat_url is not None:
-        fields["support_chat_url"] = (support_chat_url or "").strip()
+        fields["support_chat_url"] = (support_chat_url or "").strip() or None
     if fields:
+        fields["updated_at"] = time.time()
         counters_col.update_one({"_id": "profile_help"}, {"$set": fields}, upsert=True)
-    return get_profile_help()
-
-
-def set_profile_links(links) -> dict:
-    counters_col.update_one(
-        {"_id": "profile_help"},
-        {"$set": {"links": _sanitize_profile_links(links)}},
-        upsert=True,
-    )
-    return get_profile_help()
-
-
-def set_more_channel_links(links) -> dict:
-    counters_col.update_one(
-        {"_id": "profile_help"},
-        {"$set": {"more_links": _sanitize_profile_links(links)}},
-        upsert=True,
-    )
     return get_profile_help()

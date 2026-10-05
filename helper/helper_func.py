@@ -10,249 +10,12 @@ from pyrogram.errors import (
     PeerIdInvalid,
     ChatAdminRequired,
     FloodWait,
+    MessageNotModified,
+    MessageIdInvalid,
+    MessageEmpty,
 )
 from datetime import datetime, timedelta
 from pyrogram import errors
-
-# Optional: SlowmodeWait / RetryAfter exist on some forks
-try:
-    from pyrogram.errors import SlowmodeWait
-except ImportError:
-    SlowmodeWait = None
-try:
-    from pyrogram.errors import RetryAfter
-except ImportError:
-    RetryAfter = None
-
-
-# =============================================================================
-# Telegram rate-limit helpers
-# =============================================================================
-
-def flood_wait_seconds(exc) -> float:
-    """Extract wait seconds from FloodWait / SlowmodeWait / RetryAfter.
-
-    Supports both legacy ``e.x`` and modern ``e.value`` attributes.
-    """
-    for attr in ("value", "x", "retry_after"):
-        v = getattr(exc, attr, None)
-        if v is not None:
-            try:
-                return max(0.0, float(v))
-            except (TypeError, ValueError):
-                continue
-    return 1.0
-
-
-async def sleep_on_flood(exc, logger=None, label: str = "") -> float:
-    """Sleep for the duration required by a flood / rate-limit error."""
-    seconds = flood_wait_seconds(exc)
-    # Cap extremely long waits so the process doesn't hang forever
-    seconds = min(seconds, 600.0)
-    # Telegram sometimes returns 0; always wait a tiny bit
-    seconds = max(seconds, 0.5)
-    msg = f"FloodWait {label}: sleeping {seconds:.1f}s"
-    if logger:
-        try:
-            logger.info(msg)
-        except Exception:
-            print(msg)
-    else:
-        print(msg)
-    await asyncio.sleep(seconds)
-    return seconds
-
-
-async def retry_on_flood(
-    factory,
-    *,
-    max_retries: int = 5,
-    logger=None,
-    label: str = "",
-    extra_exceptions=(),
-):
-    """Run an async callable, retrying on Telegram rate-limit errors.
-
-    ``factory`` must be a zero-arg async callable (or coroutine function)
-    so each retry creates a fresh awaitable.
-
-    Handles: FloodWait, SlowmodeWait, RetryAfter, plus any extra exception
-    types passed in ``extra_exceptions``.
-    """
-    rate_errors = [FloodWait]
-    if SlowmodeWait is not None:
-        rate_errors.append(SlowmodeWait)
-    if RetryAfter is not None:
-        rate_errors.append(RetryAfter)
-    rate_errors.extend(extra_exceptions)
-    rate_errors = tuple(rate_errors)
-
-    last_exc = None
-    for attempt in range(max_retries + 1):
-        try:
-            return await factory()
-        except rate_errors as e:
-            last_exc = e
-            if attempt >= max_retries:
-                break
-            await sleep_on_flood(
-                e,
-                logger=logger,
-                label=f"{label} attempt {attempt + 1}/{max_retries}",
-            )
-    if last_exc is not None:
-        raise last_exc
-
-
-# Small delay between consecutive media copies to reduce flood pressure.
-# Tunable; 0 disables pacing.
-SEND_PACING_SECONDS = 0
-
-
-async def paced_copy(msg, **kwargs):
-    """``msg.copy`` with FloodWait retries + optional inter-send pacing."""
-    result = await retry_on_flood(lambda: msg.copy(**kwargs), max_retries=5, label="copy")
-    if SEND_PACING_SECONDS > 0:
-        await asyncio.sleep(SEND_PACING_SECONDS)
-    return result
-
-
-async def paced_forward(client, chat_id, from_chat_id, message_ids, **kwargs):
-    """``client.forward_messages`` with FloodWait retries + optional inter-send pacing.
-
-    Prefer this over copy when the user wants the original DB-channel post
-    forwarded as-is (no caption/button rewriting).
-    """
-    if not isinstance(message_ids, (list, tuple)):
-        message_ids = [message_ids]
-
-    async def _do():
-        return await client.forward_messages(
-            chat_id=chat_id,
-            from_chat_id=from_chat_id,
-            message_ids=message_ids,
-            **kwargs,
-        )
-
-    result = await retry_on_flood(_do, max_retries=5, label="forward")
-    if SEND_PACING_SECONDS > 0:
-        await asyncio.sleep(SEND_PACING_SECONDS)
-    return result
-
-
-# =============================================================================
-# API compatibility helpers (kurigram / pyrogram deprecations)
-# =============================================================================
-
-def _link_preview_kwargs(disable: bool = True) -> dict:
-    """Prefer ``link_preview_options``; fall back to ``disable_web_page_preview``."""
-    try:
-        from pyrogram.types import LinkPreviewOptions
-        return {"link_preview_options": LinkPreviewOptions(is_disabled=bool(disable))}
-    except Exception:
-        return {"disable_web_page_preview": bool(disable)}
-
-
-def get_forward_info(message):
-    """Return ``(chat_id, message_id)`` from a forwarded message.
-
-    Uses ``message.forward_origin`` when available, otherwise the legacy
-    ``forward_from_chat`` / ``forward_from_message_id`` attributes.
-    Returns ``(None, None)`` for hidden-user forwards or non-forwards.
-    """
-    if message is None:
-        return None, None
-
-    origin = getattr(message, "forward_origin", None)
-    if origin is not None:
-        chat = getattr(origin, "chat", None) or getattr(origin, "sender_chat", None)
-        mid = getattr(origin, "message_id", None)
-        if chat is not None and mid is not None:
-            return getattr(chat, "id", None), mid
-        return None, None
-
-    chat = getattr(message, "forward_from_chat", None)
-    mid = getattr(message, "forward_from_message_id", None)
-    if chat is not None and mid is not None:
-        return chat.id, mid
-    return None, None
-
-
-def is_hidden_forward(message) -> bool:
-    """True when the forward hides the original sender (no channel metadata)."""
-    if message is None:
-        return False
-    origin = getattr(message, "forward_origin", None)
-    if origin is not None:
-        if getattr(origin, "sender_user_name", None) and not (
-            getattr(origin, "chat", None) or getattr(origin, "sender_chat", None)
-        ):
-            return True
-        if "Hidden" in type(origin).__name__:
-            return True
-        return False
-    return bool(getattr(message, "forward_sender_name", None))
-
-
-def is_forwarded_message(message) -> bool:
-    """True if the message is a forward (new or legacy API)."""
-    if message is None:
-        return False
-    if getattr(message, "forward_origin", None) is not None:
-        return True
-    if getattr(message, "forward_date", None) is not None:
-        return True
-    if getattr(message, "forward_from_chat", None) is not None:
-        return True
-    if getattr(message, "forward_sender_name", None) is not None:
-        return True
-    return False
-
-
-async def safe_delete(msg):
-    """Delete a message if it exists; never raise on None / already-gone."""
-    if msg is None:
-        return
-    try:
-        await msg.delete()
-    except Exception:
-        pass
-
-
-async def safe_edit_text(message, text, **kwargs):
-    """Edit message text; ignore MessageNotModified / missing message."""
-    if message is None:
-        return None
-    try:
-        from pyrogram.errors import MessageNotModified, MessageIdInvalid, FloodWait
-    except Exception:
-        MessageNotModified = MessageIdInvalid = FloodWait = Exception
-    try:
-        return await message.edit_text(text, **kwargs)
-    except MessageNotModified:
-        return message
-    except MessageIdInvalid:
-        return None
-    except FloodWait as e:
-        await sleep_on_flood(e)
-        try:
-            return await message.edit_text(text, **kwargs)
-        except Exception:
-            return None
-    except Exception:
-        return None
-
-
-async def safe_reply(message, text, **kwargs):
-    """``message.reply`` without the deprecated ``quote`` argument."""
-    kwargs.pop("quote", None)
-    # Normalize link-preview args
-    if "link_preview_options" not in kwargs:
-        disable = kwargs.pop("disable_web_page_preview", True)
-        kwargs.update(_link_preview_kwargs(bool(disable)))
-    else:
-        kwargs.pop("disable_web_page_preview", None)
-    return await message.reply(text, **kwargs)
 
 # Telegram Bot API button colors (Kurigram / docs.kurigram.icu/api/enums/ButtonStyle)
 # PRIMARY = blue, SUCCESS = green, DANGER = red, DEFAULT = client theme
@@ -274,6 +37,9 @@ if ButtonStyle is not None:
     }
     if hasattr(ButtonStyle, "DEFAULT"):
         _STYLE_MAP[ButtonStyle.DEFAULT] = ButtonStyle.DEFAULT
+
+# Errors that are safe to ignore when editing messages (same content / gone / empty).
+_SAFE_EDIT_ERRORS = (MessageNotModified, MessageIdInvalid, MessageEmpty)
 
 #===============================================================#
 
@@ -315,6 +81,53 @@ def styled_button(text, style=None, **kwargs):
 
 #===============================================================#
 
+async def safe_edit_text(message, text, **kwargs):
+    """edit_text that silently ignores MESSAGE_NOT_MODIFIED and similar."""
+    try:
+        return await message.edit_text(text, **kwargs)
+    except _SAFE_EDIT_ERRORS:
+        return message
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        try:
+            return await message.edit_text(text, **kwargs)
+        except _SAFE_EDIT_ERRORS:
+            return message
+
+async def safe_edit_caption(message, caption, **kwargs):
+    """edit_caption that silently ignores MESSAGE_NOT_MODIFIED and similar."""
+    try:
+        return await message.edit_caption(caption, **kwargs)
+    except _SAFE_EDIT_ERRORS:
+        return message
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        try:
+            return await message.edit_caption(caption, **kwargs)
+        except _SAFE_EDIT_ERRORS:
+            return message
+
+async def safe_edit_reply_markup(message, reply_markup=None):
+    """edit_reply_markup that silently ignores MESSAGE_NOT_MODIFIED and similar."""
+    try:
+        return await message.edit_reply_markup(reply_markup)
+    except _SAFE_EDIT_ERRORS:
+        return message
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        try:
+            return await message.edit_reply_markup(reply_markup)
+        except _SAFE_EDIT_ERRORS:
+            return message
+
+async def answer_and_edit(query, text, **kwargs):
+    """Answer callback (ignore if already answered) then safe-edit the message."""
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    return await safe_edit_text(query.message, text, **kwargs)
+
 #===============================================================#
 
 async def encode(string):
@@ -337,22 +150,16 @@ async def decode(base64_string):
 async def get_messages(client, message_ids):
     messages = []
     total_messages = 0
-    logger = None
-    try:
-        logger = client.LOGGER(__name__, client.name)
-    except Exception:
-        pass
     while total_messages != len(message_ids):
-        temb_ids = message_ids[total_messages:total_messages + 200]
+        temb_ids = message_ids[total_messages:total_messages+200]
         try:
-            msgs = await retry_on_flood(
-                lambda ids=temb_ids: get_messages_from_db_channels(client, ids),
-                max_retries=5,
-                logger=logger,
-                label="get_messages",
-            )
-        except Exception:
-            msgs = []
+            # Use new multi-DB channel function
+            msgs = await get_messages_from_db_channels(client, temb_ids)
+        except FloodWait as e:
+            await asyncio.sleep(e.x)
+            msgs = await get_messages_from_db_channels(client, temb_ids)
+        except:
+            pass
         total_messages += len(temb_ids)
         messages.extend(msgs)
     return messages
@@ -361,18 +168,19 @@ async def get_messages(client, message_ids):
 
 async def get_message_id(client, message):
     """Get message ID and source channel ID from forwarded message or link"""
-    fwd_chat_id, fwd_msg_id = get_forward_info(message)
-    if fwd_chat_id is not None and fwd_msg_id is not None:
-        if fwd_chat_id == client.db:
-            return fwd_msg_id, client.db
+    if message.forward_from_chat:
+        # Check if forwarded from primary DB channel
+        if message.forward_from_chat.id == client.db:
+            return message.forward_from_message_id, client.db
+        # Check against multiple DB channels
         db_channels = getattr(client, 'db_channels', {})
         for channel_id_str in db_channels.keys():
-            if fwd_chat_id == int(channel_id_str):
-                return fwd_msg_id, int(channel_id_str)
+            if message.forward_from_chat.id == int(channel_id_str):
+                return message.forward_from_message_id, int(channel_id_str)
         return 0, 0
-    if is_hidden_forward(message):
+    elif message.forward_sender_name:
         return 0, 0
-    if message.text:
+    elif message.text:
         pattern = r"https://t.me/(?:c/)?(.*)/(\d+)"
         matches = re.match(pattern,message.text)
         if not matches:
@@ -416,68 +224,62 @@ async def get_message_id_legacy(client, message):
 #===============================================================#
 
 async def get_messages_from_db_channels(client, temb_ids):
-    """Get messages from multiple DB channels - tries primary first, then falls back to others.
-
-    FloodWait is handled by the caller via ``retry_on_flood``; inner channel
-    fetches also retry individually so a single slow channel doesn't abort
-    the whole batch.
-    """
+    """Get messages from multiple DB channels - tries primary first, then falls back to others"""
     messages = []
-    logger = None
+    total_messages = 0
+    
+    # First try primary DB channel
     try:
-        logger = client.LOGGER(__name__, client.name)
-    except Exception:
-        pass
-
-    primary_db = getattr(client, 'primary_db_channel', client.db)
-
-    async def _fetch(chat_id, ids):
-        return await client.get_messages(chat_id=chat_id, message_ids=ids)
-
-    try:
-        msgs = await retry_on_flood(
-            lambda: _fetch(primary_db, temb_ids),
-            max_retries=5,
-            logger=logger,
-            label=f"get_messages primary:{primary_db}",
+        primary_db = getattr(client, 'primary_db_channel', client.db)
+        msgs = await client.get_messages(
+            chat_id=primary_db,
+            message_ids=temb_ids
         )
         # Filter out None messages (deleted/not found)
-        valid_msgs = [msg for msg in (msgs or []) if msg is not None]
+        valid_msgs = [msg for msg in msgs if msg is not None]
         messages.extend(valid_msgs)
         found_ids = {msg.id for msg in valid_msgs}
         missing_ids = [mid for mid in temb_ids if mid not in found_ids]
-
+        
+        # If we found all messages, return early
         if not missing_ids:
             return messages
-
+        
+        # Try other DB channels for missing messages
         db_channels = getattr(client, 'db_channels', {})
         for channel_id_str, channel_data in db_channels.items():
-            if not channel_data.get('is_active', True):
+            if not channel_data.get('is_active', True):  # Skip inactive channels
                 continue
-            if int(channel_id_str) == primary_db:
+            if int(channel_id_str) == primary_db:  # Skip primary (already tried)
                 continue
+                
             try:
-                additional_msgs = await retry_on_flood(
-                    lambda cid=int(channel_id_str), ids=list(missing_ids): _fetch(cid, ids),
-                    max_retries=3,
-                    logger=logger,
-                    label=f"get_messages channel:{channel_id_str}",
+                additional_msgs = await client.get_messages(
+                    chat_id=int(channel_id_str),
+                    message_ids=missing_ids
                 )
-                valid_additional = [msg for msg in (additional_msgs or []) if msg is not None]
+                valid_additional = [msg for msg in additional_msgs if msg is not None]
                 messages.extend(valid_additional)
+                
+                # Update missing IDs
                 found_additional_ids = {msg.id for msg in valid_additional}
                 missing_ids = [mid for mid in missing_ids if mid not in found_additional_ids]
+                
+                # If we found all remaining messages, break
                 if not missing_ids:
                     break
+                    
             except Exception as e:
-                if logger:
-                    logger.warning(f"Error getting messages from DB channel {channel_id_str}: {e}")
+                client.LOGGER(__name__, client.name).warning(f"Error getting messages from DB channel {channel_id_str}: {e}")
                 continue
-
+        
+    except FloodWait as e:
+        await asyncio.sleep(e.x)
+        # Retry with the same function
+        return await get_messages_from_db_channels(client, temb_ids)
     except Exception as e:
-        if logger:
-            logger.warning(f"Error getting messages from DB channels: {e}")
-
+        client.LOGGER(__name__, client.name).warning(f"Error getting messages from DB channels: {e}")
+    
     return messages
 
 #===============================================================#
@@ -753,13 +555,8 @@ def convert_time(duration_seconds: int) -> str:
 DEL_MSG = """<b>» ᴛʜɪs ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ {time}<blockquote>ᴘʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs ᴅᴇʟᴇᴛᴇᴅ.</blockquote></b>"""
 
 #Function for provide auto delete notification message
-async def auto_del_notification(bot_username, msg, delay_time, transfer):
-    if msg is None:
-        return
-    temp = await msg.reply_text(
-        DEL_MSG.format(username=bot_username, time=convert_time(delay_time)),
-        **_link_preview_kwargs(True),
-    )
+async def auto_del_notification(bot_username, msg, delay_time, transfer): 
+    temp = await msg.reply_text(DEL_MSG.format(username=bot_username, time=convert_time(delay_time)), disable_web_page_preview = True) 
 
     await asyncio.sleep(delay_time)
     try:
@@ -767,71 +564,54 @@ async def auto_del_notification(bot_username, msg, delay_time, transfer):
             try:
                 name = "• ɢᴇᴛ ᴀɢᴀɪɴ •"
                 link = f"https://t.me/{bot_username}?start={transfer}"
-                button = [[styled_button(text=f"{name}", style="primary", url=link), styled_button(text="ᴄʟᴏsᴇ •", style="danger", callback_data="close")]]
+                button = [[styled_button(text=f"{name}", style="primary", url=link), styled_button(text="ᴄʟᴏsᴇ •", style="danger", callback_data = "close")]]
 
-                await temp.edit_text(
-                    text=f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ<blockquote>ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ɢᴇᴛ ᴛʜᴇ ғɪʟᴇs ᴀɢᴀɪɴ, ᴛʜᴇɴ ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ. ᴇʟsᴇ ᴄʟᴏsᴇ ᴛʜɪs ᴍᴇssᴀɢᴇ.</blockquote></b>",
-                    reply_markup=InlineKeyboardMarkup(button),
-                    **_link_preview_kwargs(True),
-                )
+                await temp.edit_text(text=f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ<blockquote>ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ɢᴇᴛ ᴛʜᴇ ғɪʟᴇs ᴀɢᴀɪɴ, ᴛʜᴇɴ ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ. ᴇʟsᴇ ᴄʟᴏsᴇ ᴛʜɪs ᴍᴇssᴀɢᴇ.</blockquote></b>", reply_markup=InlineKeyboardMarkup(button), disable_web_page_preview = True)
 
             except Exception as e:
-                try:
-                    await temp.edit_text(f"<b>›› ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ </b>")
-                except Exception:
-                    pass
+                await temp.edit_text(f"<b>›› ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ </b>")
                 print(f"Error occured while editing the Delete message: {e}")
         else:
             await temp.edit_text(f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ </b>")
 
     except Exception as e:
         print(f"Error occured while editing the Delete message: {e}")
-        try:
-            await temp.edit_text(f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ</b>")
-        except Exception:
-            pass
+        await temp.edit_text(f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ</b>")
 
-    await safe_delete(msg)
+    try: await msg.delete()
+    except Exception as e: print(f"Error occurred on auto_del_notification() : {e}")
 
 #Function for deleteing files/Messages.....
-async def delete_message(msg, delay_time):
+async def delete_message(msg, delay_time): 
     await asyncio.sleep(delay_time)
-    await safe_delete(msg)
+    
+    try: await msg.delete()
+    except Exception as e: print(f"Error occurred on delete_message() : {e}")
 
 #===============================================================#
 
 #Function for batch auto delete - sends one notification for all files
 async def batch_auto_del_notification(bot_username, messages, delay_time, transfer_link, chat_id, client):
     """Send one notification for batch of files and delete all after timer"""
-    # Drop any None entries from failed copies
-    messages = [m for m in (messages or []) if m is not None]
     if not messages:
         return
-
-    # Send single countdown notification (with flood retry)
-    try:
-        notification_msg = await retry_on_flood(
-            lambda: client.send_message(
-                chat_id=chat_id,
-                text=DEL_MSG.format(username=bot_username, time=convert_time(delay_time)),
-                **_link_preview_kwargs(True),
-            ),
-            max_retries=3,
-            label="auto_del_notify",
-        )
-    except Exception as e:
-        print(f"Error sending auto-delete notification: {e}")
-        notification_msg = None
-
+        
+    # Send single countdown notification
+    notification_msg = await client.send_message(
+        chat_id=chat_id,
+        text=DEL_MSG.format(username=bot_username, time=convert_time(delay_time)),
+        disable_web_page_preview=True
+    )
+    
     await asyncio.sleep(delay_time)
-
-    # Delete all file messages (skip None, ignore already-gone)
+    
+    # Delete all file messages
     for msg in messages:
-        await safe_delete(msg)
-
-    if notification_msg is None:
-        return
-
+        try:
+            await msg.delete()
+        except Exception as e:
+            print(f"Error deleting message {getattr(msg, 'id', 'Unknown')}: {e}")
+    
     # Update notification with get files button
     try:
         if transfer_link:
@@ -839,19 +619,68 @@ async def batch_auto_del_notification(bot_username, messages, delay_time, transf
                 name = "• ɢᴇᴛ ғɪʟᴇs •"
                 link = f"https://t.me/{bot_username}?start={transfer_link}"
                 button = [[styled_button(text=f"{name}", style="primary", url=link), styled_button(text="ᴄʟᴏsᴇ •", style="danger", callback_data="close")]]
-
+                
                 await notification_msg.edit_text(
                     text=f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ<blockquote>ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ɢᴇᴛ ᴛʜᴇ ғɪʟᴇs ᴀɢᴀɪɴ, ᴛʜᴇɴ ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ. ᴇʟsᴇ ᴄʟᴏsᴇ ᴛʜɪs ᴍᴇssᴀɢᴇ.</blockquote></b>",
                     reply_markup=InlineKeyboardMarkup(button),
-                    **_link_preview_kwargs(True),
+                    disable_web_page_preview=True
                 )
             except Exception as e:
-                try:
-                    await notification_msg.edit_text(f"<b>›› ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ</b>")
-                except Exception:
-                    pass
+                await notification_msg.edit_text(f"<b>›› ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ</b>")
                 print(f"Error editing notification message: {e}")
         else:
             await notification_msg.edit_text(f"<b>ᴘʀᴇᴠɪᴏᴜs ᴍᴇssᴀɢᴇ ᴡᴀs ᴅᴇʟᴇᴛᴇᴅ</b>")
     except Exception as e:
         print(f"Error updating notification message: {e}")
+
+
+#===============================================================#
+# Flood-wait helpers used by plugins/start.py
+#===============================================================#
+
+async def retry_on_flood(coro_factory, max_retries: int = 5, logger=None, label: str = ""):
+    """Run an async callable, retrying on FloodWait up to max_retries times.
+
+    coro_factory: zero-arg callable that returns an awaitable
+                  (e.g. lambda: client.get_messages(...))
+    """
+    last_err = None
+    for attempt in range(max_retries + 1):
+        try:
+            return await coro_factory()
+        except FloodWait as e:
+            last_err = e
+            wait = getattr(e, "value", None) or getattr(e, "x", 5) or 5
+            if logger:
+                logger.warning(
+                    f"FloodWait {wait}s on {label or 'op'} "
+                    f"(attempt {attempt + 1}/{max_retries + 1})"
+                )
+            await asyncio.sleep(wait + 1)
+        except Exception:
+            raise
+    if last_err:
+        raise last_err
+    return None
+
+
+# Small delay between copies to reduce FloodWait when sending many files
+_COPY_PACE_SECONDS = 0.35
+
+
+async def paced_copy(msg, **kwargs):
+    """Copy a message to a user with FloodWait retry and light pacing."""
+    chat_id = kwargs.pop("chat_id", None)
+    if chat_id is None:
+        raise ValueError("paced_copy requires chat_id")
+
+    async def _do_copy():
+        return await msg.copy(chat_id=chat_id, **kwargs)
+
+    result = await retry_on_flood(
+        _do_copy,
+        max_retries=5,
+        label=f"copy:{getattr(msg, 'id', '?')}->{chat_id}",
+    )
+    await asyncio.sleep(_COPY_PACE_SECONDS)
+    return result
