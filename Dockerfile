@@ -1,33 +1,27 @@
-FROM python:3.11-bookworm
+FROM python:3.11-slim-bullseye
+
+LABEL description="NexusV2 + Anime Index (Touka) — unified Telegram bot + mini app"
+LABEL version="2.1.0"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-# System dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gcc \
-        g++ \
-        libffi-dev \
-        libssl-dev \
-        curl \
-        git \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ libffi-dev libssl-dev curl git \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies
 COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
-
-# Application
 COPY . .
 
-# Change this if your application uses a different port
-EXPOSE 8000
+EXPOSE 5010
 
-# Change this to your application's actual startup command if needed
-CMD ["python", "app.py"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-5010}/healthz || curl -f http://localhost:${PORT:-5010}/ || exit 1
+
+CMD ["python", "main.py"]
